@@ -109,10 +109,15 @@ export function useWallet(): WalletState {
 
     try {
       const { signTransaction } = await import("@stellar/freighter-api");
-      const signedXdr = await signTransaction(xdr, {
+      const result = await signTransaction(xdr, {
         networkPassphrase: networkPassphraseConfig,
       });
-      return signedXdr;
+      
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
+      return result.signedTxXdr;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to sign transaction";
       setError(message);
