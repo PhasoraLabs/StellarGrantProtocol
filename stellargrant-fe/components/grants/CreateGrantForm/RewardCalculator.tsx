@@ -109,6 +109,7 @@ export function RewardCalculator({
   const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize weights when milestone count changes
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     setWeights((prev) => {
       if (prev.length === milestoneCount) return prev;
