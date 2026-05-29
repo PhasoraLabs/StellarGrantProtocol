@@ -8,10 +8,10 @@ export const step1Schema = z.object({
     .min(50, "Description must be at least 50 characters")
     .max(5000, "Description must be at most 5000 characters"),
   recipientAddress: z.string().regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar address"),
-  totalBudget: z.number({ invalid_type_error: "Budget must be a number" })
+  totalBudget: z.number({ message: "Budget must be a number" })
     .positive("Budget must be greater than 0")
     .max(10000000, "Budget cannot exceed 10,000,000"),
-  budgetToken: z.enum(["native", "USDC"], { errorMap: () => ({ message: "Select a funding token" }) }),
+  budgetToken: z.enum(["native", "USDC"], { message: "Select a funding token" }),
   deadline: z.string().refine(
     (d) => !isNaN(Date.parse(d)) && new Date(d) > new Date(),
     "Deadline must be in the future"
@@ -26,7 +26,7 @@ export const step2Schema = z.object({
         .max(100, "Milestone title must be at most 100 characters"),
       description: z.string()
         .min(20, "Milestone description must be at least 20 characters"),
-      reward: z.number({ invalid_type_error: "Reward must be a number" })
+      reward: z.number({ message: "Reward must be a number" })
         .positive("Reward must be greater than 0"),
     })
   )
@@ -44,7 +44,7 @@ export const step3Schema = z.object({
     (arr) => new Set(arr).size === arr.length,
     "Duplicate reviewer addresses"
   ),
-  quorum: z.number({ invalid_type_error: "Quorum must be a number" })
+  quorum: z.number({ message: "Quorum must be a number" })
     .min(1, "Quorum must be at least 1"),
 });
 
