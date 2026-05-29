@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { stellarExplorerTx } from "@/lib/constants";
+import { toast } from "@/lib/toast";
 
 export interface FundGrantParams {
   grantId: string;
@@ -40,10 +41,25 @@ export function useFundGrant(): UseFundGrantReturn {
         explorerUrl: stellarExplorerTx(mockTxHash),
       };
 
+      toast({
+        title: `Funded ${_params.amount.toString()} stroops`,
+        description: "Your contribution was recorded on-chain.",
+        variant: "success",
+        action: {
+          label: "View on Stellar Explorer",
+          href: result.explorerUrl,
+        },
+      });
+
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
+      toast({
+        title: "Funding failed",
+        description: message,
+        variant: "error",
+      });
       throw err;
     } finally {
       setIsLoading(false);

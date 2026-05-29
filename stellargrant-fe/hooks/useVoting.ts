@@ -56,7 +56,9 @@ export interface UseVotingReturn {
 
 function emitToast(detail: ToastEventDetail) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<ToastEventDetail>("stellar:toast", { detail }));
+  window.dispatchEvent(
+    new CustomEvent<ToastEventDetail>("stellar:toast", { detail }),
+  );
 }
 
 function buildExplorerUrl(network: string): string {
@@ -75,17 +77,18 @@ function deriveVoteCount(votes: MilestoneVote[]): VoteCount {
       acc.total++;
       return acc;
     },
-    { approved: 0, rejected: 0, total: 0 }
+    { approved: 0, rejected: 0, total: 0 },
   );
 }
 
 function deriveHasVoted(
   votes: MilestoneVote[],
-  walletAddress: string | null
+  walletAddress: string | null,
 ): { hasVoted: boolean; currentVote: boolean | null } {
   if (!walletAddress) return { hasVoted: false, currentVote: null };
   const mine = votes.find((v) => v.reviewer === walletAddress);
-  if (!mine || mine.vote === null) return { hasVoted: false, currentVote: null };
+  if (!mine || mine.vote === null)
+    return { hasVoted: false, currentVote: null };
   return { hasVoted: true, currentVote: mine.vote === "approve" };
 }
 
@@ -107,7 +110,10 @@ function votesEqual(a: MilestoneVote[], b: MilestoneVote[]): boolean {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-export function useVoting({ grantId, milestoneIdx }: UseVotingOptions): UseVotingReturn {
+export function useVoting({
+  grantId,
+  milestoneIdx,
+}: UseVotingOptions): UseVotingReturn {
   const { address: walletAddress, network } = useWalletStore();
 
   // Underlying milestone data (votes list) from the server/contract
@@ -157,7 +163,9 @@ export function useVoting({ grantId, milestoneIdx }: UseVotingOptions): UseVotin
       };
 
       setVotes((prev: MilestoneVote[]) => {
-        const without = prev.filter((v: MilestoneVote) => v.reviewer !== walletAddress);
+        const without = prev.filter(
+          (v: MilestoneVote) => v.reviewer !== walletAddress,
+        );
         return [...without, optimisticVote];
       });
 
@@ -173,10 +181,14 @@ export function useVoting({ grantId, milestoneIdx }: UseVotingOptions): UseVotin
         });
       } catch (err) {
         // ── Revert optimistic state on failure ───────────────────────
-        setVotes((prev: MilestoneVote[]) => prev.filter((v: MilestoneVote) => v.reviewer !== walletAddress));
+        setVotes((prev: MilestoneVote[]) =>
+          prev.filter((v: MilestoneVote) => v.reviewer !== walletAddress),
+        );
 
         const msg =
-          err instanceof Error ? err.message : "Transaction failed. Please try again.";
+          err instanceof Error
+            ? err.message
+            : "Transaction failed. Please try again.";
         setError(msg);
 
         emitToast({
@@ -188,7 +200,7 @@ export function useVoting({ grantId, milestoneIdx }: UseVotingOptions): UseVotin
         setIsSubmitting(false);
       }
     },
-    [walletAddress, hasVoted, grantId, milestoneIdx, network]
+    [walletAddress, hasVoted, grantId, milestoneIdx, network],
   );
 
   return { hasVoted, currentVote, votes, voteCount, isSubmitting, vote, error };

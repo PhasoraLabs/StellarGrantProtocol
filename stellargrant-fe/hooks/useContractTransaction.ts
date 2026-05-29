@@ -19,6 +19,7 @@ import {
 import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import { rpcClient, networkPassphraseConfig } from "@/lib/stellar/client";
 import { CONTRACT_ID, stellarExplorerTx } from "@/lib/constants";
+import { toast } from "@/lib/toast";
 import { useWallet } from "./useWallet";
 
 interface ExecuteOptions {
@@ -106,6 +107,11 @@ export function useContractTransaction(): UseContractTransactionResult {
       try {
         signedXdr = await walletSign(preparedXdr);
       } catch (_err) {
+        toast({
+          title: "Transaction rejected",
+          description: "You rejected the signing request.",
+          variant: "warning",
+        });
         throw new Error("Transaction rejected by user");
       }
 
@@ -144,18 +150,14 @@ export function useContractTransaction(): UseContractTransactionResult {
           setIsPending(false);
           onSuccess?.(hash);
 
-          // Fire toast notification
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("notification", {
-                detail: {
-                  type: "success",
-                  message: "Transaction confirmed",
-                  link: stellarExplorerTx(hash),
-                },
-              })
-            );
-          }
+          toast({
+            title: "Transaction confirmed",
+            variant: "success",
+            action: {
+              label: "View on Stellar Explorer",
+              href: stellarExplorerTx(hash),
+            },
+          });
 
           return hash;
         }
@@ -175,17 +177,11 @@ export function useContractTransaction(): UseContractTransactionResult {
       setIsSimulating(false);
       onError?.(_err instanceof Error ? _err : new Error(message));
 
-      // Fire error toast
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("notification", {
-            detail: {
-              type: "error",
-              message,
-            },
-          })
-        );
-      }
+      toast({
+        title: "Transaction failed",
+        description: message,
+        variant: "error",
+      });
 
       return null;
     }

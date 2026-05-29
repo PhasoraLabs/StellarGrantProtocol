@@ -74,7 +74,7 @@ api.interceptors.response.use(
     });
 
     return Promise.reject(stellarError);
-  }
+  },
 );
 
 // ── Typed helper wrappers ─────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ api.interceptors.response.use(
  */
 export async function apiGet<T>(
   url: string,
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
 ): Promise<T> {
   const response = await api.get<T>(url, { params });
   return response.data;
@@ -99,10 +99,7 @@ export async function apiGet<T>(
  * @example
  *   const result = await apiPost<CreateGrantResponse>("/grants", payload)
  */
-export async function apiPost<T>(
-  url: string,
-  data?: unknown
-): Promise<T> {
+export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
   const response = await api.post<T>(url, data);
   return response.data;
 }

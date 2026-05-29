@@ -77,8 +77,19 @@ export function FundGrantClient({ grantId }: FundGrantClientProps) {
 
     fetch(`/api/grants/${grantId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((json: { grant: Grant }) => {
-        if (!cancelled) setGrant(json.grant ?? null);
+      .then((json: { grant: Grant & { budget: string | bigint; funded: string | bigint; deadline: string | bigint; created_at: string | bigint } }) => {
+        if (!cancelled && json.grant) {
+          const g = json.grant;
+          setGrant({
+            ...g,
+            budget: BigInt(g.budget),
+            funded: BigInt(g.funded),
+            deadline: BigInt(g.deadline),
+            created_at: BigInt(g.created_at),
+          });
+        } else if (!cancelled) {
+          setGrant(null);
+        }
       })
       .catch(() => {
         if (!cancelled) setGrant(null);

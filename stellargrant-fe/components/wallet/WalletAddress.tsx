@@ -16,7 +16,7 @@
  */
 
 import { useState, useCallback } from "react";
-import type { ToastEventDetail } from "@/components/ui/NotificationToast";
+import { toast } from "@/lib/toast";
 
 // ── Inline SVG icons (no icon-library dependency) ─────────────────────────────
 
@@ -116,16 +116,11 @@ export function WalletAddress({
       return;
     }
 
-    // Fire stellar:toast event consumed by NotificationToast
-    window.dispatchEvent(
-      new CustomEvent<ToastEventDetail>("stellar:toast", {
-        detail: {
-          type: "address_copied",
-          title: "Address copied",
-          message: `${truncateAddress(address)} copied to clipboard.`,
-        },
-      })
-    );
+    toast({
+      title: "Address copied",
+      variant: "success",
+      duration: 2000,
+    });
 
     // Swap icon to checkmark for 2 s
     setCopied(true);

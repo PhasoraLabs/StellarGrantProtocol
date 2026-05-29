@@ -1,6 +1,14 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /**
+   * Point Next.js at the correct project root when multiple lockfiles exist
+   * in the monorepo. Without this, Next.js may pick the root lockfile and
+   * fail to resolve native platform binaries (SWC, lightningcss) on CI.
+   */
+  outputFileTracingRoot: path.resolve(__dirname),
+
   /**
    * Tree-shaking / bundle optimisation (#275)
    *

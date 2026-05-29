@@ -38,6 +38,7 @@ export interface Grant {
   reviewers: string[];
   created_at: bigint;
   token?: string; // Primary token address for the grant
+  contractAddress?: string; // Soroban contract account address for live balance polling
 }
 
 export interface Milestone {

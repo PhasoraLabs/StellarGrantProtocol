@@ -1,21 +1,9 @@
- "use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { GrantCard } from "@/components/grants/GrantCard";
 import { apiGet } from "@/lib/api";
-
-/**
- * Grant Listing Page
- *
- * Paginated, filterable list of all grants stored on-chain.
- *
- * Query Parameters:
- * - status: open | active | completed | cancelled
- * - token: XLM | USDC | all
- * - page: number (pagination)
- * - sort: newest | funded | deadline
- * - q: string (search query)
- */
+import { EmptyState, ErrorCard, PageHeader } from "@/components/ui";
 
 /** Raw shape returned by the API */
 type GrantListItem = {
@@ -67,6 +55,7 @@ export default function GrantsPage() {
   const [grants, setGrants] = useState<GrantCardInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +63,6 @@ export default function GrantsPage() {
     const loadGrants = async () => {
       try {
         setLoading(true);
-        // apiGet unwraps the { data: [...] } envelope automatically
         const raw = await apiGet<GrantListItem[]>("/grants");
         if (!cancelled) {
           setGrants((Array.isArray(raw) ? raw : []).map(normaliseGrant));
@@ -92,22 +80,18 @@ export default function GrantsPage() {
     };
 
     void loadGrants();
-    return () => { cancelled = true; };
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [retryCount]);
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.32em] text-accent-secondary">
-            Live Delivery Board
-          </p>
-          <h1 className="mt-3 text-3xl font-bold">Grants</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
-            Track open grants, see which milestone tracks are slipping, and jump straight into the creator work queue.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Live Delivery Board"
+        title="Grants"
+        description="Track open grants, see which milestone tracks are slipping, and jump straight into the creator work queue."
+      />
 
       {loading && (
         <div className="grid gap-4 md:grid-cols-2">
@@ -118,12 +102,21 @@ export default function GrantsPage() {
       )}
 
       {error && (
-        <div className="rounded-[4px] border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
-          {error}
-        </div>
+        <ErrorCard
+          message={error}
+          onRetry={() => setRetryCount((c) => c + 1)}
+        />
       )}
 
-      {!loading && !error && (
+      {!loading && !error && grants.length === 0 && (
+        <EmptyState
+          title="No grants yet"
+          description="Be the first to create a grant and kick off a milestone track."
+          action={{ label: "Create a grant", href: "/grants/create" }}
+        />
+      )}
+
+      {!loading && !error && grants.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
           {grants.map((grant) => (
             <GrantCard key={grant.id} grant={grant} />

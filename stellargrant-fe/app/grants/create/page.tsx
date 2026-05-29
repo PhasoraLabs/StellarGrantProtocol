@@ -13,11 +13,16 @@
  * 6. Review & Sign - summary card + Freighter signing prompt
  */
 
+import { CreateGrantForm } from "@/components/grants/CreateGrantForm";
+
 export default function CreateGrantPage() {
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Create Grant</h1>
-      {/* Multi-step grant creation form will be implemented here */}
+      <h1 className="font-orbitron text-3xl text-text-primary mb-2">Create Grant</h1>
+      <p className="font-mono text-sm text-text-muted mb-8 max-w-xl">
+        Define milestones and allocate your budget. The chart updates as you type.
+      </p>
+      <CreateGrantForm />
     </div>
   );
 }

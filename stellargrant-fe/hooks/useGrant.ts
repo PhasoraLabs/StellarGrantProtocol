@@ -1,23 +1,27 @@
 "use client";
 
 /**
- * useGrant Hook
- *
- * Fetches a single grant by ID and keeps it fresh via polling.
- * Handles loading and error states out of the box.
+ * useGrant Hook — fetches grant detail with milestones from the Next.js API route.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Grant } from "@/types";
+import type { Grant, Milestone } from "@/types";
 import { logger } from "@/lib/logger";
 
 interface UseGrantOptions {
-  refetchInterval?: number; // default: 30_000 ms
-  enabled?: boolean;        // default: true
+  refetchInterval?: number;
+  enabled?: boolean;
+}
+
+export interface GrantDetailData {
+  grant: Grant;
+  milestones: Milestone[];
+  completedMilestones: number;
+  isWatched: boolean;
 }
 
 interface UseGrantResult {
-  data: Grant | null;
+  data: GrantDetailData | null;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -28,7 +32,7 @@ const hookLogger = logger.child("useGrant");
 export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantResult {
   const { refetchInterval = 30_000, enabled = true } = options ?? {};
 
-  const [data, setData] = useState<Grant | null>(null);
+  const [data, setData] = useState<GrantDetailData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -47,9 +51,30 @@ export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantRe
         signal: abortRef.current.signal,
       });
       if (!res.ok) throw new Error(`Failed to fetch grant ${grantId}: ${res.status}`);
-      const json = await res.json() as { grant: Grant };
-      hookLogger.debug("Grant fetched", { grantId, status: json.grant?.status });
-      setData(json.grant);
+      const json = (await res.json()) as {
+        grant: Grant;
+        milestones: Milestone[];
+        completedMilestones: number;
+        isWatched: boolean;
+        reviewers?: string[];
+      };
+
+      const grant = {
+        ...json.grant,
+        budget: BigInt(json.grant.budget),
+        funded: BigInt(json.grant.funded),
+        deadline: BigInt(json.grant.deadline),
+        created_at: BigInt(json.grant.created_at),
+        reviewers: json.reviewers ?? json.grant.reviewers,
+      };
+
+      hookLogger.debug("Grant fetched", { grantId, status: grant.status });
+      setData({
+        grant,
+        milestones: json.milestones ?? [],
+        completedMilestones: json.completedMilestones ?? 0,
+        isWatched: json.isWatched ?? false,
+      });
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
       const error = err instanceof Error ? err : new Error(String(err));

@@ -33,6 +33,8 @@ interface UseGrantBalancesOptions {
   pollInterval?: number;
   /** Set to false to pause fetching. Default: true. */
   enabled?: boolean;
+  /** Called when a balance change is detected during polling */
+  onChange?: (current: GrantBalances, previous: GrantBalances | null) => void;
 }
 
 interface UseGrantBalancesResult {
@@ -57,7 +59,7 @@ interface UseGrantBalancesResult {
 export function useGrantBalances(
   options: UseGrantBalancesOptions
 ): UseGrantBalancesResult {
-  const { contractAddress, pollInterval = 15_000, enabled = true } = options;
+  const { contractAddress, pollInterval = 15_000, enabled = true, onChange: onBalanceChange } = options;
 
   const [balances, setBalances] = useState<GrantBalances | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -105,11 +107,14 @@ export function useGrantBalances(
     void fetch();
 
     // Then subscribe to changes via polling
+    let previousSnapshot: GrantBalances | null = null;
     const stop = listenToBalanceChanges(contractAddress, {
       pollInterval,
-      onChange: (current) => {
+      onChange: (current, previous) => {
         setBalances(current);
         setLastUpdated(current.fetchedAt);
+        previousSnapshot = previous;
+        onBalanceChange?.(current, previous ?? previousSnapshot);
         hookLogger.debug("Balance change detected", { contractAddress });
       },
       onError: (err) => {
@@ -125,7 +130,7 @@ export function useGrantBalances(
       stop();
       abortRef.current?.abort();
     };
-  }, [contractAddress, enabled, pollInterval, fetch]);
+  }, [contractAddress, enabled, pollInterval, fetch, onBalanceChange]);
 
   // ── Derived values ────────────────────────────────────────────────────────
   const balanceList = balances?.balances ?? [];

@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { MilestoneList } from "@/components/milestones";
 import type { Milestone } from "@/types";
+import { ErrorCard, PageHeader } from "@/components/ui";
 
 /**
  * Milestone List Page
@@ -59,6 +60,7 @@ export default function MilestonesPage({ params }: MilestonesPageProps) {
   const [title, setTitle] = useState(`Grant #${id}`);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,24 +94,22 @@ export default function MilestonesPage({ params }: MilestonesPageProps) {
 
     void loadGrant();
     return () => controller.abort();
-  }, [id]);
-
+  }, [id, retryCount]);
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <p className="font-mono text-xs uppercase tracking-[0.32em] text-accent-secondary">
-        Creator Timeline
-      </p>
-      <h1 className="mb-3 mt-3 text-3xl font-bold">Milestones - {title}</h1>
-      <p className="mb-8 max-w-2xl text-sm leading-6 text-text-muted">
-        Upcoming deadlines, overdue work, and submitted proofs are grouped here so creators can see what needs attention first.
-      </p>
+      <PageHeader
+        eyebrow="Creator Timeline"
+        title={`Milestones — ${title}`}
+        description="Upcoming deadlines, overdue work, and submitted proofs are grouped here so creators can see what needs attention first."
+      />
 
       {loading && <div className="shimmer h-40 rounded-[4px]" />}
       {error && (
-        <div className="rounded-[4px] border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
-          {error}
-        </div>
+        <ErrorCard
+          message={error}
+          onRetry={() => setRetryCount((c) => c + 1)}
+        />
       )}
       {!loading && !error && <MilestoneList milestones={milestones} grantId={id} />}
     </div>

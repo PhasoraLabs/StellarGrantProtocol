@@ -129,7 +129,8 @@ function MilestoneDetailContent({
   grantId: string;
   milestoneIdx: number;
 }) {
-  const { data: grant, isLoading: grantLoading, error: grantError, refetch } = useGrant(grantId);
+  const { data: grantDetail, isLoading: grantLoading, error: grantError, refetch } = useGrant(grantId);
+  const grant = grantDetail?.grant ?? null;
   const {
     milestone,
     isLoading: milestoneLoading,

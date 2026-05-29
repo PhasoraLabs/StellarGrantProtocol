@@ -40,19 +40,33 @@ function shortenAddress(addr: string, chars = 6): string {
   return `${addr.slice(0, chars)}…${addr.slice(-chars)}`;
 }
 
-function ReviewerRow({ reviewer, vote }: { reviewer: string; vote: MilestoneVote["vote"] }) {
+function ReviewerRow({
+  reviewer,
+  vote,
+}: {
+  reviewer: string;
+  vote: MilestoneVote["vote"];
+}) {
   const icon =
     vote === "approve" ? (
-      <Badge variant="success" size="sm">✓ Approved</Badge>
+      <Badge variant="success" size="sm">
+        ✓ Approved
+      </Badge>
     ) : vote === "reject" ? (
-      <Badge variant="danger" size="sm">✗ Rejected</Badge>
+      <Badge variant="danger" size="sm">
+        ✗ Rejected
+      </Badge>
     ) : (
-      <Badge variant="muted" size="sm">— Pending</Badge>
+      <Badge variant="muted" size="sm">
+        — Pending
+      </Badge>
     );
 
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-border-color/30 last:border-b-0">
-      <span className="font-mono text-xs text-text-muted">{shortenAddress(reviewer)}</span>
+      <span className="font-mono text-xs text-text-muted">
+        {shortenAddress(reviewer)}
+      </span>
       {icon}
     </div>
   );
@@ -68,15 +82,17 @@ export function VotePanel({
   threshold = 0.67,
 }: VotePanelProps) {
   const { address: walletAddress } = useWalletStore();
-  const { hasVoted, currentVote, votes, voteCount, isSubmitting, vote, error } = useVoting({
-    grantId,
-    milestoneIdx,
-  });
+  const { hasVoted, currentVote, votes, voteCount, isSubmitting, vote, error } =
+    useVoting({
+      grantId,
+      milestoneIdx,
+    });
 
   const isReviewer = !!walletAddress && reviewers.includes(walletAddress);
-  const approvalPct = voteCount.total > 0
-    ? Math.round((voteCount.approved / voteCount.total) * 100)
-    : 0;
+  const approvalPct =
+    voteCount.total > 0
+      ? Math.round((voteCount.approved / voteCount.total) * 100)
+      : 0;
   const quorumReached = voteCount.approved >= quorum;
 
   // Build a lookup: reviewer address → their cast vote (null = not yet voted).
@@ -93,7 +109,9 @@ export function VotePanel({
     <div className="space-y-5">
       {/* ── Tally header ───────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <h3 className="font-orbitron text-sm uppercase tracking-widest">Reviewer Votes</h3>
+        <h3 className="font-orbitron text-sm uppercase tracking-widest">
+          Reviewer Votes
+        </h3>
         <Badge variant={quorumReached ? "success" : "muted"}>
           {voteCount.approved} / {quorum} approved
         </Badge>
@@ -116,11 +134,17 @@ export function VotePanel({
       {reviewers.length > 0 ? (
         <div className="rounded-none border border-border-color/40 px-3 py-1">
           {reviewers.map((r) => (
-            <ReviewerRow key={r} reviewer={r} vote={voteByReviewer.get(r) ?? null} />
+            <ReviewerRow
+              key={r}
+              reviewer={r}
+              vote={voteByReviewer.get(r) ?? null}
+            />
           ))}
         </div>
       ) : (
-        <p className="font-mono text-xs text-text-muted">No reviewers assigned.</p>
+        <p className="font-mono text-xs text-text-muted">
+          No reviewers assigned.
+        </p>
       )}
 
       {/* ── Action buttons (reviewer-only) ──────────────────────────────── */}

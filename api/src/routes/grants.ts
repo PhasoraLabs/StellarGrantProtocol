@@ -296,6 +296,37 @@ export const buildGrantRouter = (
     }
   });
 
+  // ---------------- Top funders for a grant ----------------
+  router.get("/:id/funders", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) {
+        res.status(400).json({ error: "Invalid grant id" });
+        return;
+      }
+
+      const collections = await feeRepo.find({
+        where: { grantId: id },
+        order: { createdAt: "DESC" },
+      });
+
+      const byAddress = new Map<string, bigint>();
+      for (const row of collections) {
+        const prev = byAddress.get(row.funderAddress) ?? 0n;
+        byAddress.set(row.funderAddress, prev + BigInt(row.totalContribution));
+      }
+
+      const funders = [...byAddress.entries()]
+        .map(([address, amount]) => ({ address, amount: amount.toString() }))
+        .sort((a, b) => (BigInt(b.amount) > BigInt(a.amount) ? 1 : BigInt(b.amount) < BigInt(a.amount) ? -1 : 0))
+        .slice(0, 5);
+
+      res.json({ data: funders });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // ---------------- Single Grant ----------------
   router.get("/:id", async (req, res, next) => {
     try {

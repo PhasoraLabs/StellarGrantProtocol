@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { formatTokenAmount, getTokenMetadata, TokenMetadata } from "@/lib/tokens";
 import { GrantStatusBadge } from "./GrantStatusBadge";
@@ -28,6 +28,9 @@ interface GrantCardProps {
   onClick?: () => void;
   showOwner?: boolean;
   compact?: boolean;
+  showWatchlistBadge?: boolean;
+  watchlistGrantId?: string;
+  onRemoveFromWatchlist?: () => void;
 }
 
 /** Stagger variant for parent list containers */
@@ -44,7 +47,15 @@ export const grantCardVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" as const } },
 };
 
-export function GrantCard({ grant, onClick, showOwner = false, compact = false }: GrantCardProps) {
+export function GrantCard({
+  grant,
+  onClick,
+  showOwner = false,
+  compact = false,
+  showWatchlistBadge = false,
+  watchlistGrantId,
+  onRemoveFromWatchlist,
+}: GrantCardProps) {
   const prefersReduced = useReducedMotion();
   const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
@@ -68,16 +79,41 @@ export function GrantCard({ grant, onClick, showOwner = false, compact = false }
     ? new Date(Number(grant.deadline) * 1000)
     : new Date(grant.deadline);
 
+  const handleRemove = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onRemoveFromWatchlist?.();
+  };
+
   return (
     <motion.div
-      className="border rounded-lg p-4 cursor-pointer bg-white"
+      className="group relative border rounded-lg p-4 cursor-pointer bg-white"
       onClick={onClick}
       whileHover={prefersReduced ? {} : { y: -3, boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}
       transition={{ duration: 0.18, ease: "easeOut" }}
       variants={grantCardVariants}
     >
-      <div className="flex justify-between items-start mb-3">
-        <h3 className="text-xl font-semibold flex-1">{grant.title}</h3>
+      {showWatchlistBadge && (
+        <div className="absolute right-3 top-3 z-10">
+          <span
+            className="block font-mono text-sm text-accent-primary transition-opacity group-hover:opacity-0"
+            aria-hidden="true"
+          >
+            ★
+          </span>
+          <button
+            type="button"
+            onClick={handleRemove}
+            className="absolute right-0 top-0 hidden max-w-[9rem] rounded-none border border-accent-primary/40 bg-bg-primary/95 px-2 py-1 text-left font-mono text-[10px] uppercase tracking-wider text-accent-primary group-hover:block"
+            aria-label={`Remove grant ${watchlistGrantId ?? grant.id} from watchlist`}
+          >
+            Remove from watchlist
+          </button>
+        </div>
+      )}
+
+      <div className="flex justify-between items-start mb-3 gap-2">
+        <h3 className="text-xl font-semibold flex-1 pr-6">{grant.title}</h3>
         <GrantStatusBadge status={grant.status} />
       </div>
 

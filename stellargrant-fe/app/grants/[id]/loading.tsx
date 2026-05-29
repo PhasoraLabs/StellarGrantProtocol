@@ -1,53 +1,34 @@
 /**
- * Grant Detail — Loading Skeleton
- *
- * Next.js App Router automatic Suspense boundary.
- * Mirrors the real GrantDetailPage layout:
- *   • Header (title + status badge)
- *   • Funding panel (progress bar + narrow info column)
- *   • Milestone timeline (3 stacked rows)
+ * Grant Detail — Loading Skeleton (two-column layout)
  */
 
 export default function GrantDetailLoading() {
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="mb-6 flex items-center justify-between gap-4">
-        {/* Title shimmer */}
-        <div className="shimmer h-9 w-72 rounded-none" />
-        {/* Status badge shimmer */}
-        <div className="shimmer h-6 w-24 rounded-none" />
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      <div className="shimmer h-4 w-48 rounded-none mb-4" />
+      <div className="flex flex-wrap gap-4 mb-6">
+        <div className="shimmer h-10 flex-1 min-w-[200px] rounded-none" />
+        <div className="shimmer h-8 w-24 rounded-none" />
       </div>
-      {/* Description shimmer */}
-      <div className="shimmer h-4 w-96 rounded-none mb-8" />
-
-      {/* ── Funding panel ───────────────────────────────────────────────── */}
-      <section className="mb-8 flex gap-6">
-        {/* Main funding block */}
-        <div className="flex-1 space-y-4">
-          <div className="shimmer h-6 w-44 rounded-none" />
-          {/* Progress bar */}
-          <div className="shimmer h-3 w-full rounded-none" />
-          <div className="grid grid-cols-2 gap-4">
-            <div className="shimmer h-4 w-28 rounded-none" />
-            <div className="shimmer h-4 w-28 rounded-none" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="shimmer h-4 w-36 rounded-none" />
-            <div className="shimmer h-4 w-24 rounded-none" />
-          </div>
-        </div>
-        {/* Narrow right-hand info panel */}
-        <div className="shimmer h-44 w-44 rounded-none shrink-0" />
-      </section>
-
-      {/* ── Milestone timeline ─────────────────────────────────────────── */}
-      <section className="space-y-4">
-        <div className="shimmer h-6 w-32 rounded-none" />
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="shimmer h-20 w-full rounded-none" />
+      <div className="shimmer h-4 w-64 rounded-none mb-8" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="shimmer h-16 rounded-none" />
         ))}
-      </section>
+      </div>
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex-1 space-y-6 order-2 lg:order-1">
+          <div className="shimmer h-40 rounded-none" />
+          <div className="shimmer h-6 w-32 rounded-none" />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="shimmer h-20 rounded-none" />
+          ))}
+        </div>
+        <div className="w-full lg:w-80 space-y-4 shrink-0 order-1 lg:order-2">
+          <div className="shimmer h-48 rounded-none" />
+          <div className="shimmer h-32 rounded-none" />
+        </div>
+      </div>
     </div>
   );
 }
