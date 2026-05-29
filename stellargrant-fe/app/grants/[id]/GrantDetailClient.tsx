@@ -130,7 +130,7 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
         </h1>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <GrantStatusBadge status={grant.status} />
-          <WatchButton grantId={grant.id} initialWatched={data.isWatched} />
+          <WatchButton grantId={grant.id} />
           <ShareButton
             grantId={grant.id}
             grantTitle={grant.title}

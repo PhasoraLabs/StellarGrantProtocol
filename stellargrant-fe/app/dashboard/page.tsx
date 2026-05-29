@@ -5,10 +5,11 @@
  *
  * Wallet-guarded overview for the connected user. Displays:
  *   - WalletInfo card (address, XLM balance, reputation, network)
- *   - Three tabs controlled by ?tab= URL param:
+ *   - Four tabs controlled by ?tab= URL param:
  *       my-grants     — grants the user created
  *       funding       — grants the user has funded
  *       reviewing     — grants the user is reviewing
+ *       watching      — bookmarked grants (local watchlist)
  */
 
 import { useEffect, useState, useCallback, Suspense } from "react";
@@ -19,22 +20,29 @@ import { useWalletStore } from "@/lib/store/walletStore";
 import { WalletInfo } from "@/components/wallet/WalletInfo";
 import { WalletConnect } from "@/components/wallet/WalletConnect";
 import { GrantCard, grantListVariants, grantCardVariants } from "@/components/grants/GrantCard";
+import { WatchedGrantsPanel } from "@/components/grants/WatchedGrantsPanel";
 import type { Grant } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = "my-grants" | "funding" | "reviewing";
+type Tab = "my-grants" | "funding" | "reviewing" | "watching";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "my-grants", label: "My Grants" },
   { id: "funding", label: "Grants I Fund" },
   { id: "reviewing", label: "Grants I Review" },
+  { id: "watching", label: "Watching" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isValidTab(value: string | null): value is Tab {
-  return value === "my-grants" || value === "funding" || value === "reviewing";
+  return (
+    value === "my-grants" ||
+    value === "funding" ||
+    value === "reviewing" ||
+    value === "watching"
+  );
 }
 
 // ── Dashboard inner (needs useSearchParams so wrapped in Suspense) ─────────────
@@ -109,7 +117,7 @@ function DashboardContent() {
   }, []);
 
   useEffect(() => {
-    if (!address) return;
+    if (!address || activeTab === "watching") return;
     void fetchGrants(activeTab, address);
   }, [activeTab, address, fetchGrants]);
 
@@ -119,21 +127,29 @@ function DashboardContent() {
     router.replace(`/dashboard?${params.toString()}`, { scroll: false });
   }
 
-  // ── Not connected ──────────────────────────────────────────────────────────
-  if (!address) {
+  // ── Not connected (wallet tabs only) ───────────────────────────────────────
+  if (!address && activeTab !== "watching") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-4">
         <h1 className="text-2xl font-bold">Connect your wallet</h1>
         <p className="text-text-muted text-sm max-w-xs text-center">
           Your dashboard is personalised. Connect a wallet to view your grants, funding activity,
-          and review assignments.
+          and review assignments — or open the Watching tab for saved grants.
         </p>
-        <WalletConnect />
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/dashboard?tab=watching"
+            className="font-mono text-xs uppercase tracking-wider text-accent-secondary hover:underline"
+          >
+            View watchlist →
+          </Link>
+          <WalletConnect />
+        </div>
       </div>
     );
   }
 
-  // ── Connected ──────────────────────────────────────────────────────────────
+  // ── Connected / watchlist ──────────────────────────────────────────────────
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl space-y-6">
       {/* Header */}
@@ -145,12 +161,14 @@ function DashboardContent() {
       </div>
 
       {/* Wallet info card */}
-      <WalletInfo
-        address={address}
-        network={network}
-        balance={balance}
-        reputation={reputation}
-      />
+      {address && (
+        <WalletInfo
+          address={address}
+          network={network}
+          balance={balance}
+          reputation={reputation}
+        />
+      )}
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-border-color" role="tablist">
@@ -184,7 +202,16 @@ function DashboardContent() {
           transition={{ duration: prefersReduced ? 0.1 : 0.2, ease: "easeOut" as const }}
         >
           <AnimatePresence mode="wait">
-            {loading ? (
+            {activeTab === "watching" ? (
+              <motion.div
+                key="watching"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <WatchedGrantsPanel />
+              </motion.div>
+            ) : loading ? (
               <motion.div
                 key="loading"
                 initial={{ opacity: 0 }}

@@ -1,60 +1,56 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Star } from "lucide-react";
-import { API_URL } from "@/lib/constants";
-import { useWalletStore } from "@/lib/store/walletStore";
+import { motion, useReducedMotion } from "framer-motion";
+import type { ToastEventDetail } from "@/components/ui/NotificationToast";
+import { useWatchlist } from "@/hooks/useWatchlist";
 
 interface WatchButtonProps {
   grantId: string;
-  initialWatched?: boolean;
 }
 
-export function WatchButton({ grantId, initialWatched = false }: WatchButtonProps) {
-  const { address } = useWalletStore();
-  const [watched, setWatched] = useState(initialWatched);
-  const [loading, setLoading] = useState(false);
+export function WatchButton({ grantId }: WatchButtonProps) {
+  const { isWatched, toggle } = useWatchlist();
+  const watched = isWatched(grantId);
+  const prefersReduced = useReducedMotion();
+  const [pulseKey, setPulseKey] = useState(0);
 
-  const toggle = useCallback(async () => {
-    if (!address || loading) return;
-    setLoading(true);
-    try {
-      const method = watched ? "DELETE" : "POST";
-      const res = await fetch(`${API_URL}/grants/${grantId}/watch`, {
-        method,
-        headers: { "Content-Type": "application/json", "X-Wallet-Address": address },
-        body: JSON.stringify({
-          address,
-          signature: "dev",
-          nonce: `watch-${Date.now()}`,
-          timestamp: Math.floor(Date.now() / 1000),
+  const handleClick = useCallback(() => {
+    const wasWatched = watched;
+    toggle(grantId);
+    setPulseKey((key) => key + 1);
+
+    if (!wasWatched) {
+      window.dispatchEvent(
+        new CustomEvent<ToastEventDetail>("stellar:toast", {
+          detail: {
+            type: "watchlist_added",
+            title: "Grant added to watchlist",
+            message: "You can find it under Dashboard → Watching.",
+          },
         }),
-      });
-      if (res.ok) setWatched(!watched);
-    } catch {
-      /* silent */
-    } finally {
-      setLoading(false);
+      );
     }
-  }, [address, grantId, watched, loading]);
-
-  if (!address) return null;
+  }, [grantId, toggle, watched]);
 
   return (
-    <button
+    <motion.button
+      key={pulseKey}
       type="button"
-      onClick={() => void toggle()}
-      disabled={loading}
-      title={watched ? "Stop watching" : "Watch this grant"}
+      onClick={handleClick}
+      title={watched ? "Stop watching this grant" : "Watch this grant"}
+      initial={prefersReduced ? false : { scale: 1 }}
+      animate={prefersReduced ? {} : { scale: [1, 1.06, 1] }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
       className={[
-        "inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider px-2 py-1 border transition-colors",
+        "inline-flex items-center gap-1.5 rounded-none border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-colors",
         watched
-          ? "border-accent-primary text-accent-primary bg-accent-primary/10"
-          : "border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary/50",
+          ? "border-accent-primary/40 bg-accent-primary/20 text-accent-primary"
+          : "border-border-color bg-transparent text-text-muted hover:border-accent-primary/50 hover:text-text-primary",
       ].join(" ")}
     >
-      <Star size={14} className={watched ? "fill-accent-primary" : ""} />
-      {watched ? "Watching" : "Watch"}
-    </button>
+      <span aria-hidden="true">{watched ? "★" : "☆"}</span>
+      {watched ? "Watching" : "Watch Grant"}
+    </motion.button>
   );
 }
