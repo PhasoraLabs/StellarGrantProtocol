@@ -1,8 +1,0 @@
-[config]
-exclude-files = ["*test.rs", "*tests.rs", "tests/*"]
-ignore-tests = true
-lib = true
-workspace = true
-out = ["Xml"]
-engine = "llvm"
-timeout = "120s"
