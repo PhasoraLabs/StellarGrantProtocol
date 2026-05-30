@@ -26,7 +26,7 @@ export const buildAdminMiddleware = (signatureService: SignatureService) => {
     }
 
     const action = `${req.method}:${req.originalUrl.split("?")[0]}`;
-    const isValid = signatureService.verifyAdminAction({
+    const isValid = signatureService.verifyAdmin({
       address,
       nonce,
       timestamp,

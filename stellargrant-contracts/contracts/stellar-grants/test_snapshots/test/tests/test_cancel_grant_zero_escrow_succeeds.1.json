@@ -66,12 +66,6 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "cancellation_requested_at"
-                    },
-                    "val": "void"
-                  },
-                  {
-                    "key": {
                       "symbol": "description"
                     },
                     "val": {
@@ -80,10 +74,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "escrow_balances"
+                      "symbol": "escrow_balance"
                     },
                     "val": {
-                      "map": []
+                      "i128": "0"
                     }
                   },
                   {
@@ -96,34 +90,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "hard_cap"
-                    },
-                    "val": {
-                      "i128": "0"
-                    }
-                  },
-                  {
-                    "key": {
                       "symbol": "id"
                     },
                     "val": {
                       "u64": "12"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "is_open_bounty"
-                    },
-                    "val": {
-                      "bool": false
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "last_heartbeat"
-                    },
-                    "val": {
-                      "u64": "0"
                     }
                   },
                   {
@@ -136,10 +106,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "min_funding"
+                      "symbol": "milestones_paid_out"
                     },
                     "val": {
-                      "i128": "0"
+                      "u32": 0
                     }
                   },
                   {
@@ -148,14 +118,6 @@
                     },
                     "val": {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "packed_config"
-                    },
-                    "val": {
-                      "u128": "2"
                     }
                   },
                   {
@@ -176,10 +138,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "tags"
+                      "symbol": "status"
                     },
                     "val": {
-                      "vec": []
+                      "u32": 2
                     }
                   },
                   {
@@ -200,7 +162,7 @@
                   },
                   {
                     "key": {
-                      "symbol": "token_address"
+                      "symbol": "token"
                     },
                     "val": {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -213,64 +175,14 @@
                     "val": {
                       "i128": "1000"
                     }
-                  }
-                ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 1000000
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "GrantStatusIndex"
                   },
                   {
-                    "u32": 1
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "vec": []
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 1000000
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "GrantStatusIndex"
-                  },
-                  {
-                    "u32": 2
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "vec": [
-                  {
-                    "u64": "12"
+                    "key": {
+                      "symbol": "total_milestones"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
                   }
                 ]
               }
@@ -278,34 +190,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 1000000
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "GrantStatusIndex"
-                  },
-                  {
-                    "u32": 4
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "vec": []
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 1000000
+        "live_until": 4095
       },
       {
         "entry": {

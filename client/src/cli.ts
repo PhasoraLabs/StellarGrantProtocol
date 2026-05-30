@@ -122,11 +122,11 @@ async function runFundGrant(
   const signer = new SecretKeySigner(secret);
   const sdk = new StellarGrantsSDK({ ...cfg, signer });
 
-  const tx = await sdk.grantFund({
+  const tx = (await sdk.grantFund({
     grantId: Number(grantId),
     token: options.token,
     amount: BigInt(options.amount),
-  });
+  })) as any;
 
   printOutput(
     {
@@ -135,7 +135,7 @@ async function runFundGrant(
       token: options.token,
       amount: options.amount,
       status: tx.status,
-      hash: (tx as any).hash,
+      hash: tx.hash,
     },
     options.format,
   );

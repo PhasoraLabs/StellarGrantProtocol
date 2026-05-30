@@ -1,11 +1,4 @@
-import { ContributorScore, SorobanContractClient, SorobanContractEvent, SorobanGrant } from "./types";
-
-const toIsoDeadline = (daysFromNow: number) => {
-  const date = new Date();
-  date.setUTCHours(12, 0, 0, 0);
-  date.setUTCDate(date.getUTCDate() + daysFromNow);
-  return date.toISOString();
-};
+import { SorobanContractClient, SorobanGrant, SorobanContractEvent } from "./types";
 
 const mockGrants: SorobanGrant[] = [
   {
@@ -14,23 +7,31 @@ const mockGrants: SorobanGrant[] = [
     status: "active",
     recipient: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD",
     totalAmount: "250000000",
-    tags: "open-source,web3,tooling",
-    localizedMetadata: {
-      en: { title: "Open Source Grants Q2", description: "Supporting the best open-source projects." },
-      es: { title: "Subvenciones de Código Abierto Q2", description: "Apoyando los mejores proyectos de código abierto." },
-    },
+    owner: "GOWNEREXAMPLEADDRESS0000000000000000000000000000000000",
     milestones: [
       {
         idx: 0,
-        title: "Architecture review",
-        description: "Finalize the implementation plan and publish the design brief.",
-        deadline: toIsoDeadline(7),
+        title: "Phase 1: Planning",
+        description: "Establish project scope and requirements.",
+        deadline: "2026-06-06",
       },
       {
         idx: 1,
-        title: "Prototype delivery",
-        description: "Ship the first contributor-ready prototype for evaluation.",
-        deadline: toIsoDeadline(-2),
+        title: "Phase 2: Development",
+        description: "Build core features.",
+        deadline: "2026-06-02",
+      },
+      {
+        idx: 2,
+        title: "Phase 3: Testing",
+        description: "QA and testing phase.",
+        deadline: "2026-05-31",
+      },
+      {
+        idx: 3,
+        title: "Phase 4: Deployment",
+        description: "Deploy to production.",
+        deadline: "2026-05-30",
       },
     ],
   },
@@ -40,50 +41,66 @@ const mockGrants: SorobanGrant[] = [
     status: "review",
     recipient: "GCBQ6JQXQTVV7T7OUVPR4Q6PGACCUAKS6S2YDG3YQYQYRR2NJB5A6NAA",
     totalAmount: "100000000",
-    tags: "climate,data,open-source",
-    localizedMetadata: {
-      en: { title: "Climate Data Tools", description: "Tools for measuring climate impact." },
-    },
+    owner: "GOWNEREXAMPLEADDRESS1111111111111111111111111111111111",
     milestones: [
       {
         idx: 0,
-        title: "Dataset ingestion",
-        description: "Import the first climate dataset and validate refresh jobs.",
-        deadline: toIsoDeadline(3),
+        title: "Proof-of-concept milestone",
+        description: "Build and validate initial climate data tooling.",
+        deadline: "2026-06-15",
       },
     ],
   },
   {
     id: 3,
-    title: "DeFi Infrastructure Fund",
-    status: "active",
-    recipient: "GDZAPKZFP3PVPRMDG6WQVIMZLQ5J3FZGQ27BFLDL3YQSM6L7LS6AXEX",
-    totalAmount: "500000000",
-    tags: "defi,web3,infrastructure",
+    title: "Data Privacy Research",
+    status: "completed",
+    recipient: "GDATAPRIVACYRECPNT0000000000000000000000000000000000000",
+    totalAmount: "150000000",
+    owner: "GOWNEREXAMPLEADDRESS2222222222222222222222222222222222",
     milestones: [
       {
         idx: 0,
-        title: "Validator integration",
-        description: "Connect the new validator pipeline and complete smoke tests.",
-        deadline: toIsoDeadline(1),
+        title: "Research milestone",
+        description: "Collect and analyze privacy-preserving datasets.",
+        deadline: "2026-06-20",
       },
     ],
   },
   {
     id: 4,
-    title: "Community Education Initiative",
-    status: "pending",
-    recipient: "GAV3TIZZ7DRCCMUVKZRQXELRTJFMXQT4XJFNV5BYMNOFXWXZA5MGDVEV",
-    totalAmount: "75000000",
-    tags: "education,community",
+    title: "Educational Outreach",
+    status: "active",
+    recipient: "GEDUCATIONOUTREACHRECIPIENT0000000000000000000000000",
+    totalAmount: "50000000",
+    owner: "GOWNEREXAMPLEADDRESS3333333333333333333333333333333333333",
     milestones: [
       {
         idx: 0,
-        title: "Curriculum planning",
-        description: "Draft the first training curriculum and secure mentors.",
-        deadline: toIsoDeadline(14),
+        title: "Outreach milestone",
+        description: "Launch community workshops and outreach sessions.",
+        deadline: "2026-07-10",
       },
     ],
+  },
+];
+
+const mockEvents: SorobanContractEvent[] = [
+  {
+    id: "evt-1",
+    grantId: 1,
+    type: "grant_created",
+    actorAddress: "GDUMMYACTORADDRESS0000000000000000000000000000000000",
+    ledger: 900,
+    data: { details: "Grant created on chain" },
+  },
+  {
+    id: "evt-2",
+    grantId: 2,
+    type: "grant_funded",
+    actorAddress: "GDUMMYACTORADDRESS1111111111111111111111111111111111",
+    ledger: 901,
+    data: { amount: "1000" },
   },
 ];
 
@@ -96,37 +113,11 @@ export class MockSorobanContractClient implements SorobanContractClient {
     return mockGrants.find((grant) => grant.id === id) ?? null;
   }
 
-  async fetchContributorScore(address: string): Promise<ContributorScore | null> {
-    // Basic mock logic: return a consistent score for known mock addresses
-    const knownAddresses = mockGrants.map((g) => g.recipient);
-    if (!knownAddresses.includes(address)) return null;
-
-    return {
-      address,
-      reputation: 100, // Dummy fixed reputation for mocks
-      totalEarned: "1000000000",
-    };
+  async getLatestLedger(): Promise<number> {
+    return 1000;
   }
 
   async fetchEvents(fromLedger: number, toLedger: number): Promise<SorobanContractEvent[]> {
-    // Return synthetic events so the reconciliation task has something to process in dev/test.
-    const events: SorobanContractEvent[] = [];
-    for (const grant of mockGrants) {
-      const ledger = fromLedger + (grant.id % Math.max(1, toLedger - fromLedger + 1));
-      events.push({
-        ledger,
-        id: `${ledger}-mock-${grant.id}-0`,
-        type: "grant_created",
-        grantId: grant.id,
-        actorAddress: grant.recipient,
-        data: { title: grant.title, totalAmount: grant.totalAmount, status: grant.status },
-      });
-    }
-    return events;
-  }
-
-  async getLatestLedger(): Promise<number> {
-    // Simulate a slowly advancing ledger (5-second Stellar close time).
-    return Math.floor(Date.now() / 5000);
+    return mockEvents.filter((event) => event.ledger >= fromLedger && event.ledger <= toLedger);
   }
 }

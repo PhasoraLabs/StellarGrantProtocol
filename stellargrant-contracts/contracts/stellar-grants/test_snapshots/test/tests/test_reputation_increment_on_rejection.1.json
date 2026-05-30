@@ -98,12 +98,6 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "cancellation_requested_at"
-                    },
-                    "val": "void"
-                  },
-                  {
-                    "key": {
                       "symbol": "description"
                     },
                     "val": {
@@ -112,19 +106,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "escrow_balances"
+                      "symbol": "escrow_balance"
                     },
                     "val": {
-                      "map": [
-                        {
-                          "key": {
-                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                          },
-                          "val": {
-                            "i128": "1000"
-                          }
-                        }
-                      ]
+                      "i128": "1000"
                     }
                   },
                   {
@@ -137,34 +122,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "hard_cap"
-                    },
-                    "val": {
-                      "i128": "0"
-                    }
-                  },
-                  {
-                    "key": {
                       "symbol": "id"
                     },
                     "val": {
                       "u64": "1"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "is_open_bounty"
-                    },
-                    "val": {
-                      "bool": false
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "last_heartbeat"
-                    },
-                    "val": {
-                      "u64": "0"
                     }
                   },
                   {
@@ -177,10 +138,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "min_funding"
+                      "symbol": "milestones_paid_out"
                     },
                     "val": {
-                      "i128": "0"
+                      "u32": 0
                     }
                   },
                   {
@@ -189,14 +150,6 @@
                     },
                     "val": {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "packed_config"
-                    },
-                    "val": {
-                      "u128": "18446744082299486209"
                     }
                   },
                   {
@@ -222,10 +175,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "tags"
+                      "symbol": "status"
                     },
                     "val": {
-                      "vec": []
+                      "u32": 1
                     }
                   },
                   {
@@ -246,7 +199,7 @@
                   },
                   {
                     "key": {
-                      "symbol": "token_address"
+                      "symbol": "token"
                     },
                     "val": {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -259,6 +212,14 @@
                     "val": {
                       "i128": "1000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_milestones"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
                   }
                 ]
               }
@@ -266,7 +227,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 1000000
+        "live_until": 4095
       },
       {
         "entry": {
@@ -293,14 +254,6 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "additional_funds"
-                    },
-                    "val": {
-                      "map": []
-                    }
-                  },
-                  {
-                    "key": {
                       "symbol": "amount"
                     },
                     "val": {
@@ -309,24 +262,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "bounty_winner"
-                    },
-                    "val": "void"
-                  },
-                  {
-                    "key": {
-                      "symbol": "community_comments"
+                      "symbol": "approvals"
                     },
                     "val": {
-                      "map": []
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "deadline_timestamp"
-                    },
-                    "val": {
-                      "u64": "0"
+                      "u32": 0
                     }
                   },
                   {
@@ -339,18 +278,10 @@
                   },
                   {
                     "key": {
-                      "symbol": "packed_stats"
+                      "symbol": "idx"
                     },
                     "val": {
-                      "u128": "36893488147419103232"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "payout_token"
-                    },
-                    "val": {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      "u32": 0
                     }
                   },
                   {
@@ -388,6 +319,14 @@
                   },
                   {
                     "key": {
+                      "symbol": "rejections"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "state"
                     },
                     "val": {
@@ -408,14 +347,6 @@
                     },
                     "val": {
                       "u64": "0"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "top_up_contributions"
-                    },
-                    "val": {
-                      "vec": []
                     }
                   },
                   {
@@ -449,7 +380,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 1000000
+        "live_until": 4095
       },
       {
         "entry": {

@@ -1,4 +1,3 @@
-import { buildMyDonationsRouter } from "./routes/my-donations";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -6,336 +5,126 @@ import morgan from "morgan";
 import { DataSource } from "typeorm";
 import { Grant } from "./entities/Grant";
 import { MilestoneProof } from "./entities/MilestoneProof";
-import { User } from "./entities/User";
-import { buildUserRouter } from "./routes/users";
-import { GrantReviewer } from "./entities/GrantReviewer";
-import { buildGrantReviewerRouter } from "./routes/grant-reviewers";
-import { MilestoneApproval } from "./entities/MilestoneApproval";
-import { buildMilestoneApprovalRouter } from "./routes/milestone-approvals";
- import { buildMilestoneApprovalNotifyRouter } from "./routes/milestone-approvals-notify";
+import { Contributor } from "./entities/Contributor";
+import { AuditLog } from "./entities/AuditLog";
+import { Community } from "./entities/Community";
 import { Activity } from "./entities/Activity";
 import { buildGrantRouter } from "./routes/grants";
 import { buildMilestoneProofRouter } from "./routes/milestone-proof";
-import { buildLeaderboardRouter } from "./routes/leaderboard";
-import { buildAdminRouter } from "./routes/admin";
-import { buildActivityRouter } from "./routes/activity";
-import { buildProofsRouter } from "./routes/proofs";
-import { buildNotificationsRouter } from "./routes/notifications";
-import { buildAnalyticsRouter } from "./routes/analytics";
-import { buildStatsRouter } from "./routes/stats";
-import { GrantSyncService } from "./services/grant-sync-service";
-import { ResponseCacheService } from "./services/response-cache";
 import { buildSearchRouter } from "./routes/search";
-import { buildWatchlistRouter } from "./routes/watchlist";
-import { buildDashboardRouter } from "./routes/dashboard";
-import { UserWatchlist } from "./entities/UserWatchlist";
+import { buildLeaderboardRouter } from "./routes/leaderboard";
 import { buildProfilesRouter } from "./routes/profiles";
-import { ReconciliationService } from "./services/reconciliation-service";
-import { LeaderboardService } from "./services/leaderboard-service";
-import { SignatureService } from "./services/signature-service";
-import { IpfsService } from "./services/ipfs-service";
-import { Contributor } from "./entities/Contributor";
-import { AuditLog } from "./entities/AuditLog";
-import { GrantView } from "./entities/GrantView";
-import { PlatformConfig } from "./entities/PlatformConfig";
-import { FeeCollection } from "./entities/FeeCollection";
-import { Milestone } from "./entities/Milestone";
-import { Community } from "./entities/Community";
-import { MilestoneComment } from "./entities/MilestoneComment";
-import { ConfigService } from "./services/config-service";
-import { FeeService } from "./services/fee-service";
-import { buildAdminMiddleware } from "./middlewares/admin-middleware";
-import { SorobanContractClient } from "./soroban/types";
-import { createRateLimiter } from "./middlewares/rate-limiter";
-import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
-import { metricsMiddleware } from "./middlewares/metrics-middleware";
-import { env } from "./config/env";
-import { requestLogger } from "./config/logger";
-import { v4 as uuidv4 } from "uuid";
-import { metricsService } from "./services/metrics-service";
+import { buildMyDonationsRouter } from "./routes/my-donations";
 import { buildCommunitiesRouter } from "./routes/communities";
-import { buildMilestoneCommentsRouter } from "./routes/milestone-comments";
-import { buildHealthRouter } from "./routes/health";
-import swaggerUi from "swagger-ui-express";
-import swaggerJsdoc from "swagger-jsdoc";
+import { buildNotificationsRouter } from "./routes/notifications";
+import { buildAdminRouter } from "./routes/admin";
+import { buildAdminMiddleware } from "./middlewares/admin-middleware";
+import { GrantSyncService } from "./services/grant-sync-service";
+import { SignatureService } from "./services/signature-service";
+import { LeaderboardService } from "./services/leaderboard-service";
+import { ResponseCacheService } from "./services/response-cache";
+import { RbacService } from "./services/rbac-service";
+import { metricsService } from "./services/metrics-service";
+import { env } from "./config/env";
+import { ReconciliationService } from "./services/reconciliation-service";
+import { SorobanContractClient } from "./soroban/types";
+import { AppError } from "./utils/errors";
+
+import { User } from "./entities/User";
 import { Role } from "./entities/Role";
 import { UserRole } from "./entities/UserRole";
-import { RbacService } from "./services/rbac-service";
-import { buildRolesRouter } from "./routes/roles";
-import { WebhookSubscription } from "./entities/WebhookSubscription";
-import { WebhookDeliveryLog } from "./entities/WebhookDeliveryLog";
+import { GrantReviewer } from "./entities/GrantReviewer";
+import { MilestoneApproval } from "./entities/MilestoneApproval";
+import { Milestone } from "./entities/Milestone";
+import { MilestoneComment } from "./entities/MilestoneComment";
 import { WebhookDispatcher } from "./services/webhook-dispatcher";
-import { buildWebhooksRouter } from "./routes/webhooks";
+import { buildUserRouter } from "./routes/users";
+import { buildGrantReviewerRouter } from "./routes/grant-reviewers";
+import { buildMilestoneApprovalNotifyRouter } from "./routes/milestone-approvals-notify";
+import { buildMilestoneCommentsRouter } from "./routes/milestone-comments";
 
 export const createApp = (dataSource: DataSource, sorobanClient: SorobanContractClient) => {
   const app = express();
-
-  const isMetricsAuthorized = (req: express.Request) => {
-    const ip = req.ip || req.socket.remoteAddress || "";
-    const ipAllowed = env.metricsAllowedIps.includes(ip);
-
-    if (ipAllowed) return true;
-
-    if (env.metricsBasicAuthUser && env.metricsBasicAuthPassword) {
-      const auth = req.header("authorization");
-      if (!auth?.startsWith("Basic ")) return false;
-      const decoded = Buffer.from(auth.substring(6), "base64").toString("utf8");
-      const [user, pass] = decoded.split(":");
-      return user === env.metricsBasicAuthUser && pass === env.metricsBasicAuthPassword;
-    }
-
-    return false;
-  };
-
-  // Security headers with Helmet
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-      },
-    },
-    crossOriginEmbedderPolicy: false,
-  }));
-
-  // CORS configuration
-  app.use(cors({
-    origin: env.corsOrigins,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-user-address", "x-admin-address", "x-admin-signature", "x-admin-nonce", "x-admin-timestamp"],
-  }));
-
-  // Request ID generation
-  app.use((req, _res, next) => {
-    req.headers["x-request-id"] = req.headers["x-request-id"] || uuidv4();
-    next();
-  });
-
-  // HTTP request logging with Morgan and Winston
-  const httpLogger = requestLogger();
-  app.use(morgan("combined", {
-    stream: {
-      write: (message: string) => {
-        httpLogger.info(message.trim());
-      },
-    },
-  }));
-
-  app.use(metricsMiddleware);
-
+  app.use(helmet());
+  app.use(cors());
+  app.use(morgan("tiny"));
   app.use(express.json());
 
-  const rateLimiter = createRateLimiter(dataSource);
-
-  const activityRepo = dataSource.getRepository(Activity);
   const grantRepo = dataSource.getRepository(Grant);
-  const milestoneRepo = dataSource.getRepository(Milestone);
   const proofRepo = dataSource.getRepository(MilestoneProof);
-  const userRepo = dataSource.getRepository(User);
-  const grantReviewerRepo = dataSource.getRepository(GrantReviewer);
-  const milestoneApprovalRepo = dataSource.getRepository(MilestoneApproval);
-  const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
-  const reconciliationService = new ReconciliationService(dataSource, sorobanClient, grantSyncService);
-  const signatureService = new SignatureService();
-  const leaderboardService = new LeaderboardService(dataSource);
-  const responseCache = new ResponseCacheService(env.redisUrl);
-
   const contributorRepo = dataSource.getRepository(Contributor);
   const auditLogRepo = dataSource.getRepository(AuditLog);
-  const grantViewRepo = dataSource.getRepository(GrantView);
-  const ipfsService = new IpfsService();
-  const configRepo = dataSource.getRepository(PlatformConfig);
-  const feeRepo = dataSource.getRepository(FeeCollection);
   const communityRepo = dataSource.getRepository(Community);
-  const milestoneCommentRepo = dataSource.getRepository(MilestoneComment);
-  const configService = new ConfigService(configRepo);
-  const feeService = new FeeService(feeRepo, configRepo);
-  const adminMiddleware = buildAdminMiddleware(signatureService);
-
-  // RBAC Setup
+  const activityRepo = dataSource.getRepository(Activity);
+  const userRepo = dataSource.getRepository(User);
   const roleRepo = dataSource.getRepository(Role);
   const userRoleRepo = dataSource.getRepository(UserRole);
+  const reviewerRepo = dataSource.getRepository(GrantReviewer);
+  const approvalRepo = dataSource.getRepository(MilestoneApproval);
+  const milestoneRepo = dataSource.getRepository(Milestone);
+  const commentsRepo = dataSource.getRepository(MilestoneComment);
+
+  const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
+  const signatureService = new SignatureService();
+  const leaderboardService = new LeaderboardService(dataSource);
+  const responseCacheService = new ResponseCacheService();
   const rbacService = new RbacService(userRepo, roleRepo, userRoleRepo);
-
-  // Initialize default roles on startup
-  rbacService.initializeDefaultRoles().catch((err) => {
-    console.error("Failed to initialize default roles:", err);
-  });
-
-  // /health/liveness and /health/readiness probes
-  app.use("/health", buildHealthRouter(dataSource, sorobanClient));
-
-  // Webhook dispatcher
+  const adminMiddleware = buildAdminMiddleware(signatureService);
+  const reconciliationService = new ReconciliationService(dataSource, sorobanClient, grantSyncService);
   const webhookDispatcher = new WebhookDispatcher(dataSource);
-  const webhookSubscriptionRepo = dataSource.getRepository(WebhookSubscription);
 
-  // Inject webhook dispatcher into services that need it
-  (grantSyncService as any).webhookDispatcher = webhookDispatcher;
-
-  // Health check endpoint (no versioning)
-  app.get("/health", async (_req, res) => {
-    const health = {
-      ok: true,
-      version: "v1",
-      services: {
-        database: "ok" as "ok" | "error",
-        soroban: "ok" as "ok" | "error",
-      },
-    };
-
+  app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService));
+  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, grantRepo, userRepo));
+  app.use("/search", buildSearchRouter(dataSource));
+  app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
+  app.use("/profiles", buildProfilesRouter(contributorRepo, grantRepo));
+  app.use("/my-donations", buildMyDonationsRouter(dataSource));
+  app.use("/communities", buildCommunitiesRouter(communityRepo, grantRepo, activityRepo, rbacService, webhookDispatcher));
+  app.use("/notifications", buildNotificationsRouter(contributorRepo));
+  app.use("/users", buildUserRouter(userRepo));
+  app.use("/grant_reviewers", buildGrantReviewerRouter(reviewerRepo));
+  app.use("/milestone_approvals_notify", buildMilestoneApprovalNotifyRouter(approvalRepo, grantRepo, userRepo, webhookDispatcher));
+  app.use("/", buildMilestoneCommentsRouter(milestoneRepo, commentsRepo, reviewerRepo));
+  app.get("/metrics", async (req, res, next) => {
     try {
-      // Check database connectivity
-      await dataSource.query("SELECT 1");
-    } catch (error) {
-      health.services.database = "error";
-      health.ok = false;
-    }
+      if (env.metricsAllowedIps.length > 0 && !env.metricsAllowedIps.includes(req.ip)) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
 
-    try {
-      // Check Soroban RPC status
-      await sorobanClient.getLatestLedger();
-    } catch (error) {
-      health.services.soroban = "error";
-      health.ok = false;
-    }
+      const auth = String(req.header("authorization") ?? "");
+      if (!auth.startsWith("Basic ")) {
+        res.set("WWW-Authenticate", "Basic realm=\"metrics\"");
+        res.status(401).json({ error: "Missing authorization" });
+        return;
+      }
 
-    const statusCode = health.ok ? 200 : 503;
-    res.status(statusCode).json(health);
+      const decoded = Buffer.from(auth.replace(/^Basic\s+/i, ""), "base64").toString("utf8");
+      const [user, pass] = decoded.split(":", 2);
+      if (user !== env.metricsBasicAuthUser || pass !== env.metricsBasicAuthPassword) {
+        res.set("WWW-Authenticate", "Basic realm=\"metrics\"");
+        res.status(401).json({ error: "Invalid credentials" });
+        return;
+      }
+
+      const metricsText = await metricsService.getMetricsText();
+      res.set("Content-Type", metricsService.getContentType());
+      res.send(metricsText);
+    } catch (error) {
+      next(error);
+    }
   });
-  app.get("/metrics", async (req, res) => {
-    if (!isMetricsAuthorized(req)) {
-      res.setHeader("WWW-Authenticate", "Basic realm=metrics");
-      res.status(401).json({ error: "Unauthorized" });
+  app.use("/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo, responseCacheService, reconciliationService));
+
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json(err.toJSON());
       return;
     }
-
-    res.setHeader("Content-Type", metricsService.getContentType());
-    res.send(await metricsService.getMetricsText());
+    const message = err instanceof Error ? err.message : "Internal server error";
+    res.status(500).json({ error: message });
   });
-
-  // --- OpenAPI / Swagger UI (interactive docs)
-  const swaggerDefinition = {
-    openapi: "3.0.1",
-    info: {
-      title: "StellarGrants API",
-      version: "1.0.0",
-      description: "Interactive API docs for the StellarGrants API",
-    },
-    servers: [{ url: "/", description: "Local" }],
-    components: {
-      securitySchemes: {
-        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
-      },
-      schemas: {
-        Grant: {
-          type: "object",
-          properties: {
-            id: { type: "integer" },
-            owner: { type: "string" },
-            title: { type: "string" },
-            description: { type: "string" },
-            budget: { type: "string" },
-          },
-        },
-        Milestone: {
-          type: "object",
-          properties: {
-            grantId: { type: "integer" },
-            idx: { type: "integer" },
-            title: { type: "string" },
-            proofHash: { type: "string" },
-          },
-        },
-      },
-    },
-    paths: {
-      "/grants": {
-        get: {
-          summary: "List grants",
-          security: [{ bearerAuth: [] }],
-          responses: {
-            "200": {
-              description: "A list of grants",
-              content: { "application/json": { schema: { type: "object", properties: { data: { type: "array", items: { $ref: "#/components/schemas/Grant" } } } } } }
-            }
-          }
-        }
-      },
-      "/grants/{id}": {
-        get: {
-          summary: "Get a single grant",
-          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
-          security: [{ bearerAuth: [] }],
-          responses: { "200": { description: "Grant", content: { "application/json": { schema: { $ref: "#/components/schemas/Grant" } } } } }
-        }
-      },
-      "/milestone_approvals": {
-        post: {
-          summary: "Submit a milestone approval",
-          security: [{ bearerAuth: [] }],
-          requestBody: {
-            required: true,
-            content: { "application/json": { schema: { type: "object", properties: { grantId: { type: "integer" }, milestoneIdx: { type: "integer" }, reviewerStellarAddress: { type: "string" }, approved: { type: "boolean" } }, required: ["grantId","milestoneIdx","reviewerStellarAddress","approved"] } } }
-          },
-          responses: { "200": { description: "Approval saved" } }
-        }
-      }
-    }
-  } as const;
-
-  const options = {
-    definition: swaggerDefinition,
-    // no files to scan for JSDoc at the moment — definition contains main paths
-    apis: [],
-  };
-  const swaggerSpec = swaggerJsdoc(options as any);
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get("/api-docs.json", (_req, res) => res.json(swaggerSpec));
-
-  // Apply rate limiting
-  app.use(rateLimiter);
-  app.use("/grants", buildGrantRouter(grantRepo, milestoneRepo, proofRepo, grantSyncService, signatureService, responseCache));
-  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, responseCache, grantRepo, userRepo, webhookDispatcher));
-  app.use("/users", buildUserRouter(userRepo));
-  app.use("/grant_reviewers", buildGrantReviewerRouter(grantReviewerRepo));
-  app.use("/milestone_approvals", buildMilestoneApprovalRouter(milestoneApprovalRepo));
-   app.use("/milestone_approvals_notify", buildMilestoneApprovalNotifyRouter(milestoneApprovalRepo, grantRepo, userRepo, webhookDispatcher));
-  app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
-  app.use("/activity", buildActivityRouter(activityRepo, contributorRepo));
-  app.use(
-    "/admin",
-    adminMiddleware,
-    buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo, responseCache, reconciliationService),
-  );
-  app.use("/stats", buildStatsRouter(grantRepo, proofRepo, responseCache));
-  app.use("/api/stats", buildStatsRouter(grantRepo, proofRepo, responseCache));
-  app.use("/proofs", buildProofsRouter(ipfsService));
-  app.use("/notifications", buildNotificationsRouter(contributorRepo));
-  app.use("/dashboard", buildDashboardRouter(grantRepo, milestoneRepo, proofRepo, grantSyncService));
-  app.use("/analytics", buildAnalyticsRouter(grantRepo, grantViewRepo));
-  app.use("/search", buildSearchRouter(dataSource));
-  app.use("/profiles", buildProfilesRouter(contributorRepo, grantRepo));
-  app.use("/watchlist", buildWatchlistRouter(dataSource.getRepository(UserWatchlist), grantRepo));
-  app.use("/communities", buildCommunitiesRouter(communityRepo, grantRepo, activityRepo, rbacService, webhookDispatcher));
-  app.use(buildMilestoneCommentsRouter(milestoneRepo, milestoneCommentRepo, grantReviewerRepo));
-  app.use(buildMyDonationsRouter(dataSource));
-  app.use("/roles", adminMiddleware, buildRolesRouter(userRepo, roleRepo, userRoleRepo, rbacService));
-  app.use("/webhooks", buildWebhooksRouter(userRepo, webhookSubscriptionRepo, webhookDispatcher, rbacService));
-  app.get("/config/fee", async (req, res) => {
-    const fee = await configService.getFeePercentage();
-    res.json({ feePercentage: fee });
-  });
-
-  app.use(notFoundHandler);
-  app.use(errorHandler);
 
   return app;
 };

@@ -10,6 +10,14 @@ export type MilestoneProofIntent = {
   signature: string;
 };
 
+export type AdminIntent = {
+  address: string;
+  nonce: string;
+  timestamp: number;
+  action: string;
+  signature: string;
+};
+
 export class SignatureService {
   buildIntentMessage(payload: Omit<MilestoneProofIntent, "signature">): string {
     return [
@@ -20,6 +28,16 @@ export class SignatureService {
       payload.submittedBy,
       payload.nonce,
       payload.timestamp,
+    ].join("|");
+  }
+
+  buildAdminIntentMessage(payload: Omit<AdminIntent, "signature">): string {
+    return [
+      "stellargrant:admin:v1",
+      payload.address,
+      payload.nonce,
+      payload.timestamp,
+      payload.action,
     ].join("|");
   }
 
@@ -37,28 +55,7 @@ export class SignatureService {
     );
   }
 
-  buildAdminIntentMessage(payload: {
-    address: string;
-    nonce: string;
-    timestamp: number;
-    action: string;
-  }): string {
-    return [
-      "stellargrant:admin_action:v1",
-      payload.address,
-      payload.nonce,
-      payload.timestamp,
-      payload.action,
-    ].join("|");
-  }
-
-  verifyAdminAction(payload: {
-    address: string;
-    nonce: string;
-    timestamp: number;
-    action: string;
-    signature: string;
-  }): boolean {
+  verifyAdmin(payload: AdminIntent): boolean {
     if (!StrKey.isValidEd25519PublicKey(payload.address)) {
       return false;
     }

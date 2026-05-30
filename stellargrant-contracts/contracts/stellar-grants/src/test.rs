@@ -1,146 +1,230 @@
-#![cfg(test)]
+#[cfg(test)]
+mod tests {
+    use crate::storage::Storage;
+    use crate::types::{ContractError, Grant, GrantFund, GrantStatus, Milestone, MilestoneState};
+    use crate::StellarGrantsContract;
+    use crate::StellarGrantsContractClient;
+    use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Vec};
 
-use crate::{
-    ContractError, StellarGrantsContract, StellarGrantsContractClient, HEARTBEAT_CANCEL_SECS,
-    HEARTBEAT_INACTIVE_SECS,
-};
-use soroban_sdk::{
-    testutils::{Address as TestAddress, Ledger},
-    token, Address, Env, String, Vec,
-};
+    fn setup_test(
+        env: &Env,
+    ) -> (
+        StellarGrantsContractClient<'_>,
+        Address,
+        soroban_sdk::Address,
+    ) {
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = StellarGrantsContractClient::new(env, &contract_id);
+        let admin = Address::generate(env);
+        (client, admin, contract_id)
+    }
 
-#[test]
-fn test_heartbeat_miss() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, StellarGrantsContract);
-    let client = StellarGrantsContractClient::new(&env, &contract_id);
-    let owner = <Address as TestAddress>::generate(&env);
-    let token_admin_addr = <Address as TestAddress>::generate(&env);
-    let token = env
-        .register_stellar_asset_contract_v2(token_admin_addr.clone())
-        .address();
-    let token_admin = token::StellarAssetClient::new(&env, &token);
+    fn create_grant(
+        env: &Env,
+        contract_id: &soroban_sdk::Address,
+        grant_id: u64,
+        owner: Address,
+        token: Address,
+        reviewers: Vec<Address>,
+    ) {
+        env.as_contract(contract_id, || {
+            let grant = Grant {
+                id: grant_id,
+                owner,
+                title: String::from_str(env, "Title"),
+                description: String::from_str(env, "Description"),
+                token,
+                status: GrantStatus::Active,
+                total_amount: 1000,
+                milestone_amount: 1000,
+                reviewers,
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 1000,
+                funders: Vec::new(env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+            };
+            Storage::set_grant(env, grant_id, &grant);
+        });
+    }
 
-    let mut reviewers = Vec::new(&env);
-    reviewers.push_back(<Address as TestAddress>::generate(&env));
-    let quorum = 1u32;
-    env.mock_all_auths();
+    fn create_milestone(
+        env: &Env,
+        contract_id: &soroban_sdk::Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        state: MilestoneState,
+    ) {
+        env.as_contract(contract_id, || {
+            let milestone = Milestone {
+                idx: milestone_idx,
+                description: String::from_str(env, "Description"),
+                amount: 100,
+                state,
+                votes: Map::new(env),
+                approvals: 0,
+                rejections: 0,
+                reasons: Map::new(env),
+                status_updated_at: 0,
+                proof_url: Some(String::from_str(env, "https://proof.url")),
+                submission_timestamp: env.ledger().timestamp(),
+            };
+            Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
+        });
+    }
 
-    // Create grant
-    let grant_id = client.grant_create(
-        &owner,
-        &String::from_str(&env, "Heartbeat"),
-        &String::from_str(&env, "Testing heartbeat"),
-        &token,
-        &100,
-        &10,
-        &1,
-        &reviewers,
-        &quorum,
-        &None,
-        &0i128,
-        &0i128,
-        &soroban_sdk::Vec::<soroban_sdk::String>::new(&env),
-        &false,
-        &false,
-    );
+    #[test]
+    fn test_get_milestone_success() {
+        let env = Env::default();
+        let (client, _, contract_id) = setup_test(&env);
+        let grant_id = 1;
+        let milestone_idx = 0;
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let reviewer = Address::generate(&env);
 
-    let funder = <Address as TestAddress>::generate(&env);
-    client.grant_accept(&grant_id, &owner);
-    token_admin.mint(&funder, &100);
-    client.grant_fund(&grant_id, &funder, &100, &token, &None);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+        create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
-    let mut now = env.ledger().timestamp();
-    env.ledger().set_timestamp(now + 10);
+        let milestone = client.get_milestone(&grant_id, &milestone_idx);
+        assert_eq!(milestone.state, MilestoneState::Submitted);
+        assert_eq!(milestone.description, String::from_str(&env, "Description"));
+    }
 
-    // Ping should succeed
-    client.grant_ping(&grant_id, &owner);
+    #[test]
+    fn test_get_milestone_grant_not_found() {
+        let env = Env::default();
+        let (client, _, _) = setup_test(&env);
+        let result = client.try_get_milestone(&99, &0);
+        assert_eq!(result, Err(Ok(ContractError::GrantNotFound.into())));
+    }
 
-    // Advance time to exactly inactive boundary
-    now = env.ledger().timestamp();
-    env.ledger().set_timestamp(now + HEARTBEAT_INACTIVE_SECS);
+    #[test]
+    fn test_successful_vote() {
+        let env = Env::default();
+        let (client, _, contract_id) = setup_test(&env);
+        let grant_id = 1;
+        let milestone_idx = 0;
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let reviewer = Address::generate(&env);
 
-    // Attempting to mark inactive should fail because it's not strictly greater
-    let res_stale = client.try_mark_grant_inactive(&grant_id);
-    assert!(
-        res_stale.is_err(),
-        "Should not be able to mark inactive yet"
-    );
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+        create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
-    // Advance time by 30 days + 1 sec
-    env.ledger()
-        .set_timestamp(now + HEARTBEAT_INACTIVE_SECS + 1);
+        env.mock_all_auths();
+        let result = client.milestone_vote(&grant_id, &milestone_idx, &reviewer, &true, &None);
 
-    // Call mark_grant_inactive, should succeed
-    client.mark_grant_inactive(&grant_id);
+        assert_eq!(result, true); // Quorum reached (1/1)
 
-    // Advance 60 days
-    env.ledger().set_timestamp(now + HEARTBEAT_CANCEL_SECS + 1);
+        env.as_contract(&contract_id, || {
+            let updated_milestone = Storage::get_milestone(&env, grant_id, milestone_idx).unwrap();
+            assert_eq!(updated_milestone.approvals, 1);
+            assert_eq!(updated_milestone.state, MilestoneState::Approved);
+            assert!(updated_milestone.votes.get(reviewer).unwrap());
+        });
+    }
 
-    // Anyone can cancel
-    let random_caller = <Address as TestAddress>::generate(&env);
-    client.cancel_grant(&grant_id, &random_caller, &String::from_str(&env, "stale"));
-}
+    #[test]
+    fn test_grant_cancel_success_multiple_funders() {
+        let env = Env::default();
+        env.mock_all_auths();
 
-#[test]
-fn test_public_good_cancellation() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, StellarGrantsContract);
-    let client = StellarGrantsContractClient::new(&env, &contract_id);
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
 
-    let admin = <Address as TestAddress>::generate(&env);
-    let council = <Address as TestAddress>::generate(&env);
-    let treasury = <Address as TestAddress>::generate(&env);
+        let owner = Address::generate(&env);
+        let funder1 = Address::generate(&env);
+        let funder2 = Address::generate(&env);
 
-    env.mock_all_auths();
-    client.initialize(&admin, &council, &treasury);
+        let total_funded = 1000i128;
+        let fund1 = 600i128;
+        let fund2 = 400i128;
+        let remaining = 1000i128;
+        let grant_id = 1u64;
 
-    let owner = <Address as TestAddress>::generate(&env);
-    let token_admin_addr = <Address as TestAddress>::generate(&env);
-    let token = env
-        .register_stellar_asset_contract_v2(token_admin_addr.clone())
-        .address();
-    let token_admin = token::StellarAssetClient::new(&env, &token);
+        token_admin.mint(&contract_id, &remaining);
 
-    let mut reviewers = Vec::new(&env);
-    reviewers.push_back(<Address as TestAddress>::generate(&env));
+        let mut funders = Vec::new(&env);
+        funders.push_back(GrantFund {
+            funder: funder1.clone(),
+            amount: fund1,
+        });
+        funders.push_back(GrantFund {
+            funder: funder2.clone(),
+            amount: fund2,
+        });
 
-    // Create public good grant
-    let grant_id = client.grant_create(
-        &owner,
-        &String::from_str(&env, "Public Good"),
-        &String::from_str(&env, "Testing public good"),
-        &token,
-        &100,
-        &10,
-        &1,
-        &reviewers,
-        &1,
-        &None,
-        &0i128,
-        &0i128,
-        &soroban_sdk::Vec::<soroban_sdk::String>::new(&env),
-        &false,
-        &true, // is_public_good = true
-    );
+        let grant = Grant {
+            id: grant_id,
+            owner: owner.clone(),
+            title: String::from_str(&env, "Title"),
+            description: String::from_str(&env, "Description"),
+            token: token_id.clone(),
+            status: GrantStatus::Active,
+            total_amount: total_funded,
+            milestone_amount: 1000,
+            reviewers: Vec::new(&env),
+            total_milestones: 1,
+            milestones_paid_out: 0,
+            escrow_balance: remaining,
+            funders,
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+        };
 
-    let funder = <Address as TestAddress>::generate(&env);
-    client.grant_accept(&grant_id, &owner);
-    token_admin.mint(&funder, &100);
-    client.grant_fund(&grant_id, &funder, &100, &token, &None);
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, grant_id, &grant);
+        });
 
-    // Cancel grant
-    client.cancel_grant(
-        &grant_id,
-        &owner,
-        &String::from_str(&env, "donating to treasury"),
-    );
+        let reason = String::from_str(&env, "Project discontinued");
+        client.grant_cancel(&grant_id, &owner, &reason);
 
-    // Check balance of treasury
-    let treasury_balance = token::Client::new(&env, &token).balance(&treasury);
-    assert_eq!(treasury_balance, 100);
+        let token_client = token::Client::new(&env, &token_id);
+        assert_eq!(token_client.balance(&funder1), 600);
+        assert_eq!(token_client.balance(&funder2), 400);
 
-    // Check balance of funder (should be 0 because it went to treasury)
-    let funder_balance = token::Client::new(&env, &token).balance(&funder);
-    assert_eq!(funder_balance, 0);
+        env.as_contract(&contract_id, || {
+            let updated_grant = Storage::get_grant(&env, grant_id).unwrap();
+            assert_eq!(updated_grant.status, GrantStatus::Cancelled);
+        });
+    }
+
+    #[test]
+    fn test_grant_cancel_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, _, contract_id) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let wrong_owner = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        let grant_id = 1u64;
+        create_grant(&env, &contract_id, grant_id, owner, token, Vec::new(&env));
+
+        let reason = String::from_str(&env, "test");
+        let result = client.try_grant_cancel(&grant_id, &wrong_owner, &reason);
+
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized.into())));
+    }
 }

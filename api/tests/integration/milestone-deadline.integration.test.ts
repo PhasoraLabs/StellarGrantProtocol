@@ -56,17 +56,17 @@ describe("Milestone Deadline Integration", () => {
 
     const firstRun = await service.runCheck();
     expect(firstRun).toEqual({ remindersSent: 3, overdueAlertsSent: 1 });
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(4);
     expect(notifyUser).toHaveBeenCalledTimes(4);
 
     const milestoneZero = await milestoneRepo.findOneByOrFail({ grantId: 1, idx: 0 });
-    const milestoneOne = await milestoneRepo.findOneByOrFail({ grantId: 1, idx: 1 });
+    const milestoneThree = await milestoneRepo.findOneByOrFail({ grantId: 1, idx: 3 });
     expect(milestoneZero.lastDeadlineReminderDaysBefore).toBe(7);
-    expect(milestoneOne.overdueNotifiedAt).not.toBeNull();
+    expect(milestoneThree.overdueNotifiedAt).not.toBeNull();
 
     const secondRun = await service.runCheck();
     expect(secondRun).toEqual({ remindersSent: 0, overdueAlertsSent: 0 });
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(4);
     expect(notifyUser).toHaveBeenCalledTimes(4);
   });
 });

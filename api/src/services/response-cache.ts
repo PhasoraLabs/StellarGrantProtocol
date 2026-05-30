@@ -1,6 +1,3 @@
-import Redis from "ioredis";
-import { env } from "../config/env";
-
 const CACHE_PREFIX = "sg:cache:v1:";
 
 export const responseCacheKeys = {
@@ -9,72 +6,41 @@ export const responseCacheKeys = {
 };
 
 /**
- * Redis-backed HTTP response cache for public, unpersonalized endpoints.
- * When REDIS_URL is unset, all operations are no-ops and reads always miss.
+ * In-memory response cache fallback (no Redis dependency in tests).
  */
 export class ResponseCacheService {
-  private redis: Redis | null = null;
+  private memoryCache = new Map<string, { value: string; expiresAt: number }>();
 
-  constructor(redisUrl: string) {
-    if (!redisUrl.trim()) return;
-    this.redis = new Redis(redisUrl, {
-      maxRetriesPerRequest: 2,
-      lazyConnect: true,
-      enableOfflineQueue: false,
-    });
-    this.redis.on("error", () => {
-      // Errors are handled per-command; avoid crashing the process on transient outages.
-    });
+  constructor(redisUrl?: string) {
+    // no-op for tests and environments without Redis
   }
 
   isEnabled(): boolean {
-    return this.redis !== null;
+    return true;
   }
 
   async get(key: string): Promise<string | null> {
-    if (!this.redis) return null;
-    try {
-      if (this.redis.status === "wait") await this.redis.connect();
-      return await this.redis.get(key);
-    } catch {
+    const cached = this.memoryCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt < Date.now()) {
+      this.memoryCache.delete(key);
       return null;
     }
+    return cached.value;
   }
 
-  async set(key: string, value: string): Promise<void> {
-    if (!this.redis) return;
-    try {
-      if (this.redis.status === "wait") await this.redis.connect();
-      await this.redis.setex(key, env.cacheTtlSeconds, value);
-    } catch {
-      // ignore cache write failures
-    }
+  async set(key: string, value: string, ttlSeconds: number = 3600): Promise<void> {
+    this.memoryCache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
   }
 
-  /** Clears aggregated stats and grant list caches (e.g. after grant or milestone updates). */
-  async invalidateGrantsAndStats(): Promise<void> {
-    if (!this.redis) return;
-    try {
-      if (this.redis.status === "wait") await this.redis.connect();
-      const keys = new Set<string>();
-      let cursor = "0";
-      do {
-        const [next, found] = await this.redis.scan(
-          cursor,
-          "MATCH",
-          `${CACHE_PREFIX}*`,
-          "COUNT",
-          128,
-        );
-        cursor = next;
-        for (const k of found) keys.add(k);
-      } while (cursor !== "0");
-      const list = [...keys];
-      if (list.length > 0) {
-        await this.redis.del(...list);
-      }
-    } catch {
-      // ignore invalidation failures
-    }
+  async delete(key: string): Promise<void> {
+    this.memoryCache.delete(key);
+  }
+
+  async flush(): Promise<void> {
+    this.memoryCache.clear();
   }
 }

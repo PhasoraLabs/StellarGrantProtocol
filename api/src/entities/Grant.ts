@@ -1,8 +1,8 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryColumn, UpdateDateColumn, Index } from "typeorm";
-import { Milestone } from "./Milestone";
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryColumn, UpdateDateColumn, ManyToMany, JoinTable } from "typeorm";
 import { MilestoneProof } from "./MilestoneProof";
-import { GrantReviewer } from "./GrantReviewer";
+import { Milestone } from "./Milestone";
 import { Community } from "./Community";
+import { GrantReviewer } from "./GrantReviewer";
 
 @Entity({ name: "grants" })
 export class Grant {
@@ -12,48 +12,40 @@ export class Grant {
   @Column({ type: "varchar", length: 200 })
   title!: string;
 
-  @Index()
+  @Column({ type: "varchar", length: 500, nullable: true })
+  description?: string;
+
   @Column({ type: "varchar", length: 30 })
   status!: string;
 
-  @Index()
+  @Column({ type: "varchar", length: 120, nullable: true })
+  owner?: string | null;
+
   @Column({ type: "varchar", length: 120 })
   recipient!: string;
+
+  @Column({ type: "int", nullable: true })
+  communityId?: number | null;
+
+  @ManyToOne(() => Community, (community) => community.grants, { nullable: true })
+  @JoinColumn({ name: "communityId" })
+  community?: Community;
 
   @Column({ type: "varchar", length: 60 })
   totalAmount!: string;
 
-  /**
-   * Comma-separated tags stored as a simple text column for broad DB compatibility.
-   * The route layer splits / joins this value when reading / writing.
-   */
-  @Index()
   @Column({ type: "text", nullable: true })
-  tags!: string | null;
+  tags?: string;
 
-  @Column({ type: "boolean", default: false })
-  isFlagged!: boolean;
+  @OneToMany(() => GrantReviewer, (reviewer) => reviewer.grant)
+  reviewers?: GrantReviewer[];
 
-  @Column({ type: "simple-json", nullable: true })
-  localizedMetadata!: Record<string, { title?: string; description?: string }> | null;
+  @OneToMany(() => Milestone, (milestone) => milestone.grant)
+  milestones?: Milestone[];
 
-  @Column({ type: "int", nullable: true })
-  communityId!: number | null;
-
-  @Index()
   @UpdateDateColumn()
   updatedAt!: Date;
 
   @OneToMany(() => MilestoneProof, (proof) => proof.grant)
   proofs!: MilestoneProof[];
-
-  @OneToMany(() => Milestone, (milestone) => milestone.grant)
-  milestones!: Milestone[];
-
-  @OneToMany(() => GrantReviewer, (reviewer) => reviewer.grant)
-  reviewers!: GrantReviewer[];
-
-  @ManyToOne(() => Community, (community) => community.grants, { nullable: true, onDelete: "SET NULL" })
-  @JoinColumn({ name: "communityId" })
-  community!: Community | null;
 }

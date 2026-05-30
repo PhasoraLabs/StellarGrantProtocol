@@ -23,9 +23,9 @@ export class MilestoneProof {
 
   @Column({ type: "varchar", length: 255 })
   proofCid!: string;
-  
+
   @Column({ type: "text", nullable: true })
-  description!: string | null;
+  description?: string | null;
 
   @Column({ type: "varchar", length: 120 })
   submittedBy!: string;

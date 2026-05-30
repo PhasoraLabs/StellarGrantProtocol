@@ -5,17 +5,18 @@ members = [
 ]
 
 [workspace.dependencies]
-soroban-sdk = "25"
+soroban-sdk = { version = "25", default-features = false }
 
 [profile.release]
-opt-level = "z"
-overflow-checks = true
+opt-level = "s"
+overflow-checks = false
 debug = 0
-strip = "symbols"
+strip = true
 debug-assertions = false
 panic = "abort"
 codegen-units = 1
-lto = true
+lto = "fat"
+incremental = false
 
 # For more information about this profile see https://soroban.stellar.org/docs/basic-tutorials/logging#cargotoml-profile
 [profile.release-with-logs]

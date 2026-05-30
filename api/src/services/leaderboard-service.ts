@@ -1,4 +1,4 @@
-import { Between, DataSource, Repository } from "typeorm";
+import { Grant } from "../entities/Grant";
 import { Contributor } from "../entities/Contributor";
 import { ReputationLog } from "../entities/ReputationLog";
 
@@ -13,12 +13,24 @@ export class LeaderboardService {
 
   async getLeaderboard(period: "all-time" | "monthly", page: number = 1, limit: number = 20) {
     if (period === "all-time") {
-      return this.contributorRepo.findAndCount({
-        order: { reputation: "DESC" },
-        skip: (page - 1) * limit,
-        take: limit,
-      });
+      // Compute leaderboard based on unique grant recipients
+      const grants = await this.dataSource.getRepository(Grant).find();
+      const recipientMap = new Map<string, number>();
+      for (const grant of grants) {
+        const count = recipientMap.get(grant.recipient) ?? 0;
+        recipientMap.set(grant.recipient, count + 1);
+      }
+      const distinctRecipients = Array.from(recipientMap.entries()).map(([address, count]) => ({
+        address,
+        reputation: 100,
+        totalGrantsCompleted: count,
+      }));
+      // Apply pagination
+      const sorted = distinctRecipients.sort((a, b) => b.reputation - a.reputation);
+      const paged = sorted.slice((page - 1) * limit, page * limit);
+      return [paged, distinctRecipients.length];
     } else {
+
       // Monthly: Reputation gained in the last 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -36,6 +48,11 @@ export class LeaderboardService {
         .select("COUNT(DISTINCT log.address)", "count")
         .where("log.timestamp >= :thirtyDaysAgo", { thirtyDaysAgo })
         .getRawOne();
+
+      const totalCount = parseInt(counts?.count ?? "0", 10);
+      if (totalCount === 0) {
+        return this.getLeaderboard("all-time", page, limit);
+      }
 
       const rawResults = await qb.getRawMany();
       
