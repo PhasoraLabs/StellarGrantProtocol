@@ -25,7 +25,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@stellar/stellar-base": "^13.1.0",
+    "@stellar/stellar-base": "^15.0.0",
     "@stellar/stellar-sdk": "^13.3.0",
     "axios": "^1.16.1",
     "commander": "^13.1.0",
