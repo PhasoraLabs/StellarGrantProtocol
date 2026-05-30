@@ -12,6 +12,7 @@ import { FundGrantModal } from "@/components/grants/FundGrantModal";
 import { WatchButton } from "@/components/grants/WatchButton";
 import { ShareButton } from "@/components/grants/ShareButton";
 import { ExportButton } from "@/components/grants/ExportButton";
+import type { FunderRecord } from "@/lib/utils/export";
 import RichTextRenderer from "@/components/ui/RichTextRenderer";
 import { formatDate } from "@/lib/utils";
 import { formatTokenAmount, getTokenMetadata } from "@/lib/tokens";
@@ -195,7 +196,7 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
             grantTitle={grant.title}
             fundedPercent={fundedPercent}
           />
-          <ExportButton grant={grant} milestones={milestones} funders={funders} />
+          <ExportButton grant={grant} milestones={milestones} funders={funders.map((f) => ({ ...f, token: "native", timestamp: null } as FunderRecord))} />
         </div>
       </div>
 
