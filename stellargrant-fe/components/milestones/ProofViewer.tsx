@@ -9,24 +9,16 @@
  * and raw crypto hashes (SHA-256 copyable block).
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import RichTextRenderer from "@/components/ui/RichTextRenderer";
 import { Copy, Check, ExternalLink, FileText, Image as ImageIcon, File, ShieldAlert, Eye, Terminal } from "lucide-react";
+import { useIPFSContent } from "@/hooks/useIPFSContent";
 
 interface ProofViewerProps {
   proofHash: string;
 }
 
-interface IPFSContent {
-  contentType: string;
-  text: string;
-}
-
 export function ProofViewer({ proofHash }: ProofViewerProps) {
-  const [currentHash, setCurrentHash] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [ipfsContent, setIpfsContent] = useState<IPFSContent | null>(null);
   const [copied, setCopied] = useState(false);
 
   const cleanProofHash = proofHash.startsWith("ipfs://")
@@ -37,13 +29,19 @@ export function ProofViewer({ proofHash }: ProofViewerProps) {
   const isUrl = cleanProofHash.startsWith("http://") || cleanProofHash.startsWith("https://");
   const isRawHash = /^[a-fA-F0-9]{40,}$/.test(cleanProofHash);
 
-  // Adjust state during render when cleanProofHash changes to avoid synchronous setState inside useEffect
-  if (isCid && currentHash !== cleanProofHash) {
-    setCurrentHash(cleanProofHash);
-    setIsLoading(true);
-    setError(false);
-    setIpfsContent(null);
-  }
+  const {
+    content: ipfsText,
+    contentType: ipfsCT,
+    isLoading,
+    error: ipfsError,
+    gatewayUsed,
+    retry,
+  } = useIPFSContent(isCid ? cleanProofHash : null);
+
+  const ipfsContent = ipfsText !== null && ipfsCT !== null
+    ? { text: ipfsText, contentType: ipfsCT }
+    : null;
+  const error = !!ipfsError;
 
   // Copy helper
   const handleCopy = () => {
@@ -51,60 +49,6 @@ export function ProofViewer({ proofHash }: ProofViewerProps) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  // Fetch IPFS CID content
-  useEffect(() => {
-    if (!isCid) return;
-
-    let cancelled = false;
-
-    // Timeout-wrapped fetch to prevent infinite hanging
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    fetch(`https://ipfs.io/ipfs/${cleanProofHash}`, {
-      method: "GET",
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error("Gateway failed to load content");
-
-        const contentType = res.headers.get("content-type") || "text/plain";
-        
-        // If text, markdown, or json, we fetch the text body
-        if (
-          contentType.includes("text") ||
-          contentType.includes("markdown") ||
-          contentType.includes("json") ||
-          cleanProofHash.endsWith(".txt") ||
-          cleanProofHash.endsWith(".md")
-        ) {
-          const text = await res.text();
-          return { contentType, text };
-        }
-
-        return { contentType, text: "" };
-      })
-      .then((content) => {
-        if (!cancelled) {
-          setIpfsContent(content);
-          setIsLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError(true);
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearTimeout(timeoutId);
-    };
-  }, [cleanProofHash, isCid]);
 
   // Case 1: IPFS CID Rendering
   if (isCid) {
@@ -138,14 +82,23 @@ export function ProofViewer({ proofHash }: ProofViewerProps) {
               </p>
             </div>
           </div>
-          <a
-            href={`https://ipfs.io/ipfs/${cleanProofHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 font-mono text-xs text-accent-primary hover:text-accent-primary-hover underline transition-colors"
-          >
-            View on public IPFS gateway <ExternalLink className="h-3 w-3" />
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href={`https://ipfs.io/ipfs/${cleanProofHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-mono text-xs text-accent-primary hover:text-accent-primary-hover underline transition-colors"
+            >
+              View on public IPFS gateway <ExternalLink className="h-3 w-3" />
+            </a>
+            <button
+              type="button"
+              onClick={retry}
+              className="font-mono text-xs text-text-muted hover:text-text-primary underline transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       );
     }
@@ -251,7 +204,12 @@ export function ProofViewer({ proofHash }: ProofViewerProps) {
           </div>
 
           {/* Technical Details Disclosure */}
-          <TechnicalDisclosure hash={cleanProofHash} type="IPFS CID" gatewayUrl={`https://ipfs.io/ipfs/${cleanProofHash}`} />
+          <TechnicalDisclosure
+            hash={cleanProofHash}
+            type="IPFS CID"
+            gatewayUrl={`https://ipfs.io/ipfs/${cleanProofHash}`}
+            gatewayUsed={gatewayUsed}
+          />
         </div>
       );
     }
@@ -405,9 +363,10 @@ interface TechnicalDisclosureProps {
   hash: string;
   type: string;
   gatewayUrl?: string;
+  gatewayUsed?: string | null;
 }
 
-function TechnicalDisclosure({ hash, type, gatewayUrl }: TechnicalDisclosureProps) {
+function TechnicalDisclosure({ hash, type, gatewayUrl, gatewayUsed }: TechnicalDisclosureProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -454,6 +413,14 @@ function TechnicalDisclosure({ hash, type, gatewayUrl }: TechnicalDisclosureProp
             >
               {gatewayUrl} <ExternalLink className="h-2.5 w-2.5" />
             </a>
+          </div>
+        )}
+        {gatewayUsed && (
+          <div className="flex justify-between gap-4 py-1 border-b border-border-color/5">
+            <span>Gateway:</span>
+            <span className="text-text-primary truncate max-w-[70%]">
+              {gatewayUsed}
+            </span>
           </div>
         )}
       </div>

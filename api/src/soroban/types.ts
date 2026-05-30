@@ -7,6 +7,13 @@ export type SorobanContractEvent = {
   data: Record<string, unknown>;
 };
 
+export type SorobanMilestone = {
+  idx: number;
+  title: string;
+  description?: string;
+  deadline: string;
+};
+
 export type SorobanGrant = {
   id: number;
   title: string;
@@ -14,6 +21,7 @@ export type SorobanGrant = {
   recipient: string;
   totalAmount: string;
   owner?: string;
+  milestones?: SorobanMilestone[];
 };
 
 export interface SorobanContractClient {

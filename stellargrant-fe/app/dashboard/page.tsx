@@ -15,6 +15,7 @@
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useWalletStore } from "@/lib/store/walletStore";
 import { WalletInfo } from "@/components/wallet/WalletInfo";
@@ -23,6 +24,11 @@ import { GrantCard, grantListVariants, grantCardVariants } from "@/components/gr
 import { WatchedGrantsPanel } from "@/components/grants/WatchedGrantsPanel";
 import type { Grant } from "@/types";
 import { EmptyState, PageHeader } from "@/components/ui";
+
+const QRCode = dynamic(
+  () => import("@/components/ui/QRCode").then((m) => m.QRCode),
+  { ssr: false }
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +68,7 @@ function DashboardContent() {
   const [reputation, setReputation] = useState<number | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   // Load wallet info (balance + reputation) when address changes
   useEffect(() => {
@@ -157,12 +164,54 @@ function DashboardContent() {
 
       {/* Wallet info card */}
       {address && (
-        <WalletInfo
-          address={address}
-          network={network}
-          balance={balance}
-          reputation={reputation}
-        />
+        <div className="space-y-2">
+          <WalletInfo
+            address={address}
+            network={network}
+            balance={balance}
+            reputation={reputation}
+          />
+          <button
+            type="button"
+            onClick={() => setShowQR(true)}
+            className="font-mono text-xs text-accent-secondary hover:underline"
+          >
+            Show QR Code
+          </button>
+        </div>
+      )}
+
+      {/* QR Code modal */}
+      {showQR && address && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Wallet QR Code"
+          onClick={() => setShowQR(false)}
+        >
+          <div
+            className="bg-surface border border-border-color p-6 flex flex-col items-center gap-4 max-w-xs w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-mono text-xs text-text-muted uppercase tracking-wider">
+              Your Wallet Address
+            </p>
+            <QRCode
+              value={address}
+              size={200}
+              label={`${address.slice(0, 6)}…${address.slice(-4)}`}
+              downloadable
+            />
+            <button
+              type="button"
+              onClick={() => setShowQR(false)}
+              className="font-mono text-xs text-text-muted hover:text-text-primary underline transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Tab bar */}

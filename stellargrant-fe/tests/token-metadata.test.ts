@@ -10,6 +10,7 @@ import {
   getTokenMetadataBatch,
   clearTokenMetadataCache,
   getCachedTokenMetadata,
+  USDC_CONTRACT_ADDRESS,
 } from "@/lib/tokens/metadata";
 
 describe("Token Metadata Service", () => {
@@ -123,6 +124,24 @@ describe("Token Metadata Service", () => {
       const cached = getCachedTokenMetadata("native");
       expect(cached).toBeDefined();
       expect(cached?.symbol).toBe("XLM");
+    });
+  });
+
+  describe("USDC SAC metadata", () => {
+    it("exposes a testnet USDC contract address", () => {
+      expect(USDC_CONTRACT_ADDRESS).toMatch(/^C[A-Z2-7]+$/); // Soroban contract id (StrKey)
+    });
+
+    it("carries the SAC address and 6 decimals when resolved by symbol", async () => {
+      const metadata = await getTokenMetadata("USDC");
+      expect(metadata.decimals).toBe(6);
+      expect(metadata.address).toBe(USDC_CONTRACT_ADDRESS);
+    });
+
+    it("resolves USDC by its SAC contract address", async () => {
+      const metadata = await getTokenMetadata(USDC_CONTRACT_ADDRESS);
+      expect(metadata.symbol).toBe("USDC");
+      expect(metadata.decimals).toBe(6);
     });
   });
 });

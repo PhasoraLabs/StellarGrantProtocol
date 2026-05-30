@@ -19,7 +19,7 @@ function buildShareText(title: string, percent: number, url: string): string {
 export function ShareButton({ grantId, grantTitle, fundedPercent }: ShareButtonProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { copy, copied } = useCopyToClipboard(2000);
+  const { copy, isCopied: copied } = useCopyToClipboard(2000);
   const grantUrl = `${SHARE_BASE}/${grantId}`;
   const shareText = buildShareText(grantTitle, fundedPercent, grantUrl);
 

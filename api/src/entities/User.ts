@@ -1,30 +1,31 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
-import { UserRole } from "./UserRole";
+import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
 
-@Entity({ name: "users" })
+@Entity()
 export class User {
   @PrimaryGeneratedColumn()
   id!: number;
 
-
-  @Column({ type: "varchar", length: 120, unique: true })
-  email!: string;
-
   @Column({ type: "varchar", length: 56, unique: true })
   stellarAddress!: string;
 
-  @Column({ type: "boolean", default: true })
-  notifyMilestoneApproved!: boolean;
+  @Column({ type: "varchar", nullable: true })
+  email?: string;
 
-  @Column({ type: "boolean", default: true })
-  notifyMilestoneSubmitted!: boolean;
+  @Column({ type: "boolean", default: false })
+  notifyMilestoneApproved = false;
 
-  @CreateDateColumn()
-  createdAt!: Date;
+  @Column({ type: "boolean", default: false })
+  notifyMilestoneSubmitted = false;
 
-  @UpdateDateColumn()
-  updatedAt!: Date;
+  @Column({ type: "varchar", nullable: true })
+  githubId?: string;
 
-  @OneToMany(() => UserRole, (userRole) => userRole.user)
-  userRoles!: UserRole[];
+  @Column({ type: "varchar", nullable: true })
+  githubUsername?: string;
+
+  @Column({ type: "varchar", nullable: true })
+  twitterId?: string;
+
+  @Column({ type: "varchar", nullable: true })
+  twitterUsername?: string;
 }

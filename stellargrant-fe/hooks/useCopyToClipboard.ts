@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { toast } from "@/lib/toast";
 
 async function copyText(text: string): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -18,16 +19,25 @@ async function copyText(text: string): Promise<void> {
 }
 
 export function useCopyToClipboard(resetMs = 2000) {
-  const [copied, setCopied] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const copy = useCallback(
     async (text: string) => {
-      await copyText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), resetMs);
+      try {
+        await copyText(text);
+        setIsCopied(true);
+        setError(null);
+        toast({ title: "Copied to clipboard", variant: "success", duration: 2000 });
+        setTimeout(() => setIsCopied(false), resetMs);
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        setError(e);
+        toast({ title: "Copy failed", description: e.message, variant: "error" });
+      }
     },
     [resetMs]
   );
 
-  return { copy, copied };
+  return { copy, isCopied, error };
 }

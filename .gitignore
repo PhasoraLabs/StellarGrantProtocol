@@ -1,16 +1,13 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-PR_DONE.md
->>>>>>> 57bc048 (Add reentrancy guard to grant funding and staking operations)
+# Node
+node_modules/
+dist/
+.env*
+.DS_Store
 
-/api/node_modules
-/api/dist
-/api/.env*
-=======
-=======
->>>>>>> 2fd7037 (feat: add milestone deadlines, expiry logic, and fund reclaim mechanism)
+# Rust
+target/
+**/*.rs.bk
+
 # Coverage artifacts
 tarpaulin-report/
 tarpaulin-report.xml
@@ -19,7 +16,12 @@ cobertura.xml
 coverage/
 *.profraw
 *.profdata
-<<<<<<< HEAD
->>>>>>> 256e004 (feat: add automated code coverage using cargo-tarpaulin)
-=======
->>>>>>> 2fd7037 (feat: add milestone deadlines, expiry logic, and fund reclaim mechanism)
+
+# Project specific
+/api/node_modules
+/api/dist
+/api/.env*
+/client/node_modules
+/stellargrant-fe/node_modules
+/stellargrant-fe/.next
+/stellargrant-fe/out

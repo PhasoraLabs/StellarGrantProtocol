@@ -353,12 +353,12 @@ export function MilestoneSubmitForm({
           <div className="space-y-1.5 p-3 bg-white/[0.01] border border-border-color/30">
             <div className="flex items-center justify-between font-mono text-[10px] text-text-muted">
               <span>Uploading evidence to IPFS...</span>
-              <span>{ipfs.progress}%</span>
+              <span>{ipfs.uploadProgress}%</span>
             </div>
             <div className="w-full h-1 bg-border-color/30 overflow-hidden">
               <div
                 className="h-full bg-accent-primary transition-all duration-150"
-                style={{ width: `${ipfs.progress}%` }}
+                style={{ width: `${ipfs.uploadProgress}%` }}
               />
             </div>
           </div>

@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { contentCache } from "@/hooks/useIPFSContent";
 
 // ── Shared mock constants ──────────────────────────────────────────────────────
 const WALLET_ADDRESS = "GDUMMYWALLETADDRESS1234567890ABCDE12345678";
@@ -23,17 +24,23 @@ vi.mock("@/hooks/useWallet", () => ({
 vi.mock("@/hooks/useGrant", () => ({
   useGrant: () => ({
     data: {
-      id: GRANT_ID,
-      owner: WALLET_ADDRESS,
-      reviewers: [],
-      title: "Test Grant",
-      budget: 1_000_000n,
-      funded: 0n,
-      status: 1,
-      milestones: 1,
-      deadline: 9999999999n,
-      created_at: 1000000n,
-      description: "",
+      grant: {
+        id: GRANT_ID,
+        owner: WALLET_ADDRESS,
+        recipient: WALLET_ADDRESS,
+        reviewers: [],
+        title: "Test Grant",
+        budget: 1_000_000n,
+        funded: 0n,
+        status: 1,
+        milestones: 1,
+        deadline: 9999999999n,
+        created_at: 1000000n,
+        description: "",
+      },
+      milestones: [],
+      completedMilestones: 0,
+      isWatched: false,
     },
     isLoading: false,
     error: null,
@@ -299,6 +306,7 @@ describe("ProofViewer — IPFS CID", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    contentCache.clear();
     // Re-apply clipboard mock after restoreAllMocks
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },

@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { stellarExplorerTx } from "@/lib/constants";
 import { toast } from "@/lib/toast";
+import { useWalletStore } from "@/lib/store/walletStore";
+import { getHorizonClient } from "@/lib/stellar/client";
+
+export type TxStatus = "idle" | "pending" | "success" | "error";
 
 export interface FundGrantParams {
   grantId: string;
@@ -15,60 +20,129 @@ export interface FundGrantResult {
   explorerUrl: string;
 }
 
+export interface WalletBalance {
+  xlm: bigint;
+  tokens: Record<string, bigint>;
+}
+
 export interface UseFundGrantReturn {
   fund: (params: FundGrantParams) => Promise<FundGrantResult>;
-  isLoading: boolean;
+  txStatus: TxStatus;
+  txHash: string | null;
+  explorerUrl: string | null;
   error: string | null;
   reset: () => void;
+  walletBalance: WalletBalance | null;
+  isBalanceLoading: boolean;
+}
+
+const STROOP = 10_000_000n;
+
+function parseBalance(raw: string): bigint {
+  const [whole = "0", frac = ""] = raw.split(".");
+  const paddedFrac = frac.padEnd(7, "0").slice(0, 7);
+  return BigInt(whole) * STROOP + BigInt(paddedFrac);
 }
 
 export function useFundGrant(): UseFundGrantReturn {
-  const [isLoading, setIsLoading] = useState(false);
+  const { address } = useWalletStore();
+  const queryClient = useQueryClient();
+
+  const [txStatus, setTxStatus] = useState<TxStatus>("idle");
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
 
-  const fund = useCallback(async (_params: FundGrantParams): Promise<FundGrantResult> => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // TODO: Replace with real contract client call once SDK binding is ready.
-      // e.g.: const tx = await grantClient.fundGrant(_params.grantId, _params.amount);
-      //       const result = await tx.signAndSend({ signTransaction });
-      const mockTxHash = `mock_tx_${Date.now()}`;
-
-      const result: FundGrantResult = {
-        txHash: mockTxHash,
-        explorerUrl: stellarExplorerTx(mockTxHash),
-      };
-
-      toast({
-        title: `Funded ${_params.amount.toString()} stroops`,
-        description: "Your contribution was recorded on-chain.",
-        variant: "success",
-        action: {
-          label: "View on Stellar Explorer",
-          href: result.explorerUrl,
-        },
-      });
-
-      return result;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      toast({
-        title: "Funding failed",
-        description: message,
-        variant: "error",
-      });
-      throw err;
-    } finally {
-      setIsLoading(false);
+  // Load the connected wallet's own balance
+  useEffect(() => {
+    if (!address) {
+      setWalletBalance(null);
+      return;
     }
-  }, []);
+    const controller = new AbortController();
+    const load = async () => {
+      setIsBalanceLoading(true);
+      try {
+        const horizon = getHorizonClient();
+        const account = await horizon.loadAccount(address);
+        const xlmEntry = account.balances.find((b) => b.asset_type === "native");
+        const xlm = xlmEntry ? parseBalance(xlmEntry.balance) : 0n;
+        const tokens: Record<string, bigint> = {};
+        for (const b of account.balances) {
+          if (b.asset_type !== "native") {
+            const code = (b as { asset_code: string }).asset_code;
+            tokens[code] = parseBalance(b.balance);
+          }
+        }
+        if (!controller.signal.aborted) setWalletBalance({ xlm, tokens });
+      } catch {
+        if (!controller.signal.aborted) setWalletBalance(null);
+      } finally {
+        if (!controller.signal.aborted) setIsBalanceLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [address]);
+
+  const fund = useCallback(
+    async (params: FundGrantParams): Promise<FundGrantResult> => {
+      setTxStatus("pending");
+      setError(null);
+      setTxHash(null);
+      setExplorerUrl(null);
+
+      try {
+        // TODO: Replace with real Soroban contract call when SDK binding is ready.
+        // e.g.: const tx = await grantClient.fundGrant(params.grantId, params.amount);
+        //       const result = await tx.signAndSend({ signTransaction });
+        const mockHash = `mock_tx_${Date.now()}`;
+        const url = stellarExplorerTx(mockHash);
+
+        setTxHash(mockHash);
+        setExplorerUrl(url);
+        setTxStatus("success");
+
+        // Invalidate grant queries so balances/funded amount refresh
+        await queryClient.invalidateQueries({ queryKey: ["grant", params.grantId] });
+        await queryClient.invalidateQueries({ queryKey: ["funders", params.grantId] });
+
+        toast({
+          title: "Grant funded",
+          description: `Contributed ${params.amount.toString()} stroops.`,
+          variant: "success",
+          action: { label: "View on Explorer", href: url },
+        });
+
+        return { txHash: mockHash, explorerUrl: url };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setTxStatus("error");
+        toast({ title: "Funding failed", description: message, variant: "error" });
+        throw err;
+      }
+    },
+    [queryClient]
+  );
 
   const reset = useCallback(() => {
+    setTxStatus("idle");
+    setTxHash(null);
+    setExplorerUrl(null);
     setError(null);
   }, []);
 
-  return { fund, isLoading, error, reset };
+  return {
+    fund,
+    txStatus,
+    txHash,
+    explorerUrl,
+    error,
+    reset,
+    walletBalance,
+    isBalanceLoading,
+  };
 }

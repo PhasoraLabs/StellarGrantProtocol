@@ -2,30 +2,52 @@
 
 import { useEffect, useState } from "react";
 
-function formatRelative(date: Date, now = Date.now()): string {
-  const diffSec = Math.round((date.getTime() - now) / 1000);
-  const abs = Math.abs(diffSec);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+type TimestampInput = Date | bigint | number | string | null;
 
-  if (abs < 60) return rtf.format(diffSec, "second");
-  if (abs < 3600) return rtf.format(Math.round(diffSec / 60), "minute");
-  if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), "hour");
-  if (abs < 604800) return rtf.format(Math.round(diffSec / 86400), "day");
+function toDate(value: TimestampInput): Date | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "bigint") {
+    // bigint unix timestamp in seconds
+    return new Date(Number(value) * 1000);
+  }
+  if (typeof value === "number") return new Date(value);
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function formatRelative(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  const abs = Math.abs(diffSec);
+
+  if (abs < 45) return "just now";
+  if (abs < 3600) return `${Math.round(abs / 60)}m ago`;
+  if (abs < 86400) return `${Math.round(abs / 3600)}h ago`;
+  if (abs < 604800) return `${Math.round(abs / 86400)}d ago`;
   return date.toLocaleDateString();
 }
 
-export function useRelativeTime(date: Date | string | number): string {
-  const [label, setLabel] = useState(() =>
-    formatRelative(new Date(date))
-  );
+export function useRelativeTime(timestamp: TimestampInput): string {
+  const [label, setLabel] = useState<string>(() => {
+    const d = toDate(timestamp);
+    return d ? formatRelative(d) : "";
+  });
 
   useEffect(() => {
-    const target = new Date(date);
-    const tick = () => setLabel(formatRelative(target));
+    const d = toDate(timestamp);
+    if (!d) {
+      setLabel("");
+      return;
+    }
+    const tick = () => setLabel(formatRelative(d));
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [date]);
+  }, [timestamp]);
 
   return label;
 }

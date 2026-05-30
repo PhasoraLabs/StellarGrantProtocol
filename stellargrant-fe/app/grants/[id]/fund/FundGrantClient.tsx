@@ -60,7 +60,8 @@ interface FundGrantClientProps {
 export function FundGrantClient({ grantId }: FundGrantClientProps) {
   const router = useRouter();
   const { address } = useWalletStore();
-  const { fund, isLoading, error: fundError, reset: resetFund } = useFundGrant();
+  const { fund, txStatus, error: fundError, reset: resetFund } = useFundGrant();
+  const isLoading = txStatus === "pending";
 
   const [grant, setGrant] = useState<Grant | null>(null);
   const [isGrantLoading, setIsGrantLoading] = useState(true);

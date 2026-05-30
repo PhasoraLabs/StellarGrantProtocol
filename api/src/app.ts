@@ -31,6 +31,8 @@ import { SorobanContractClient } from "./soroban/types";
 import { AppError } from "./utils/errors";
 
 import { User } from "./entities/User";
+import { Role } from "./entities/Role";
+import { UserRole } from "./entities/UserRole";
 import { GrantReviewer } from "./entities/GrantReviewer";
 import { MilestoneApproval } from "./entities/MilestoneApproval";
 import { Milestone } from "./entities/Milestone";
@@ -55,6 +57,8 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   const communityRepo = dataSource.getRepository(Community);
   const activityRepo = dataSource.getRepository(Activity);
   const userRepo = dataSource.getRepository(User);
+  const roleRepo = dataSource.getRepository(Role);
+  const userRoleRepo = dataSource.getRepository(UserRole);
   const reviewerRepo = dataSource.getRepository(GrantReviewer);
   const approvalRepo = dataSource.getRepository(MilestoneApproval);
   const milestoneRepo = dataSource.getRepository(Milestone);
@@ -64,7 +68,7 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   const signatureService = new SignatureService();
   const leaderboardService = new LeaderboardService(dataSource);
   const responseCacheService = new ResponseCacheService();
-  const rbacService = new RbacService(dataSource);
+  const rbacService = new RbacService(userRepo, roleRepo, userRoleRepo);
   const adminMiddleware = buildAdminMiddleware(signatureService);
   const reconciliationService = new ReconciliationService(dataSource, sorobanClient, grantSyncService);
   const webhookDispatcher = new WebhookDispatcher(dataSource);

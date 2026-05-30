@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { MilestoneList } from "@/components/milestones";
+import { MilestoneList, MilestoneTimeline } from "@/components/milestones";
 import type { Milestone } from "@/types";
 import { ErrorCard, PageHeader } from "@/components/ui";
 
@@ -111,7 +111,14 @@ export default function MilestonesPage({ params }: MilestonesPageProps) {
           onRetry={() => setRetryCount((c) => c + 1)}
         />
       )}
-      {!loading && !error && <MilestoneList milestones={milestones} grantId={id} />}
+      {!loading && !error && (
+        <>
+          <div className="mb-10">
+            <MilestoneTimeline milestones={milestones} grantId={id} />
+          </div>
+          <MilestoneList milestones={milestones} grantId={id} />
+        </>
+      )}
     </div>
   );
 }

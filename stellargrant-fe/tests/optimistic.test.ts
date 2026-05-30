@@ -183,6 +183,38 @@ describe("predictGrantState", () => {
     predictGrantState(baseGrant, mutation);
     expect(baseGrant.funded).toBe(original.funded);
   });
+
+  it("vote: adds an approval vote entry for the reviewer", () => {
+    const mutation: GrantMutation = { type: "vote", milestoneIdx: 0, reviewer: "GREVIEWER", approve: true };
+    const { milestones } = predictGrantState(baseGrant, mutation, [baseMilestone]);
+    expect(milestones[0].votes).toHaveLength(1);
+    expect(milestones[0].votes?.[0]).toMatchObject({ reviewer: "GREVIEWER", vote: "approve" });
+  });
+
+  it("vote: records a rejection vote", () => {
+    const mutation: GrantMutation = { type: "vote", milestoneIdx: 0, reviewer: "GREVIEWER", approve: false };
+    const { milestones } = predictGrantState(baseGrant, mutation, [baseMilestone]);
+    expect(milestones[0].votes?.[0].vote).toBe("reject");
+  });
+
+  it("vote: re-voting replaces the reviewer's prior vote (no duplicates)", () => {
+    const withVote: Milestone = {
+      ...baseMilestone,
+      votes: [{ reviewer: "GREVIEWER", vote: "reject", voted_at: 1n }],
+    };
+    const mutation: GrantMutation = { type: "vote", milestoneIdx: 0, reviewer: "GREVIEWER", approve: true };
+    const { milestones } = predictGrantState(baseGrant, mutation, [withVote]);
+    expect(milestones[0].votes).toHaveLength(1);
+    expect(milestones[0].votes?.[0].vote).toBe("approve");
+  });
+
+  it("vote: only touches the target milestone", () => {
+    const m2: Milestone = { ...baseMilestone, idx: 1 };
+    const mutation: GrantMutation = { type: "vote", milestoneIdx: 0, reviewer: "GREVIEWER", approve: true };
+    const { milestones } = predictGrantState(baseGrant, mutation, [baseMilestone, m2]);
+    expect(milestones[0].votes).toHaveLength(1);
+    expect(milestones[1].votes).toBeUndefined();
+  });
 });
 
 // ── OptimisticStore ───────────────────────────────────────────────────────

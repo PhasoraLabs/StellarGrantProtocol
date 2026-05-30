@@ -10,7 +10,7 @@
  * - OptimisticStore     — generic store for optimistic mutations with rollback
  */
 
-import type { Grant, Milestone } from "@/types";
+import type { Grant, Milestone, MilestoneVote } from "@/types";
 
 // ── Transaction lifecycle types ───────────────────────────────────────────
 
@@ -135,6 +135,7 @@ export class TransactionTracker {
 /** Describes a pending mutation to a grant */
 export type GrantMutation =
   | { type: "fund"; amount: bigint; token?: string }
+  | { type: "vote"; milestoneIdx: number; reviewer: string; approve: boolean }
   | { type: "statusChange"; newStatus: number }
   | { type: "milestoneSubmit"; milestoneIdx: number; proofHash: string }
   | { type: "milestoneApprove"; milestoneIdx: number }
@@ -171,6 +172,25 @@ export function predictGrantState(
             ? Math.max(grant.status, 2)
             : grant.status,
       };
+      break;
+    }
+
+    case "vote": {
+      // Upsert this reviewer's vote on the target milestone so the tally
+      // updates instantly. Re-voting replaces the reviewer's prior entry.
+      updatedMilestones = updatedMilestones.map((m) => {
+        if (m.idx !== mutation.milestoneIdx) return m;
+        const entry: MilestoneVote = {
+          reviewer: mutation.reviewer,
+          vote: mutation.approve ? "approve" : "reject",
+          voted_at: BigInt(Math.floor(Date.now() / 1000)),
+        };
+        const votes = [...(m.votes ?? [])];
+        const existing = votes.findIndex((v) => v.reviewer === mutation.reviewer);
+        if (existing >= 0) votes[existing] = entry;
+        else votes.push(entry);
+        return { ...m, votes };
+      });
       break;
     }
 

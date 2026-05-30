@@ -61,6 +61,12 @@ h1, h2, h3, h4, h5, h6 {
   animation: shimmer 1.5s infinite linear;
 }
 
+/* DatePicker: make the native calendar icon white on dark backgrounds */
+.datepicker-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
 /* ── Wallet Connect Button ──────────────────────────────────────────────────── */
 
 .wallet-connect-btn {

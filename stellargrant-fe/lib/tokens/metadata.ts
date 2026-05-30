@@ -7,6 +7,21 @@
 
 import { TokenMetadata } from "@/types";
 
+/**
+ * Testnet USDC Stellar Asset Contract (SAC) address. Override per environment
+ * via NEXT_PUBLIC_USDC_CONTRACT_ADDRESS.
+ */
+export const USDC_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS ||
+  "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
+
+const USDC_METADATA: TokenMetadata = {
+  address: USDC_CONTRACT_ADDRESS,
+  symbol: "USDC",
+  decimals: 6,
+  name: "USD Coin",
+};
+
 // Well-known tokens on Stellar - can be extended
 const WELL_KNOWN_TOKENS: Record<string, TokenMetadata> = {
   // Native XLM
@@ -16,13 +31,9 @@ const WELL_KNOWN_TOKENS: Record<string, TokenMetadata> = {
     decimals: 7,
     name: "Stellar Lumens",
   },
-  // Common testnet tokens
-  "USDC": {
-    address: "USDC",
-    symbol: "USDC",
-    decimals: 6,
-    name: "USD Coin",
-  },
+  // Testnet USDC — resolvable by symbol or by its SAC contract address.
+  "USDC": USDC_METADATA,
+  [USDC_CONTRACT_ADDRESS]: USDC_METADATA,
 };
 
 // In-memory cache for token metadata

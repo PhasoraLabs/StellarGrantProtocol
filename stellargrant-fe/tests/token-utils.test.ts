@@ -162,7 +162,6 @@ describe("convertTokenDecimals", () => {
   });
 
   it("should handle large decimal differences", () => {
-    // From 18 decimals (ETH) to 7 decimals (XLM)
     expect(convertTokenDecimals(BigInt("1000000000000000000"), 18, 7)).toBe(10000000n);
   });
 });

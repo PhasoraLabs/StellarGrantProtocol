@@ -1,27 +1,25 @@
-import { buildDataSource } from "../db/data-source";
+import dataSource from "../db/typeorm.config";
 
-async function runMigrations() {
-  const AppDataSource = buildDataSource();
+const run = async () => {
+  await dataSource.initialize();
+  await dataSource.runMigrations();
+  await dataSource.destroy();
+  console.log("Database migrations applied successfully.");
+};
 
-  try {
-    if (!AppDataSource.isInitialized) {
-      await AppDataSource.initialize();
-    }
-
-    console.log("Running migrations...");
-    await AppDataSource.runMigrations();
-    console.log("Migrations completed successfully");
-
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy();
-    }
-  } catch (error) {
-    console.error("Migration failed:", error);
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy();
-    }
-    process.exit(1);
+run().catch((error) => {
+  if (error?.code === "ECONNREFUSED") {
+    console.error(
+      "Failed to run migrations: cannot connect to PostgreSQL."
+    );
+    console.error(
+      "Ensure the database is running and DATABASE_URL is set."
+    );
+    console.error(
+      "For local development, run: npm run db:up"
+    );
+  } else {
+    console.error("Failed to run migrations", error);
   }
-}
-
-runMigrations();
+  process.exit(1);
+});

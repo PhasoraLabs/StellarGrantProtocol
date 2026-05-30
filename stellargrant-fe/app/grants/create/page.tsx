@@ -14,15 +14,23 @@
  */
 
 import { CreateGrantForm } from "@/components/grants/CreateGrantForm";
+import { WalletGuard } from "@/components/wallet";
+
+export const metadata = {
+  title: "Create Grant | StellarGrant",
+  description: "Define milestones, set budgets, and deploy your grant on-chain.",
+};
 
 export default function CreateGrantPage() {
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="font-orbitron text-3xl text-text-primary mb-2">Create Grant</h1>
-      <p className="font-mono text-sm text-text-muted mb-8 max-w-xl">
-        Define milestones and allocate your budget. The chart updates as you type.
-      </p>
-      <CreateGrantForm />
-    </div>
+    <WalletGuard>
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="font-orbitron text-3xl text-text-primary mb-2">Create Grant</h1>
+        <p className="font-mono text-sm text-text-muted mb-8 max-w-xl">
+          Define milestones and allocate your budget. The chart updates as you type.
+        </p>
+        <CreateGrantForm />
+      </div>
+    </WalletGuard>
   );
 }

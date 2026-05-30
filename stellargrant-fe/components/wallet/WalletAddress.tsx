@@ -1,24 +1,7 @@
 "use client";
 
-/**
- * WalletAddress Component
- *
- * Displays a truncated Stellar address in GABC12…XYZ9 format.
- * Click to copy the full address to the clipboard, with:
- *   - A "Address copied" toast dispatched via the stellar:toast event bus
- *   - A 2-second checkmark icon swap on the copy button
- *   - Graceful fallback to document.execCommand('copy') on non-HTTPS
- *
- * Props:
- *   address       — full Stellar address
- *   showCopyIcon  — show/hide the copy icon (default: true)
- *   showAvatar    — show a coloured avatar circle (default: false)
- */
-
-import { useState, useCallback } from "react";
-import { toast } from "@/lib/toast";
-
-// ── Inline SVG icons (no icon-library dependency) ─────────────────────────────
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { useAddressFormat } from "@/hooks/useAddressFormat";
 
 function CopyIcon() {
   return (
@@ -57,75 +40,23 @@ function CheckIcon() {
   );
 }
 
-// ── Clipboard helper ──────────────────────────────────────────────────────────
-
-async function copyToClipboard(text: string): Promise<void> {
-  // Modern Clipboard API (requires HTTPS or localhost)
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  // Fallback: document.execCommand (deprecated but works on HTTP)
-  const el = document.createElement("textarea");
-  el.value = text;
-  el.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
-  document.body.appendChild(el);
-  el.focus();
-  el.select();
-  document.execCommand("copy");
-  document.body.removeChild(el);
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
 interface WalletAddressProps {
   address: string;
-  /** Show or hide the copy icon. Default: true */
   showCopyIcon?: boolean;
-  /** Show a coloured avatar circle. Default: false */
   showAvatar?: boolean;
-  /** @deprecated use showCopyIcon — kept for back-compat */
+  /** @deprecated use showCopyIcon */
   showCopy?: boolean;
-}
-
-const CHECKMARK_DURATION_MS = 2000;
-
-/** Truncate to first-6 … last-4 per spec: GABC12…XYZ9 */
-function truncateAddress(address: string): string {
-  if (address.length <= 10) return address;
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
 export function WalletAddress({
   address,
   showCopyIcon = true,
   showAvatar = false,
-  showCopy, // back-compat alias
+  showCopy,
 }: WalletAddressProps) {
-  const [copied, setCopied] = useState(false);
-
-  // Resolve alias: if old showCopy prop is explicitly passed, honour it
+  const { copy, isCopied } = useCopyToClipboard();
+  const formatAddress = useAddressFormat();
   const iconVisible = showCopy !== undefined ? showCopy : showCopyIcon;
-
-  const handleCopy = useCallback(async () => {
-    if (!address) return;
-    try {
-      await copyToClipboard(address);
-    } catch {
-      // If even the fallback fails, bail silently — nothing to show
-      return;
-    }
-
-    toast({
-      title: "Address copied",
-      variant: "success",
-      duration: 2000,
-    });
-
-    // Swap icon to checkmark for 2 s
-    setCopied(true);
-    setTimeout(() => setCopied(false), CHECKMARK_DURATION_MS);
-  }, [address]);
 
   return (
     <div className="inline-flex items-center gap-2">
@@ -136,27 +67,24 @@ export function WalletAddress({
         />
       )}
 
-      <span
-        className="font-mono text-sm"
-        title={address}
-      >
-        {truncateAddress(address)}
+      <span className="font-mono text-sm" title={address}>
+        {formatAddress(address)}
       </span>
 
       {iconVisible && (
         <button
           type="button"
-          onClick={() => void handleCopy()}
+          onClick={() => void copy(address)}
           title="Click to copy full address"
           aria-label={`Copy address ${address}`}
           className={[
             "cursor-pointer transition-colors shrink-0",
-            copied
+            isCopied
               ? "text-accent-secondary"
               : "text-text-muted hover:text-accent-secondary",
           ].join(" ")}
         >
-          {copied ? <CheckIcon /> : <CopyIcon />}
+          {isCopied ? <CheckIcon /> : <CopyIcon />}
         </button>
       )}
     </div>

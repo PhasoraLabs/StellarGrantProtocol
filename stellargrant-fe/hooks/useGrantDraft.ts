@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { CreateGrantFormValues } from "@/components/grants/CreateGrantForm/types";
+import type { GrantFormData } from "@/lib/schemas/grant";
 
 const STORAGE_KEY = "sg-grant-draft";
 const MAX_DRAFT_AGE_MS = 72 * 60 * 60 * 1000;
 
 interface SavedDraft {
-  data: Partial<CreateGrantFormValues> & { currentStep?: number };
+  data: Partial<GrantFormData> & { currentStep?: number };
   savedAt: number;
 }
 
 interface UseGrantDraftResult {
-  draft: (Partial<CreateGrantFormValues> & { currentStep?: number }) | null;
-  saveDraft: (data: Partial<CreateGrantFormValues> & { currentStep?: number }) => void;
+  draft: (Partial<GrantFormData> & { currentStep?: number }) | null;
+  saveDraft: (data: Partial<GrantFormData> & { currentStep?: number }) => void;
   clearDraft: () => void;
   hasDraft: boolean;
   draftAge: string;
@@ -32,7 +32,7 @@ function formatDraftAge(savedAt: number): string {
 }
 
 export function useGrantDraft(): UseGrantDraftResult {
-  const [draft, setDraft] = useState<(Partial<CreateGrantFormValues> & { currentStep?: number }) | null>(null);
+  const [draft, setDraft] = useState<(Partial<GrantFormData> & { currentStep?: number }) | null>(null);
   const [draftAge, setDraftAge] = useState("");
 
   const updateDraftAge = useCallback((savedAt: number) => {
@@ -62,7 +62,7 @@ export function useGrantDraft(): UseGrantDraftResult {
   }, [updateDraftAge]);
 
   const saveDraft = useCallback(
-    (data: Partial<CreateGrantFormValues> & { currentStep?: number }) => {
+    (data: Partial<GrantFormData> & { currentStep?: number }) => {
       const saved: SavedDraft = {
         data,
         savedAt: Date.now(),

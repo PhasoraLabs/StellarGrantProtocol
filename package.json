@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "db:up": "node -e \"console.error('docker is not installed; start PostgreSQL manually or set DATABASE_URL before running migrations.'); process.exit(1);\"",
     "migration:run": "cd api && npm run migration:run"
   },
   "dependencies": {

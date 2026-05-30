@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { WalletAddress } from "@/components/wallet/WalletAddress";
+import { ContributorQRSection } from "@/components/contributors/ContributorQRSection";
 import { API_URL } from "@/lib/constants";
 import { addressToColor } from "@/lib/search/map";
 
@@ -85,6 +86,8 @@ export default async function ContributorPage({ params }: ContributorPageProps) 
           {bio && <p className="font-mono text-sm text-text-primary">{bio}</p>}
         </div>
       </div>
+
+      <ContributorQRSection address={address} />
     </div>
   );
 }
