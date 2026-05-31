@@ -90,6 +90,7 @@ export function FundGrantModal({ grant, open, onClose, onSuccess }: FundGrantMod
     defaultValues: { amount: "" },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const amountValue = watch("amount");
   const amountStroops = amountValue ? xlmToStroops(amountValue) : 0n;
   const contributionPct =
