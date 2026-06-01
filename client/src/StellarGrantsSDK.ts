@@ -8,12 +8,17 @@ import {
 } from "@stellar/stellar-sdk";
 import { parseSorobanError } from "./errors/parseSorobanError";
 import { StellarGrantsError } from "./errors/StellarGrantsError";
+import { TransactionTimeoutError } from "./errors/TransactionTimeoutError";
+import { TransactionFailedError } from "./errors/TransactionFailedError";
 import {
   GrantCreateInput,
   GrantFundInput,
   MilestoneSubmitInput,
   MilestoneVoteInput,
   StellarGrantsSDKConfig,
+  TransactionResult,
+  WaitForTransactionOptions,
+  TransactionPollingStatus,
 } from "./types";
 import { meetsThreshold, PendingXdrStore } from "./utils/transactions";
 
@@ -116,6 +121,139 @@ export class StellarGrantsSDK {
       ],
       options,
     );
+  }
+
+  /**
+   * Polls for transaction status until it reaches a terminal state.
+   * Resolves with TransactionResult on SUCCESS, rejects on FAILED, timeout, or network error.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionResult> {
+    const pollIntervalMs = options?.pollIntervalMs ?? 3000;
+    const timeoutMs = options?.timeoutMs ?? 60000;
+    const maxNetworkRetries = options?.maxNetworkRetries ?? 3;
+    const signal = options?.signal;
+
+    if (pollIntervalMs < 500) {
+      throw new Error(`pollIntervalMs must be at least 500ms, got ${pollIntervalMs}ms`);
+    }
+
+    if (timeoutMs <= pollIntervalMs) {
+      throw new Error(`timeoutMs (${timeoutMs}ms) must be greater than pollIntervalMs (${pollIntervalMs}ms)`);
+    }
+
+    if (signal?.aborted) {
+      return Promise.reject(new StellarGrantsError("Transaction polling cancelled", "ABORTED"));
+    }
+
+    return new Promise((resolve, reject) => {
+      let active = true;
+      const startTime = Date.now();
+      let attempt = 0;
+      let consecutiveNetworkErrors = 0;
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      let abortListener: (() => void) | null = null;
+
+      const cleanup = () => {
+        active = false;
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (abortListener && signal) {
+          signal.removeEventListener("abort", abortListener);
+        }
+      };
+
+      const poll = async () => {
+        if (!active) return;
+
+        attempt++;
+        const elapsedMs = Date.now() - startTime;
+
+        try {
+          const response = await this.server.getTransaction(hash);
+
+          if (!active) return;
+
+          consecutiveNetworkErrors = 0;
+          const status = response?.status as TransactionPollingStatus;
+
+          options?.onStatusChange?.(status);
+
+          switch (status) {
+            case "SUCCESS": {
+              cleanup();
+              resolve({
+                status: "SUCCESS",
+                ledger: response.ledger,
+                envelopeXdr: response.envelopeXdr || response.envelope_xdr,
+                resultXdr: response.resultXdr || response.result_xdr,
+                resultMetaXdr: response.resultMetaXdr || response.result_meta_xdr,
+                hash,
+              });
+              return;
+            }
+            case "FAILED": {
+              cleanup();
+              reject(new TransactionFailedError(hash, response?.errorResult, { raw: response }));
+              return;
+            }
+            case "PENDING":
+            case "DUPLICATE":
+            case "TRY_AGAIN_LATER":
+            case "NOT_FOUND":
+              break;
+            default:
+              break;
+          }
+
+          options?.onPoll?.(attempt, elapsedMs);
+
+          if (elapsedMs >= timeoutMs) {
+            cleanup();
+            reject(new TransactionTimeoutError(hash, timeoutMs));
+            return;
+          }
+
+          if (!active) return;
+          setTimeout(poll, pollIntervalMs);
+        } catch (error) {
+          if (!active) return;
+
+          consecutiveNetworkErrors++;
+
+          if (consecutiveNetworkErrors > maxNetworkRetries) {
+            cleanup();
+            reject(new StellarGrantsError(`Network error after ${maxNetworkRetries} retries: ${error}`, "NETWORK_ERROR", error));
+            return;
+          }
+
+          options?.onPoll?.(attempt, Date.now() - startTime);
+
+          if (!active) return;
+          setTimeout(poll, pollIntervalMs);
+        }
+      };
+
+      if (signal) {
+        abortListener = () => {
+          if (active) {
+            cleanup();
+            reject(new StellarGrantsError("Transaction polling cancelled", "ABORTED"));
+          }
+        };
+        signal.addEventListener("abort", abortListener);
+      }
+
+      timeoutHandle = setTimeout(() => {
+        if (active) {
+          cleanup();
+          reject(new TransactionTimeoutError(hash, timeoutMs));
+        }
+      }, timeoutMs);
+
+      poll();
+    });
   }
 
   /**
@@ -440,6 +578,10 @@ export class StellarGrantsSDK {
       simulatedFee?: string;
       /** Pre-computed footprint from a prior {@link simulateFootprint} call. See issue #462. */
       footprint?: any;
+      /** If true, wait for transaction confirmation before returning. */
+      waitForConfirmation?: boolean;
+      pollIntervalMs?: number;
+      timeoutMs?: number;
     },
   ): Promise<unknown> {
     try {
@@ -472,6 +614,14 @@ export class StellarGrantsSDK {
       if (sent.status === "ERROR") {
         throw new StellarGrantsError(`Send failed: ${sent.errorResult ?? "unknown error"}`);
       }
+
+      if (options?.waitForConfirmation && sent.hash) {
+        return this.waitForTransaction(sent.hash, {
+          pollIntervalMs: options.pollIntervalMs,
+          timeoutMs: options.timeoutMs,
+        });
+      }
+
       return sent;
     } catch (error) {
       throw parseSorobanError(error);

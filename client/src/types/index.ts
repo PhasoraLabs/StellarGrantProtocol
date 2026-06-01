@@ -102,3 +102,29 @@ export type MilestoneVoteInput = {
   milestoneIdx: number;
   approve: boolean;
 };
+
+export type TransactionPollingStatus =
+  | "SUCCESS"
+  | "FAILED"
+  | "PENDING"
+  | "DUPLICATE"
+  | "TRY_AGAIN_LATER"
+  | "NOT_FOUND";
+
+export type TransactionResult = {
+  status: "SUCCESS";
+  ledger: number;
+  envelopeXdr: string;
+  resultXdr: string;
+  resultMetaXdr: string;
+  hash: string;
+};
+
+export type WaitForTransactionOptions = {
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+  maxNetworkRetries?: number;
+  onStatusChange?: (status: TransactionPollingStatus) => void;
+  onPoll?: (attempt: number, elapsedMs: number) => void;
+  signal?: AbortSignal;
+};
