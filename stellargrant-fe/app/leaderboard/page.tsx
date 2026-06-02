@@ -1,14 +1,17 @@
 /**
  * Leaderboard Page
- * 
- * Contributor reputation board showing top contributors by reputation score.
+ *
+ * Fully-populated contributor leaderboard ranked by reputation score.
+ * Fetches paginated data from GET ${API_URL}/leaderboard with manual
+ * fetch; pagination handled by the Pagination component.
  */
 
-export default function LeaderboardPage() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Leaderboard</h1>
-      {/* Contributor reputation board will be implemented here */}
-    </div>
-  );
-}
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Leaderboard — StellarGrant Protocol",
+  description:
+    "Top contributors ranked by reputation score earned through completed milestones on the StellarGrant Protocol.",
+};
+
+export { default } from "./LeaderboardClient";
