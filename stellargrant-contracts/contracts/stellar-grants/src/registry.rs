@@ -97,7 +97,11 @@ pub fn is_approved_reviewer(env: &Env, address: &Address) -> bool {
 pub fn get_contributors_page(env: &Env, offset: u32, limit: u32) -> Vec<RegistryEntry> {
     let index = Storage::get_contributor_index(env);
     let total = index.len();
-    let effective_limit = if limit > MAX_PAGE_SIZE { MAX_PAGE_SIZE } else { limit };
+    let effective_limit = if limit > MAX_PAGE_SIZE {
+        MAX_PAGE_SIZE
+    } else {
+        limit
+    };
     let mut result: Vec<RegistryEntry> = Vec::new(env);
 
     let mut i = offset;
@@ -117,11 +121,7 @@ pub fn contributor_count(env: &Env) -> u32 {
 }
 
 /// Deactivate a contributor entry (soft-delete). Admin only.
-pub fn deactivate(
-    env: &Env,
-    admin: &Address,
-    address: &Address,
-) -> Result<(), ContractError> {
+pub fn deactivate(env: &Env, admin: &Address, address: &Address) -> Result<(), ContractError> {
     require_global_admin(env, admin)?;
 
     let index = Storage::get_contributor_index(env);

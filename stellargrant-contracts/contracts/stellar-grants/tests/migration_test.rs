@@ -12,7 +12,13 @@ fn setup(env: &Env) -> (StellarGrantsContractClient<'_>, Address) {
 }
 
 /// Helper: build a ContractVersion value.
-fn make_version(env: &Env, major: u32, minor: u32, patch: u32, deployer: &Address) -> ContractVersion {
+fn make_version(
+    env: &Env,
+    major: u32,
+    minor: u32,
+    patch: u32,
+    deployer: &Address,
+) -> ContractVersion {
     ContractVersion {
         major,
         minor,
@@ -30,7 +36,9 @@ fn test_initialize_sets_version_1_0_0() {
 
     client.initialize(&deployer);
 
-    let version = client.get_contract_version().expect("version should be set after initialize");
+    let version = client
+        .get_contract_version()
+        .expect("version should be set after initialize");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 0);
@@ -156,7 +164,10 @@ fn test_migration_state_continuity_contributor_survives_upgrade() {
 
     // Contributor registry must survive the migration (state continuity)
     let post_migration_count = client.contributor_count();
-    assert_eq!(post_migration_count, 1, "contributor count must be unchanged after migration");
+    assert_eq!(
+        post_migration_count, 1,
+        "contributor count must be unchanged after migration"
+    );
 
     // Version is correctly updated
     let new_version = client.get_contract_version().unwrap();

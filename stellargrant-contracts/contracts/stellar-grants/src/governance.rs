@@ -88,7 +88,14 @@ pub fn cast_vote(
         Events::milestone_status_changed(env, grant_id, milestone_idx, new_state);
     }
 
-    Events::milestone_voted(env, grant.id, milestone.idx, reviewer.clone(), approve, reason);
+    Events::milestone_voted(
+        env,
+        grant.id,
+        milestone.idx,
+        reviewer.clone(),
+        approve,
+        reason,
+    );
 
     Ok(result)
 }

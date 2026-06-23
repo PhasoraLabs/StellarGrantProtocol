@@ -297,6 +297,24 @@ mod tests {
 
     #[test]
     fn test_batch_vote_milestones_partial_failure() {
+    fn test_grant_fund_zero_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, _, contract_id) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let grant_id = 1u64;
+
+        create_grant(&env, &contract_id, grant_id, owner, token, Vec::new(&env));
+
+        let result = client.try_grant_fund(&grant_id, &funder, &0);
+        assert_eq!(result, Err(Ok(ContractError::ZeroAmount.into())));
+    }
+
+    #[test]
+    fn test_milestone_index_out_of_bounds() {
         let env = Env::default();
         let (client, _, contract_id) = setup_test(&env);
         let grant_id = 1;

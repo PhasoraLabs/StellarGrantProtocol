@@ -214,9 +214,7 @@ impl Storage {
     }
 
     pub fn set_migration_log(env: &Env, log: &Vec<MigrationRecord>) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::MigrationLog, log);
+        env.storage().persistent().set(&DataKey::MigrationLog, log);
     }
 
     // ── Global Registry (#520) ────────────────────────────────────────
