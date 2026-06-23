@@ -1,5 +1,43 @@
 use soroban_sdk::{contracterror, contracttype, Address, Map, String, Vec};
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationRecord {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub run_by: Address,
+    pub run_at: u64,
+    pub success: bool,
+    pub notes: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContractVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+    pub deployed_at: u64,
+    pub deployer: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegistryEntry {
+    pub address: Address,
+    pub registered_at: u64,
+    pub is_active: bool,
+    pub entry_type: RegistryEntryType,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum RegistryEntryType {
+    Contributor = 0,
+    Reviewer = 1,
+}
+
 /// Contract error types
 #[contracterror]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
