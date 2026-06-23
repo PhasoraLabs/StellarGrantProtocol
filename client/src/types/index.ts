@@ -140,3 +140,63 @@ export type WaitForTransactionOptions = {
   onPoll?: (attempt: number, elapsedMs: number) => void;
   signal?: AbortSignal;
 };
+
+// ── Balance monitoring types (#489) ──────────────────────────────────────────
+
+export type GrantBalance = {
+  assetCode: string;
+  assetIssuer: string;
+  isNative: boolean;
+  rawBalance: string;
+  balanceStroops: bigint;
+  formatted: string;
+};
+
+export type GrantBalances = {
+  grantId: number;
+  contractAddress: string;
+  balances: GrantBalance[];
+  ledger: number;
+  fetchedAt: Date;
+};
+
+export type BalanceChangeListenerOptions = {
+  pollInterval?: number;
+  onChange: (current: GrantBalances, previous: GrantBalances | null) => void;
+  onError?: (error: Error) => void;
+};
+
+// ── Transaction history types (#483) ─────────────────────────────────────────
+
+export type GrantOperationType =
+  | "grant_create"
+  | "grant_fund"
+  | "grant_cancel"
+  | "milestone_submit"
+  | "milestone_approve"
+  | "milestone_reject"
+  | "milestone_payout"
+  | "grant_withdraw"
+  | "unknown_contract_call";
+
+export type GrantHistoryRecord = {
+  txHash: string;
+  createdAt: string;
+  successful: boolean;
+  operationType: GrantOperationType;
+  grantId?: string;
+  sourceAccount: string;
+  feeCharged: string;
+  memo?: string;
+};
+
+export type HistoryOptions = {
+  limit?: number;
+  order?: "asc" | "desc";
+  cursor?: string;
+};
+
+export type HistoryResult = {
+  records: GrantHistoryRecord[];
+  nextCursor?: string;
+};

@@ -1,5 +1,6 @@
 import {
   Contract,
+  Horizon,
   rpc,
   TransactionBuilder,
   nativeToScVal,
@@ -20,6 +21,13 @@ import {
   WaitForTransactionOptions,
   TransactionPollingStatus,
   IpfsUploadConfig,
+  GrantBalance,
+  GrantBalances,
+  BalanceChangeListenerOptions,
+  GrantOperationType,
+  GrantHistoryRecord,
+  HistoryOptions,
+  HistoryResult,
 } from "./types";
 import { meetsThreshold, PendingXdrStore } from "./utils/transactions";
 import { combineSignatures } from "./utils/transactions";
@@ -54,6 +62,7 @@ export class StellarGrantsSDK {
   private readonly contract: Contract;
   private readonly server: any;
   private readonly config: StellarGrantsSDKConfig;
+  private _horizonServer: Horizon.Server | null = null;
   private eventPollHandle: ReturnType<typeof setTimeout> | null = null;
   private eventHeartbeatHandle: ReturnType<typeof setTimeout> | null = null;
   private eventWs: WebSocket | null = null;
@@ -74,6 +83,19 @@ export class StellarGrantsSDK {
       allowHttp: serverUrl.startsWith("http://"),
       customHeaders: config.customHeaders,
     } as any);
+    if (config.horizonUrl) {
+      this._horizonServer = new Horizon.Server(config.horizonUrl);
+    }
+  }
+
+  private get horizonServer(): Horizon.Server {
+    if (!this._horizonServer) {
+      throw new StellarGrantsError(
+        "horizonUrl is required for this operation. Pass it in the SDK config.",
+        "NETWORK_ERROR",
+      );
+    }
+    return this._horizonServer;
   }
 
   /**
@@ -817,6 +839,262 @@ export class StellarGrantsSDK {
     gateways?: string[]
   ) {
     return fetchMetadataFromIPFS(cid, gateways);
+  }
+
+  // ── Balance monitoring (#489) ──────────────────────────────────────────────
+
+  /**
+   * Fetch the current XLM and token balances held by the grant's smart contract.
+   *
+   * Queries the Horizon API for the contract account's balances (native XLM
+   * and any classic asset trustlines) and returns a structured snapshot.
+   *
+   * @param grantId - The grant ID (used to verify the grant exists; funds are
+   *   held by the shared contract account at `config.contractId`)
+   * @returns Structured GrantBalances snapshot
+   */
+  async getGrantBalances(grantId: number): Promise<GrantBalances> {
+    const account = await this.horizonServer.loadAccount(this.config.contractId);
+
+    const rawBalances = account.balances as Horizon.HorizonApi.BalanceLine[];
+    const balances: GrantBalance[] = rawBalances.map((b) => {
+      const isNative = b.asset_type === "native";
+      const raw = b.balance;
+      const stroops = this._parseBalanceToStroops(raw);
+      return {
+        assetCode: isNative ? "XLM" : (b as Horizon.HorizonApi.BalanceLineAsset).asset_code,
+        assetIssuer: isNative ? "" : (b as Horizon.HorizonApi.BalanceLineAsset).asset_issuer,
+        isNative,
+        rawBalance: raw,
+        balanceStroops: stroops,
+        formatted: this._formatStroops(stroops),
+      };
+    });
+
+    balances.sort((a, b) => {
+      if (a.isNative) return -1;
+      if (b.isNative) return 1;
+      return a.assetCode.localeCompare(b.assetCode);
+    });
+
+    return {
+      grantId,
+      contractAddress: this.config.contractId,
+      balances,
+      ledger: Number((account as any).last_modified_ledger ?? 0),
+      fetchedAt: new Date(),
+    };
+  }
+
+  /**
+   * Subscribe to balance changes for a grant's contract account.
+   *
+   * Polls Horizon on a configurable interval and invokes `onChange` whenever
+   * any balance in the snapshot differs from the previous one.
+   *
+   * @param grantId - Grant ID to monitor
+   * @param options - Polling config and callbacks
+   * @returns Cleanup function — call it to stop listening
+   */
+  listenToGrantBalanceChanges(
+    grantId: number,
+    options: BalanceChangeListenerOptions,
+  ): () => void {
+    const { pollInterval = 10_000, onChange, onError } = options;
+    let previous: GrantBalances | null = null;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const current = await this.getGrantBalances(grantId);
+        if (this._hasBalanceChanged(previous, current)) {
+          onChange(current, previous);
+        }
+        previous = current;
+      } catch (err) {
+        onError?.(err instanceof Error ? err : new Error(String(err)));
+      }
+      if (!stopped) {
+        timer = setTimeout(poll, pollInterval);
+      }
+    };
+
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }
+
+  // ── Transaction history (#483) ────────────────────────────────────────────
+
+  /**
+   * Retrieve StellarGrants-related transaction history for a wallet address.
+   *
+   * Queries the Horizon API for all transactions sourced from `address` and
+   * returns them as typed GrantHistoryRecord entries ready for dashboard display.
+   *
+   * @param address - Stellar account address (G…)
+   * @param options - Pagination and ordering
+   *
+   * @example
+   * ```typescript
+   * const { records, nextCursor } = await sdk.getTransactionHistory("GABC...", { limit: 20 });
+   * // Load next page:
+   * const page2 = await sdk.getTransactionHistory("GABC...", { cursor: nextCursor });
+   * ```
+   */
+  async getTransactionHistory(
+    address: string,
+    options: HistoryOptions = {},
+  ): Promise<HistoryResult> {
+    const limit = Math.min(options.limit ?? 50, 200);
+    const order = options.order ?? "desc";
+
+    let builder = this.horizonServer
+      .transactions()
+      .forAccount(address)
+      .limit(limit)
+      .order(order as "asc" | "desc");
+
+    if (options.cursor) {
+      builder = builder.cursor(options.cursor);
+    }
+
+    const page = await builder.call();
+    return this._parseHistoryPage(page, limit);
+  }
+
+  /**
+   * Retrieve all transactions related to a specific grant ID.
+   *
+   * Queries the Horizon API scoped to the contract account and filters records
+   * whose memo matches the `grant:<grantId>` convention.
+   *
+   * @param grantId - Numeric grant ID
+   * @param options - Pagination and ordering
+   *
+   * @example
+   * ```typescript
+   * const { records } = await sdk.getGrantHistory(42, { limit: 100 });
+   * const funded = records.filter(r => r.operationType === "grant_fund");
+   * ```
+   */
+  async getGrantHistory(
+    grantId: number,
+    options: HistoryOptions = {},
+  ): Promise<HistoryResult> {
+    const limit = Math.min(options.limit ?? 50, 200);
+    const order = options.order ?? "desc";
+    const grantIdStr = String(grantId);
+
+    let builder = this.horizonServer
+      .transactions()
+      .forAccount(this.config.contractId)
+      .limit(limit)
+      .order(order as "asc" | "desc");
+
+    if (options.cursor) {
+      builder = builder.cursor(options.cursor);
+    }
+
+    const page = await builder.call();
+    const { records: all, nextCursor } = this._parseHistoryPage(page, limit);
+
+    const records = all.filter(
+      (r) =>
+        r.grantId === grantIdStr ||
+        r.memo?.toLowerCase().includes(`grant:${grantIdStr}`),
+    );
+
+    return { records, nextCursor: records.length > 0 ? nextCursor : undefined };
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  private _parseBalanceToStroops(raw: string): bigint {
+    const [whole = "0", frac = ""] = raw.split(".");
+    const paddedFrac = frac.padEnd(7, "0").slice(0, 7);
+    return BigInt(whole) * 10_000_000n + BigInt(paddedFrac);
+  }
+
+  private _formatStroops(stroops: bigint): string {
+    const whole = stroops / 10_000_000n;
+    const frac = (stroops % 10_000_000n).toString().padStart(7, "0");
+    return `${whole}.${frac}`;
+  }
+
+  private _hasBalanceChanged(
+    previous: GrantBalances | null,
+    current: GrantBalances,
+  ): boolean {
+    if (!previous) return true;
+    if (previous.balances.length !== current.balances.length) return true;
+    for (const curr of current.balances) {
+      const prev = previous.balances.find(
+        (b) => b.assetCode === curr.assetCode && b.assetIssuer === curr.assetIssuer,
+      );
+      if (!prev || prev.balanceStroops !== curr.balanceStroops) return true;
+    }
+    return false;
+  }
+
+  private static readonly FUNCTION_NAME_MAP: Record<string, GrantOperationType> = {
+    grant_create: "grant_create",
+    grant_fund: "grant_fund",
+    grant_cancel: "grant_cancel",
+    milestone_submit: "milestone_submit",
+    milestone_approve: "milestone_approve",
+    milestone_reject: "milestone_reject",
+    milestone_payout: "milestone_payout",
+    grant_withdraw: "grant_withdraw",
+  };
+
+  private _parseHistoryPage(
+    page: { records: unknown[] },
+    limit: number,
+  ): HistoryResult {
+    const rawRecords = page.records as Array<{
+      hash: string;
+      created_at: string;
+      successful: boolean;
+      source_account: string;
+      fee_charged: string;
+      memo?: string;
+      paging_token: string;
+    }>;
+
+    const records: GrantHistoryRecord[] = rawRecords.slice(0, limit).map((tx) => {
+      let operationType: GrantOperationType = "unknown_contract_call";
+      let grantId: string | undefined;
+
+      if (tx.memo) {
+        const match = /grant:(\d+)/i.exec(tx.memo);
+        if (match) grantId = match[1];
+
+        const normalised = tx.memo.toLowerCase().replace(/-/g, "_");
+        operationType =
+          StellarGrantsSDK.FUNCTION_NAME_MAP[normalised] ?? "unknown_contract_call";
+      }
+
+      return {
+        txHash: tx.hash,
+        createdAt: tx.created_at,
+        successful: tx.successful,
+        operationType,
+        grantId,
+        sourceAccount: tx.source_account,
+        feeCharged: tx.fee_charged,
+        memo: tx.memo,
+      };
+    });
+
+    const lastRecord = rawRecords[rawRecords.length - 1];
+    const nextCursor = lastRecord?.paging_token;
+
+    return { records, nextCursor };
   }
 
   private async setAllowance(token: string, amount: bigint, owner: string) {

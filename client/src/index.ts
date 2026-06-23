@@ -32,6 +32,45 @@ export type { TransactionStage, TransactionTrackerEvents, OptimisticUpdate } fro
 // Multi-sig utilities — Issue #484
 export { combineSignatures } from "./utils/transactions";
 
+// Balance monitoring — Issue #489
+export type {
+  GrantBalance,
+  GrantBalances,
+  BalanceChangeListenerOptions,
+} from "./types";
+
+// Transaction history — Issue #483
+export type {
+  GrantOperationType,
+  GrantHistoryRecord,
+  HistoryOptions,
+  HistoryResult,
+} from "./types";
+
+// Vue 3 composables — Issue #500
+export {
+  useStellarGrants,
+  useGrants,
+  useGrant,
+  useGrantBalances,
+  useTransactionHistory,
+  useGrantHistory,
+  provideStellarGrants,
+} from "./composables";
+export type {
+  StellarGrantsContext,
+  UseGrantsOptions,
+  UseGrantsResult,
+  UseGrantOptions,
+  UseGrantResult,
+  UseGrantBalancesOptions,
+  UseGrantBalancesResult,
+  UseTransactionHistoryOptions,
+  UseTransactionHistoryResult,
+  UseGrantHistoryOptions,
+  UseGrantHistoryResult,
+} from "./composables";
+
 // Wallet adapters — import directly from @stellargrants/client-sdk
 export { FreighterAdapter } from "./wallets/FreighterAdapter";
 export { AlbedoAdapter } from "./wallets/AlbedoAdapter";

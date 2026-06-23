@@ -21,6 +21,11 @@ jest.mock("@stellar/stellar-sdk", () => {
         async getNetwork() { return { passphrase: "Test SDF Network ; September 2015" }; }
       },
     },
+    Horizon: {
+      Server: class {
+        constructor() {}
+      },
+    },
     Contract: class {
       call(method: string, ...args: unknown[]) { return { method, args }; }
     },
