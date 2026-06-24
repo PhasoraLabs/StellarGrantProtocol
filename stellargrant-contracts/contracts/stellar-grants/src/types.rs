@@ -399,3 +399,22 @@ pub struct FeeRecord {
     pub token: Address,
     pub collected_at: u64,
 }
+
+// ── Issue #524: Price Oracle Integration ───────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OracleConfig {
+    pub oracle_address: Address,
+    pub base_token: Address,
+    pub staleness_threshold: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PriceQuote {
+    pub token: Address,
+    pub price_in_base: i128,
+    pub fetched_at: u64,
+    pub is_stale: bool,
+}

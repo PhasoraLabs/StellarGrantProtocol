@@ -12,6 +12,7 @@ mod governance;
 mod hooks;
 mod insurance;
 mod migration;
+mod oracle;
 mod quadratic;
 mod reentrancy;
 mod registry;
@@ -27,8 +28,9 @@ pub use types::{
     AuditAction, AuditEntry, ContractVersion, Dispute, DisputeStatus, EscrowLifecycleState,
     EscrowMode, EscrowState, FeeRecord, Grant, GrantFund, GrantStatus, HookCallResult, HookEvent,
     HookRegistration, InsuranceClaim, InsurancePolicy, MigrationRecord, Milestone, MilestoneState,
-    MilestoneSubmission, PauseRecord, PaymentStream, ProtocolConfig, QuadraticVoteRecord,
-    RegistryEntry, RegistryEntryType, ReputationTier, VoiceCredits, VotingMechanism,
+    MilestoneSubmission, OracleConfig, PauseRecord, PaymentStream, PriceQuote, ProtocolConfig,
+    QuadraticVoteRecord, RegistryEntry, RegistryEntryType, ReputationTier, VoiceCredits,
+    VotingMechanism,
 };
 
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, String, Vec};
@@ -1397,6 +1399,28 @@ impl StellarGrantsContract {
 
     pub fn get_fees_collected(env: Env, token: Address) -> i128 {
         fees::total_fees_collected(&env, &token)
+    }
+
+    // ── Issue #524: Price Oracle Integration ─────────────────────────────────
+
+    /// Configure the on-chain price oracle. Admin only.
+    pub fn set_oracle(env: Env, admin: Address, config: OracleConfig) -> Result<(), ContractError> {
+        oracle::set_oracle(&env, &admin, config)
+    }
+
+    /// Fetch the current oracle price for a token.
+    pub fn get_price(env: Env, token: Address) -> Result<PriceQuote, ContractError> {
+        oracle::get_price(&env, &token)
+    }
+
+    /// Convert an amount between two token denominations using oracle prices.
+    pub fn convert_amount(
+        env: Env,
+        amount: i128,
+        from_token: Address,
+        to_token: Address,
+    ) -> Result<i128, ContractError> {
+        oracle::convert_amount(&env, amount, &from_token, &to_token)
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────

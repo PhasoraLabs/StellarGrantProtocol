@@ -1,8 +1,8 @@
 use crate::types::{
     AuditEntry, ContractError, ContractVersion, ContributorProfile, Dispute, EscrowState, Grant,
     HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, MigrationRecord, Milestone,
-    PauseRecord, PaymentStream, ProtocolConfig, QuadraticVoteRecord, RegistryEntry, VoiceCredits,
-    VotingMechanism,
+    PauseRecord, PaymentStream, ProtocolConfig, QuadraticVoteRecord, RegistryEntry, OracleConfig,
+    VoiceCredits, VotingMechanism,
 };
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
@@ -56,6 +56,8 @@ pub enum DataKey {
     ProtocolConfig,
     // Issue #517: cumulative fees per token
     FeesCollected(Address),
+    // Issue #524: price oracle configuration
+    OracleConfig,
 }
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -573,6 +575,23 @@ impl Storage {
         env.storage()
             .persistent()
             .set(&key, &current.saturating_add(amount));
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    // ── Issue #524: Price oracle configuration ────────────────────────────────
+
+    pub fn get_oracle_config(env: &Env) -> Option<OracleConfig> {
+        let key = DataKey::OracleConfig;
+        let config = env.storage().persistent().get(&key);
+        if config.is_some() {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        config
+    }
+
+    pub fn set_oracle_config(env: &Env, config: &OracleConfig) {
+        let key = DataKey::OracleConfig;
+        env.storage().persistent().set(&key, config);
         Self::bump_persistent_ttl(env, &key);
     }
 
