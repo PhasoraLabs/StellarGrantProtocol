@@ -64,4 +64,22 @@ pub enum ContractError {
     ComplianceCheckFailed = 51,
     VerifierNotSet = 52,
     NotVerifier = 53,
+    // Treasury (#519)
+    InsufficientTreasuryBalance = 54,
+    TreasuryNotConfigured = 55,
+    // DAO Governance (#532)
+    DaoProposalNotFound = 56,
+    DaoProposalNotActive = 57,
+    DaoProposalVotingClosed = 58,
+    DaoProposalAlreadyExecuted = 59,
+    DaoProposalQuorumNotReached = 60,
+    DaoProposalRejected = 61,
+    DaoModeDisabled = 62,
+    // Bounty-Mode Grants (#533)
+    BountyNotFound = 63,
+    BountyNotOpen = 64,
+    SubmissionWindowClosed = 65,
+    SubmissionNotFound = 66,
+    BountyAlreadyResolved = 67,
+    NoSubmissions = 68,
 }

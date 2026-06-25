@@ -1,5 +1,6 @@
 use soroban_sdk::{Address, Env, Vec};
 
+use crate::pagination;
 use crate::storage::Storage;
 use crate::types::{AuditAction, AuditEntry};
 
@@ -29,8 +30,7 @@ pub fn get_log(env: &Env, grant_id: u64) -> Vec<AuditEntry> {
     Storage::get_audit_log(env, grant_id)
 }
 
-/// Return the last N entries from the audit log.
-#[allow(dead_code)]
+/// Return the last N entries from the audit log, oldest of the page first.
 pub fn get_recent(env: &Env, grant_id: u64, n: u32) -> Vec<AuditEntry> {
     let log = Storage::get_audit_log(env, grant_id);
     let len = log.len();
@@ -38,12 +38,8 @@ pub fn get_recent(env: &Env, grant_id: u64, n: u32) -> Vec<AuditEntry> {
         return Vec::new(env);
     }
 
-    let start = len.saturating_sub(n);
-    let mut result = Vec::new(env);
-    for i in start..len {
-        result.push_back(log.get(i).unwrap());
-    }
-    result
+    let start = if len > n { len - n } else { 0 };
+    pagination::paginate(env, &log, start, n)
 }
 
 /// Return the count of audit entries for a grant.

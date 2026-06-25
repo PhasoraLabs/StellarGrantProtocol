@@ -1,9 +1,10 @@
 use crate::types::{
-    AuditEntry, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile, Dispute,
-    EscrowAccount, EscrowState, FunderLedger, Grant, HookEvent, HookRegistration, InsuranceClaim,
-    InsurancePolicy, MigrationRecord, Milestone, MultisigProposal, OracleConfig, PauseRecord,
-    PaymentStream, ProtocolConfig, ProtocolMetrics, QuadraticVoteRecord, RegistryEntry,
-    TokenMetric, VoiceCredits, VotingMechanism,
+    AuditEntry, BountyGrant, BountySubmission, ComplianceAttestation, ContractError,
+    ContractVersion, ContributorProfile, DaoProposal, Dispute, EscrowAccount, EscrowState,
+    FunderLedger, Grant, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy,
+    MigrationRecord, Milestone, MultisigProposal, OracleConfig, PauseRecord, PaymentStream,
+    ProtocolConfig, ProtocolMetrics, QuadraticVoteRecord, RegistryEntry, TokenMetric, VoiceCredits,
+    VotingMechanism,
 };
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
@@ -72,6 +73,21 @@ pub enum DataKey {
     // Issue #548: compliance module
     ComplianceAttestation(Address),
     ComplianceVerifier,
+    // Issue #519: protocol treasury management
+    TreasuryBalance(Address),
+    TreasuryAddress,
+    // Issue #532: protocol-wide DAO governance
+    DaoProposal(u64),
+    DaoVoterRecord(u64, Address),
+    DaoProposalCounter,
+    DaoModeEnabled,
+    DaoVotingPeriodLedgers,
+    DaoQuorumVotes,
+    // Issue #533: competitive bounty-mode grants
+    BountyGrant(u64),
+    BountySubmission(u64, Address),
+    BountySubmitters(u64),
+    BountyCounter,
 }
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -99,6 +115,13 @@ impl Storage {
             .persistent()
             .set(&DataKey::GrantCounter, &count);
         count
+    }
+
+    pub fn get_grant_count(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GrantCounter)
+            .unwrap_or(0)
     }
 
     pub fn get_global_admin(env: &Env) -> Option<Address> {
@@ -600,6 +623,178 @@ impl Storage {
     pub fn set_oracle_config(env: &Env, config: &OracleConfig) {
         let key = DataKey::OracleConfig;
         env.storage().persistent().set(&key, config);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    // ── Issue #519: Protocol treasury management ──────────────────────────────
+
+    pub fn get_treasury_address(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::TreasuryAddress)
+    }
+
+    pub fn set_treasury_address(env: &Env, treasury: &Address) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::TreasuryAddress, treasury);
+    }
+
+    pub fn get_treasury_balance(env: &Env, token: &Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TreasuryBalance(token.clone()))
+            .unwrap_or(0)
+    }
+
+    pub fn set_treasury_balance(env: &Env, token: &Address, balance: i128) {
+        let key = DataKey::TreasuryBalance(token.clone());
+        env.storage().persistent().set(&key, &balance);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    // ── Issue #532: Protocol-wide DAO governance ──────────────────────────────
+
+    pub fn next_dao_proposal_id(env: &Env) -> u64 {
+        let mut id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DaoProposalCounter)
+            .unwrap_or(0);
+        id += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::DaoProposalCounter, &id);
+        id
+    }
+
+    pub fn get_dao_proposal_count(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DaoProposalCounter)
+            .unwrap_or(0)
+    }
+
+    pub fn get_dao_proposal(env: &Env, id: u64) -> Option<DaoProposal> {
+        let key = DataKey::DaoProposal(id);
+        let proposal = env.storage().persistent().get(&key);
+        if proposal.is_some() {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        proposal
+    }
+
+    pub fn set_dao_proposal(env: &Env, proposal: &DaoProposal) {
+        let key = DataKey::DaoProposal(proposal.id);
+        env.storage().persistent().set(&key, proposal);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn has_dao_voted(env: &Env, proposal_id: u64, voter: &Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::DaoVoterRecord(proposal_id, voter.clone()))
+    }
+
+    pub fn record_dao_vote(env: &Env, proposal_id: u64, voter: &Address) {
+        let key = DataKey::DaoVoterRecord(proposal_id, voter.clone());
+        env.storage().persistent().set(&key, &true);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn is_dao_mode_enabled(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DaoModeEnabled)
+            .unwrap_or(false)
+    }
+
+    pub fn set_dao_mode_enabled(env: &Env, enabled: bool) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::DaoModeEnabled, &enabled);
+    }
+
+    pub fn get_dao_voting_period_ledgers(env: &Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DaoVotingPeriodLedgers)
+            .unwrap_or(crate::constants::DEFAULT_DAO_VOTING_PERIOD_LEDGERS)
+    }
+
+    pub fn set_dao_voting_period_ledgers(env: &Env, ledgers: u32) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::DaoVotingPeriodLedgers, &ledgers);
+    }
+
+    pub fn get_dao_quorum_votes(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DaoQuorumVotes)
+            .unwrap_or(crate::constants::DEFAULT_DAO_QUORUM_VOTES)
+    }
+
+    pub fn set_dao_quorum_votes(env: &Env, quorum: u64) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::DaoQuorumVotes, &quorum);
+    }
+
+    // ── Issue #533: Competitive bounty-mode grants ────────────────────────────
+
+    pub fn next_bounty_id(env: &Env) -> u64 {
+        let mut id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BountyCounter)
+            .unwrap_or(0);
+        id += 1;
+        env.storage().persistent().set(&DataKey::BountyCounter, &id);
+        id
+    }
+
+    pub fn get_bounty(env: &Env, bounty_id: u64) -> Option<BountyGrant> {
+        let key = DataKey::BountyGrant(bounty_id);
+        let bounty = env.storage().persistent().get(&key);
+        if bounty.is_some() {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        bounty
+    }
+
+    pub fn set_bounty(env: &Env, bounty: &BountyGrant) {
+        let key = DataKey::BountyGrant(bounty.id);
+        env.storage().persistent().set(&key, bounty);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn get_bounty_submission(
+        env: &Env,
+        bounty_id: u64,
+        submitter: &Address,
+    ) -> Option<BountySubmission> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BountySubmission(bounty_id, submitter.clone()))
+    }
+
+    pub fn set_bounty_submission(env: &Env, submission: &BountySubmission) {
+        let key = DataKey::BountySubmission(submission.bounty_id, submission.submitter.clone());
+        env.storage().persistent().set(&key, submission);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn get_bounty_submitters(env: &Env, bounty_id: u64) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BountySubmitters(bounty_id))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn add_bounty_submitter(env: &Env, bounty_id: u64, submitter: &Address) {
+        let key = DataKey::BountySubmitters(bounty_id);
+        let mut submitters = Self::get_bounty_submitters(env, bounty_id);
+        submitters.push_back(submitter.clone());
+        env.storage().persistent().set(&key, &submitters);
         Self::bump_persistent_ttl(env, &key);
     }
 

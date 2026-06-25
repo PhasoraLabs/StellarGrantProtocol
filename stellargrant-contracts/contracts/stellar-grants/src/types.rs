@@ -540,3 +540,102 @@ pub struct ComplianceAttestation {
     pub expires_at: u64,
     pub jurisdiction: String,
 }
+
+// ── Issue #519: Protocol Treasury Management ─────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreasurySnapshot {
+    pub token: Address,
+    pub balance: i128,
+    pub taken_at: u64,
+}
+
+// ── Issue #532: Protocol-Wide DAO Governance ──────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum DaoProposalStatus {
+    Active = 0,
+    Passed = 1,
+    Rejected = 2,
+    Executed = 3,
+    Cancelled = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DaoProposalType {
+    /// Replace the protocol's runtime configuration with the encoded `ProtocolConfig`.
+    UpdateConfig(ProtocolConfig),
+    /// Rotate the global admin address.
+    ChangeAdmin(Address),
+    /// Move `amount` of `token` out of the treasury to `to`.
+    TreasuryWithdrawal(Address, Address, i128),
+    /// Generic, free-form proposal (e.g. "add new feature") with no on-chain
+    /// execution payload — passing it is a signal to the team/maintainers.
+    Generic,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub title: String,
+    pub description: String,
+    pub proposal_type: DaoProposalType,
+    pub status: DaoProposalStatus,
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub created_at: u64,
+    pub voting_deadline: u64,
+    pub executed_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoVote {
+    pub voter: Address,
+    pub proposal_id: u64,
+    pub support: bool,
+    pub weight: u64,
+    pub cast_at: u64,
+}
+
+// ── Issue #533: Competitive Bounty-Mode Grants ────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum BountyStatus {
+    Open = 0,
+    UnderReview = 1,
+    Awarded = 2,
+    Cancelled = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyGrant {
+    pub id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub description: String,
+    pub token: Address,
+    pub prize_amount: i128,
+    pub status: BountyStatus,
+    pub submission_deadline: u64,
+    pub winner: Option<Address>,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountySubmission {
+    pub bounty_id: u64,
+    pub submitter: Address,
+    pub proof_url: String,
+    pub submitted_at: u64,
+}

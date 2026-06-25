@@ -1,9 +1,11 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
 mod audit;
+mod bounty;
 mod compliance;
 mod config;
 mod constants;
+mod dao;
 mod dispute;
 mod emergency;
 mod errors;
@@ -17,25 +19,29 @@ mod metrics;
 mod migration;
 mod multisig;
 mod oracle;
+mod pagination;
 mod quadratic;
 mod reentrancy;
 mod registry;
 mod reputation;
 mod storage;
 mod streaming;
+mod treasury;
 mod types;
 
 pub use errors::ContractError;
 pub use events::Events;
 pub use storage::Storage;
 pub use types::{
-    AuditAction, AuditEntry, ComplianceAttestation, ComplianceLevel, ComplianceStatus,
-    ContractVersion, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode,
-    EscrowState, FeeRecord, FunderLedger, Grant, GrantFund, GrantStatus, HookCallResult, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, MigrationRecord, Milestone, MilestoneState,
-    MilestoneSubmission, MultisigProposal, MultisigSigner, OracleConfig, PauseRecord,
-    PaymentStream, PriceQuote, ProtocolConfig, ProtocolMetrics, QuadraticVoteRecord, RegistryEntry,
-    RegistryEntryType, ReputationTier, SignatureStatus, TokenMetric, VoiceCredits, VotingMechanism,
+    AuditAction, AuditEntry, BountyGrant, BountyStatus, BountySubmission, ComplianceAttestation,
+    ComplianceLevel, ComplianceStatus, ContractVersion, DaoProposal, DaoProposalStatus,
+    DaoProposalType, DaoVote, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
+    EscrowMode, EscrowState, FeeRecord, FunderLedger, Grant, GrantFund, GrantStatus,
+    HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, MigrationRecord,
+    Milestone, MilestoneState, MilestoneSubmission, MultisigProposal, MultisigSigner, OracleConfig,
+    PauseRecord, PaymentStream, PriceQuote, ProtocolConfig, ProtocolMetrics, QuadraticVoteRecord,
+    RegistryEntry, RegistryEntryType, ReputationTier, SignatureStatus, TokenMetric,
+    TreasurySnapshot, VoiceCredits, VotingMechanism,
 };
 
 use metrics::MetricField;
@@ -54,12 +60,15 @@ impl StellarGrantsContract {
     }
 
     /// Configure or rotate a single global admin address.
+    /// Once DAO mode is enabled, admin rotation must go through a passed
+    /// `DaoProposalType::ChangeAdmin` proposal instead of this direct call.
     pub fn set_global_admin(
         env: Env,
         caller: Address,
         new_admin: Address,
     ) -> Result<(), ContractError> {
         caller.require_auth();
+        dao::require_dao_mode_disabled(&env)?;
         if let Some(current_admin) = Storage::get_global_admin(&env) {
             if current_admin != caller {
                 return Err(ContractError::Unauthorized);
@@ -712,6 +721,20 @@ impl StellarGrantsContract {
         Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)
     }
 
+    /// Paginated list of all grants, ordered by ascending grant ID.
+    pub fn get_grants_page(env: Env, offset: u32, limit: u32) -> Vec<Grant> {
+        let total = Storage::get_grant_count(&env);
+        let mut all: Vec<Grant> = Vec::new(&env);
+        let mut id: u64 = 1;
+        while id <= total {
+            if let Some(grant) = Storage::get_grant(&env, id) {
+                all.push_back(grant);
+            }
+            id += 1;
+        }
+        pagination::paginate(&env, &all, offset, limit)
+    }
+
     pub fn get_milestone(
         env: Env,
         grant_id: u64,
@@ -1285,12 +1308,16 @@ impl StellarGrantsContract {
 
     // ── Issue #516: Runtime Protocol Configuration Entry Points ──────────────
 
+    /// Update the runtime protocol configuration directly. Admin only, and
+    /// only while DAO mode is disabled — once enabled, config changes must
+    /// go through a passed `DaoProposalType::UpdateConfig` proposal.
     pub fn update_config(
         env: Env,
         admin: Address,
         new_config: ProtocolConfig,
     ) -> Result<(), ContractError> {
         admin.require_auth();
+        dao::require_dao_mode_disabled(&env)?;
         config::set_config(&env, &admin, new_config)
     }
 
@@ -1523,6 +1550,229 @@ impl StellarGrantsContract {
         to_token: Address,
     ) -> Result<i128, ContractError> {
         oracle::convert_amount(&env, amount, &from_token, &to_token)
+    }
+
+    // ── Issue #519: Protocol Treasury Management Entry Points ────────────────
+
+    /// Configure the treasury management address. Admin only.
+    pub fn set_treasury_address(
+        env: Env,
+        admin: Address,
+        treasury: Address,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        treasury::set_treasury_address(&env, &admin, &treasury)
+    }
+
+    /// Record protocol fees / unclaimed funds into the treasury for `token`.
+    pub fn treasury_deposit(
+        env: Env,
+        caller: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<i128, ContractError> {
+        caller.require_auth();
+        treasury::deposit(&env, &token, &caller, amount)
+    }
+
+    /// Withdraw `amount` of `token` from the treasury to `to`. Admin only.
+    pub fn treasury_withdraw(
+        env: Env,
+        admin: Address,
+        token: Address,
+        to: Address,
+        amount: i128,
+    ) -> Result<i128, ContractError> {
+        admin.require_auth();
+        treasury::withdraw(&env, &admin, &token, &to, amount)
+    }
+
+    /// Reallocate treasury accounting from one token balance to another. Admin only.
+    pub fn treasury_reallocate(
+        env: Env,
+        admin: Address,
+        from_token: Address,
+        to_token: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        treasury::reallocate(&env, &admin, &from_token, &to_token, amount)
+    }
+
+    /// Current treasury balance for `token`.
+    pub fn treasury_balance(env: Env, token: Address) -> i128 {
+        treasury::balance(&env, &token)
+    }
+
+    /// Point-in-time treasury health snapshot for `token`, for frontend display.
+    pub fn treasury_snapshot(env: Env, token: Address) -> TreasurySnapshot {
+        treasury::snapshot(&env, &token)
+    }
+
+    // ── Issue #532: Protocol-Wide DAO Governance Entry Points ────────────────
+
+    /// Enable or disable DAO governance mode. Admin only. Once enabled,
+    /// `update_config` and `set_global_admin` are locked out in favor of
+    /// passed-and-executed DAO proposals.
+    pub fn set_dao_mode(env: Env, admin: Address, enabled: bool) -> Result<(), ContractError> {
+        admin.require_auth();
+        dao::set_dao_mode(&env, &admin, enabled)
+    }
+
+    pub fn is_dao_mode_enabled(env: Env) -> bool {
+        dao::is_dao_mode_enabled(&env)
+    }
+
+    /// Configure the voting period (in ledgers) for newly created proposals. Admin only.
+    pub fn dao_set_voting_period(
+        env: Env,
+        admin: Address,
+        ledgers: u32,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        dao::set_voting_period(&env, &admin, ledgers)
+    }
+
+    /// Configure the minimum total vote weight required to finalize a proposal. Admin only.
+    pub fn dao_set_quorum_votes(env: Env, admin: Address, quorum: u64) -> Result<(), ContractError> {
+        admin.require_auth();
+        dao::set_quorum_votes(&env, &admin, quorum)
+    }
+
+    /// Submit a new governance proposal.
+    pub fn dao_propose(
+        env: Env,
+        proposer: Address,
+        title: String,
+        description: String,
+        proposal_type: DaoProposalType,
+    ) -> Result<u64, ContractError> {
+        proposer.require_auth();
+        dao::create_proposal(&env, &proposer, title, description, proposal_type)
+    }
+
+    /// Cast a reputation-weighted vote on an active proposal.
+    pub fn dao_vote(
+        env: Env,
+        voter: Address,
+        proposal_id: u64,
+        support: bool,
+    ) -> Result<DaoProposal, ContractError> {
+        voter.require_auth();
+        dao::vote(&env, &voter, proposal_id, support)
+    }
+
+    /// Finalize a proposal once its voting deadline has passed.
+    pub fn dao_finalize(env: Env, proposal_id: u64) -> Result<DaoProposalStatus, ContractError> {
+        dao::finalize(&env, proposal_id)
+    }
+
+    /// Execute a passed proposal's on-chain effect.
+    pub fn dao_execute(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<(), ContractError> {
+        executor.require_auth();
+        dao::execute(&env, &executor, proposal_id)
+    }
+
+    /// Cancel an active proposal. Proposer or admin only.
+    pub fn dao_cancel(env: Env, caller: Address, proposal_id: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        dao::cancel(&env, &caller, proposal_id)
+    }
+
+    /// Fetch a DAO proposal by ID.
+    pub fn get_dao_proposal(env: Env, proposal_id: u64) -> Option<DaoProposal> {
+        dao::get_proposal(&env, proposal_id)
+    }
+
+    // ── Issue #533: Competitive Bounty-Mode Grants Entry Points ──────────────
+
+    /// Publish a new bounty-mode grant. The owner deposits the full prize
+    /// up front; it is escrowed until a winner is selected or it is cancelled.
+    #[allow(clippy::too_many_arguments)]
+    pub fn bounty_create(
+        env: Env,
+        owner: Address,
+        title: String,
+        description: String,
+        token: Address,
+        prize_amount: i128,
+        submission_window_ledgers: u32,
+    ) -> Result<u64, ContractError> {
+        owner.require_auth();
+        emergency::require_not_paused(&env)?;
+        let id = bounty::create_bounty(
+            &env,
+            &owner,
+            title,
+            description,
+            &token,
+            prize_amount,
+            submission_window_ledgers,
+        )?;
+        metrics::increment(&env, MetricField::BountiesCreated, 1);
+        Ok(id)
+    }
+
+    /// Submit a solution to an open bounty. One submission per contributor.
+    pub fn bounty_submit(
+        env: Env,
+        submitter: Address,
+        bounty_id: u64,
+        proof_url: String,
+    ) -> Result<(), ContractError> {
+        submitter.require_auth();
+        bounty::submit_solution(&env, bounty_id, &submitter, proof_url)
+    }
+
+    /// Close a bounty to new submissions while the owner reviews entries. Owner only.
+    pub fn bounty_start_review(env: Env, caller: Address, bounty_id: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        bounty::start_review(&env, &caller, bounty_id)
+    }
+
+    /// Select the winning submission and pay out the full prize. Owner only.
+    pub fn bounty_select_winner(
+        env: Env,
+        caller: Address,
+        bounty_id: u64,
+        winner: Address,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        bounty::select_winner(&env, &caller, bounty_id, &winner)?;
+        metrics::increment(&env, MetricField::BountiesAwarded, 1);
+        if hooks::has_hooks(&env, HookEvent::BountyAwarded) {
+            hooks::trigger(&env, HookEvent::BountyAwarded, Bytes::new(&env));
+        }
+        Ok(())
+    }
+
+    /// Cancel an unresolved bounty and refund the prize to the owner.
+    pub fn bounty_cancel(env: Env, caller: Address, bounty_id: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        bounty::cancel_bounty(&env, &caller, bounty_id)
+    }
+
+    /// Fetch a bounty-mode grant by ID.
+    pub fn get_bounty(env: Env, bounty_id: u64) -> Option<BountyGrant> {
+        bounty::get_bounty(&env, bounty_id)
+    }
+
+    /// Fetch a specific contributor's submission for a bounty.
+    pub fn get_bounty_submission(
+        env: Env,
+        bounty_id: u64,
+        submitter: Address,
+    ) -> Option<BountySubmission> {
+        bounty::get_submission(&env, bounty_id, &submitter)
+    }
+
+    /// List all addresses that submitted a solution to a bounty.
+    pub fn get_bounty_submitters(env: Env, bounty_id: u64) -> Vec<Address> {
+        bounty::list_submitters(&env, bounty_id)
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────

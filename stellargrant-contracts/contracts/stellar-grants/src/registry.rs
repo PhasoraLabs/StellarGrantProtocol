@@ -1,7 +1,7 @@
 use soroban_sdk::{Address, Env, String, Vec};
 
-use crate::constants::MAX_PAGE_SIZE;
 use crate::events::Events;
+use crate::pagination;
 use crate::storage::Storage;
 use crate::types::{ContractError, RegistryEntry, RegistryEntryType};
 
@@ -96,23 +96,7 @@ pub fn is_approved_reviewer(env: &Env, address: &Address) -> bool {
 /// Paginated list of all registered contributor addresses.
 pub fn get_contributors_page(env: &Env, offset: u32, limit: u32) -> Vec<RegistryEntry> {
     let index = Storage::get_contributor_index(env);
-    let total = index.len();
-    let effective_limit = if limit > MAX_PAGE_SIZE {
-        MAX_PAGE_SIZE
-    } else {
-        limit
-    };
-    let mut result: Vec<RegistryEntry> = Vec::new(env);
-
-    let mut i = offset;
-    while i < total && i - offset < effective_limit {
-        if let Some(entry) = index.get(i) {
-            result.push_back(entry);
-        }
-        i += 1;
-    }
-
-    result
+    pagination::paginate(env, &index, offset, limit)
 }
 
 /// Total count of registered contributors.

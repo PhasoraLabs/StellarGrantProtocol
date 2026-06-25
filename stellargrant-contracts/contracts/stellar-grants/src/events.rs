@@ -234,6 +234,126 @@ pub struct FeeCollected {
     pub timestamp: u64,
 }
 
+// ── Issue #519: Treasury events ───────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreasuryDeposited {
+    pub token: Address,
+    pub from: Address,
+    pub amount: i128,
+    pub new_balance: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreasuryWithdrawn {
+    pub token: Address,
+    pub to: Address,
+    pub amount: i128,
+    pub new_balance: i128,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreasuryReallocated {
+    pub from_token: Address,
+    pub to_token: Address,
+    pub amount: i128,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #532: DAO governance events ─────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposalCreated {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub title: String,
+    pub voting_deadline: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoVoteCast {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub support: bool,
+    pub weight: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposalFinalized {
+    pub proposal_id: u64,
+    pub passed: bool,
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposalExecuted {
+    pub proposal_id: u64,
+    pub executed_by: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposalCancelled {
+    pub proposal_id: u64,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #533: Bounty-mode grant events ──────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyCreated {
+    pub bounty_id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub prize_amount: i128,
+    pub submission_deadline: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountySubmissionReceived {
+    pub bounty_id: u64,
+    pub submitter: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyAwarded {
+    pub bounty_id: u64,
+    pub winner: Address,
+    pub prize_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyCancelled {
+    pub bounty_id: u64,
+    pub cancelled_by: Address,
+    pub refund_amount: i128,
+    pub timestamp: u64,
+}
+
 pub struct Events;
 
 impl Events {
@@ -566,6 +686,175 @@ impl Events {
             fee_amount,
             token,
             treasury,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #519: Treasury emit methods ─────────────────────────────────────
+
+    pub fn emit_treasury_deposited(env: &Env, token: Address, from: Address, amount: i128, new_balance: i128) {
+        let event = TreasuryDeposited {
+            token,
+            from,
+            amount,
+            new_balance,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_treasury_withdrawn(
+        env: &Env,
+        token: Address,
+        to: Address,
+        amount: i128,
+        new_balance: i128,
+        admin: Address,
+    ) {
+        let event = TreasuryWithdrawn {
+            token,
+            to,
+            amount,
+            new_balance,
+            admin,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_treasury_reallocated(
+        env: &Env,
+        from_token: Address,
+        to_token: Address,
+        amount: i128,
+        admin: Address,
+    ) {
+        let event = TreasuryReallocated {
+            from_token,
+            to_token,
+            amount,
+            admin,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #532: DAO governance emit methods ───────────────────────────────
+
+    pub fn emit_dao_proposal_created(
+        env: &Env,
+        proposal_id: u64,
+        proposer: Address,
+        title: String,
+        voting_deadline: u64,
+    ) {
+        let event = DaoProposalCreated {
+            proposal_id,
+            proposer,
+            title,
+            voting_deadline,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_dao_vote_cast(env: &Env, proposal_id: u64, voter: Address, support: bool, weight: u64) {
+        let event = DaoVoteCast {
+            proposal_id,
+            voter,
+            support,
+            weight,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_dao_proposal_finalized(
+        env: &Env,
+        proposal_id: u64,
+        passed: bool,
+        votes_for: u64,
+        votes_against: u64,
+    ) {
+        let event = DaoProposalFinalized {
+            proposal_id,
+            passed,
+            votes_for,
+            votes_against,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_dao_proposal_executed(env: &Env, proposal_id: u64, executed_by: Address) {
+        let event = DaoProposalExecuted {
+            proposal_id,
+            executed_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_dao_proposal_cancelled(env: &Env, proposal_id: u64, cancelled_by: Address) {
+        let event = DaoProposalCancelled {
+            proposal_id,
+            cancelled_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #533: Bounty emit methods ────────────────────────────────────────
+
+    pub fn emit_bounty_created(
+        env: &Env,
+        bounty_id: u64,
+        owner: Address,
+        title: String,
+        prize_amount: i128,
+        submission_deadline: u64,
+    ) {
+        let event = BountyCreated {
+            bounty_id,
+            owner,
+            title,
+            prize_amount,
+            submission_deadline,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_bounty_submission_received(env: &Env, bounty_id: u64, submitter: Address) {
+        let event = BountySubmissionReceived {
+            bounty_id,
+            submitter,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_bounty_awarded(env: &Env, bounty_id: u64, winner: Address, prize_amount: i128) {
+        let event = BountyAwarded {
+            bounty_id,
+            winner,
+            prize_amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_bounty_cancelled(
+        env: &Env,
+        bounty_id: u64,
+        cancelled_by: Address,
+        refund_amount: i128,
+    ) {
+        let event = BountyCancelled {
+            bounty_id,
+            cancelled_by,
+            refund_amount,
             timestamp: env.ledger().timestamp(),
         };
         event.publish(env);
