@@ -1,5 +1,5 @@
 use crate::storage::Storage;
-use crate::types::{ContractError, RenewalProposal, RenewalStatus, GrantStatus};
+use crate::types::{ContractError, GrantStatus, RenewalProposal, RenewalStatus};
 use soroban_sdk::{Address, Env, String};
 
 pub fn propose_renewal(
@@ -18,7 +18,9 @@ pub fn propose_renewal(
 
     let grant = Storage::get_grant_v(&env, original_grant_id);
 
-    if grant.status != GrantStatus::Completed && grant.milestones_paid_out < grant.total_milestones - 1 {
+    if grant.status != GrantStatus::Completed
+        && grant.milestones_paid_out < grant.total_milestones - 1
+    {
         return Err(ContractError::InvalidState);
     }
 
@@ -49,8 +51,8 @@ pub fn approve_renewal(
 ) -> Result<RenewalStatus, ContractError> {
     reviewer.require_auth();
 
-    let mut proposal =
-        Storage::get_renewal_proposal(&env, original_grant_id).ok_or(ContractError::InvalidState)?;
+    let mut proposal = Storage::get_renewal_proposal(&env, original_grant_id)
+        .ok_or(ContractError::InvalidState)?;
 
     if proposal.status != RenewalStatus::Proposed {
         return Err(ContractError::InvalidState);
@@ -73,8 +75,8 @@ pub fn activate_renewal(
 ) -> Result<u64, ContractError> {
     owner.require_auth();
 
-    let mut proposal =
-        Storage::get_renewal_proposal(&env, original_grant_id).ok_or(ContractError::InvalidState)?;
+    let mut proposal = Storage::get_renewal_proposal(&env, original_grant_id)
+        .ok_or(ContractError::InvalidState)?;
 
     if proposal.status != RenewalStatus::ReviewerApproved {
         return Err(ContractError::InvalidState);
@@ -95,11 +97,15 @@ pub fn activate_renewal(
     Ok(new_grant_id)
 }
 
-pub fn decline_renewal(env: &Env, caller: &Address, original_grant_id: u64) -> Result<(), ContractError> {
+pub fn decline_renewal(
+    env: &Env,
+    caller: &Address,
+    original_grant_id: u64,
+) -> Result<(), ContractError> {
     caller.require_auth();
 
-    let mut proposal =
-        Storage::get_renewal_proposal(&env, original_grant_id).ok_or(ContractError::InvalidState)?;
+    let mut proposal = Storage::get_renewal_proposal(&env, original_grant_id)
+        .ok_or(ContractError::InvalidState)?;
 
     if proposal.status == RenewalStatus::Declined || proposal.status == RenewalStatus::Expired {
         return Err(ContractError::InvalidState);

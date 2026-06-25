@@ -693,7 +693,13 @@ impl Events {
 
     // ── Issue #519: Treasury emit methods ─────────────────────────────────────
 
-    pub fn emit_treasury_deposited(env: &Env, token: Address, from: Address, amount: i128, new_balance: i128) {
+    pub fn emit_treasury_deposited(
+        env: &Env,
+        token: Address,
+        from: Address,
+        amount: i128,
+        new_balance: i128,
+    ) {
         let event = TreasuryDeposited {
             token,
             from,
@@ -759,7 +765,13 @@ impl Events {
         event.publish(env);
     }
 
-    pub fn emit_dao_vote_cast(env: &Env, proposal_id: u64, voter: Address, support: bool, weight: u64) {
+    pub fn emit_dao_vote_cast(
+        env: &Env,
+        proposal_id: u64,
+        voter: Address,
+        support: bool,
+        weight: u64,
+    ) {
         let event = DaoVoteCast {
             proposal_id,
             voter,

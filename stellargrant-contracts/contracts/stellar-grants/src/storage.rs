@@ -1,8 +1,8 @@
 use crate::types::{
     AcceptanceCriteria, AuditEntry, BountyGrant, BountySubmission, BreakerState,
-    ChecklistSubmission, ComplianceAttestation, ContractError, ContractVersion,
-    ContributorProfile, DaoProposal, DexConfig, Dispute, EscrowAccount, EscrowState, FunderLedger,
-    Grant, GrantCategory, GrantTag, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy,
+    ChecklistSubmission, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
+    DaoProposal, DexConfig, Dispute, EscrowAccount, EscrowState, FunderLedger, Grant,
+    GrantCategory, GrantTag, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy,
     MigrationRecord, Milestone, MultisigProposal, OracleConfig, PauseRecord, PaymentStream,
     ProtocolConfig, ProtocolMetrics, ProtocolModule, QuadraticVoteRecord, RegistryEntry,
     RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile, ReviewerRequest, ScoringRubric,
@@ -960,7 +960,9 @@ impl Storage {
     }
 
     pub fn set_relay_config(env: &Env, config: &RelayConfig) {
-        env.storage().persistent().set(&DataKey::RelayConfig, config);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RelayConfig, config);
     }
 
     pub fn get_relay_allowance(env: &Env, address: &Address) -> Option<RelayAllowance> {
@@ -998,13 +1000,16 @@ impl Storage {
     }
 
     pub fn set_reviewer_profile(env: &Env, profile: &ReviewerProfile) {
-        env.storage().persistent().set(
-            &DataKey::ReviewerProfile(profile.reviewer.clone()),
-            profile,
-        );
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReviewerProfile(profile.reviewer.clone()), profile);
     }
 
-    pub fn get_reviewer_request(env: &Env, grant_id: u64, reviewer: &Address) -> Option<ReviewerRequest> {
+    pub fn get_reviewer_request(
+        env: &Env,
+        grant_id: u64,
+        reviewer: &Address,
+    ) -> Option<ReviewerRequest> {
         env.storage()
             .persistent()
             .get(&DataKey::ReviewerRequest(grant_id, reviewer.clone()))
@@ -1020,7 +1025,9 @@ impl Storage {
     // ── Issue #571: Grant Tags Module ─────────────────────────────────────────
 
     pub fn get_grant_tags(env: &Env, grant_id: u64) -> Option<GrantTag> {
-        env.storage().persistent().get(&DataKey::GrantTags(grant_id))
+        env.storage()
+            .persistent()
+            .get(&DataKey::GrantTags(grant_id))
     }
 
     pub fn set_grant_tags(env: &Env, tags: &GrantTag) {
@@ -1050,7 +1057,9 @@ impl Storage {
     }
 
     pub fn set_category_list(env: &Env, categories: &Vec<GrantCategory>) {
-        env.storage().persistent().set(&DataKey::CategoryList, categories);
+        env.storage()
+            .persistent()
+            .set(&DataKey::CategoryList, categories);
     }
 
     // ── Issue #577: Grant Renewal Module ──────────────────────────────────────
@@ -1092,19 +1101,32 @@ impl Storage {
 
     // ── Issue #581: Milestone Checklist ─────────────────────────────────────────
 
-    pub fn get_milestone_checklist(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Vec<AcceptanceCriteria>> {
+    pub fn get_milestone_checklist(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<Vec<AcceptanceCriteria>> {
         env.storage()
             .persistent()
             .get(&DataKey::MilestoneChecklist(grant_id, milestone_idx))
     }
 
-    pub fn set_milestone_checklist(env: &Env, grant_id: u64, milestone_idx: u32, criteria: &Vec<AcceptanceCriteria>) {
+    pub fn set_milestone_checklist(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        criteria: &Vec<AcceptanceCriteria>,
+    ) {
         let key = DataKey::MilestoneChecklist(grant_id, milestone_idx);
         env.storage().persistent().set(&key, criteria);
         Self::bump_persistent_ttl(env, &key);
     }
 
-    pub fn get_checklist_submission(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<ChecklistSubmission> {
+    pub fn get_checklist_submission(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<ChecklistSubmission> {
         env.storage()
             .persistent()
             .get(&DataKey::ChecklistSubmission(grant_id, milestone_idx))

@@ -221,10 +221,15 @@ mod tests {
             .unwrap();
         });
 
-        let result = env.as_contract(&contract_id, || require_open(&env, ProtocolModule::Streaming));
+        let result = env.as_contract(&contract_id, || {
+            require_open(&env, ProtocolModule::Streaming)
+        });
         assert_eq!(result, Err(ContractError::ModuleTripped));
 
-        assert!(env.as_contract(&contract_id, || require_open(&env, ProtocolModule::Grants).is_ok()));
+        assert!(
+            env.as_contract(&contract_id, || require_open(&env, ProtocolModule::Grants)
+                .is_ok())
+        );
     }
 
     #[test]
@@ -234,7 +239,14 @@ mod tests {
         let (contract_id, admin) = setup(&env);
 
         env.as_contract(&contract_id, || {
-            trip(&env, &admin, ProtocolModule::Grants, String::from_str(&env, "maintenance"), None).unwrap();
+            trip(
+                &env,
+                &admin,
+                ProtocolModule::Grants,
+                String::from_str(&env, "maintenance"),
+                None,
+            )
+            .unwrap();
         });
 
         assert!(!env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Grants)));
@@ -277,10 +289,24 @@ mod tests {
         let (contract_id, admin) = setup(&env);
 
         env.as_contract(&contract_id, || {
-            trip(&env, &admin, ProtocolModule::Streaming, String::from_str(&env, "test"), None).unwrap();
+            trip(
+                &env,
+                &admin,
+                ProtocolModule::Streaming,
+                String::from_str(&env, "test"),
+                None,
+            )
+            .unwrap();
         });
         env.as_contract(&contract_id, || {
-            trip(&env, &admin, ProtocolModule::Oracle, String::from_str(&env, "test2"), None).unwrap();
+            trip(
+                &env,
+                &admin,
+                ProtocolModule::Oracle,
+                String::from_str(&env, "test2"),
+                None,
+            )
+            .unwrap();
         });
 
         let tripped = env.as_contract(&contract_id, || tripped_modules(&env));

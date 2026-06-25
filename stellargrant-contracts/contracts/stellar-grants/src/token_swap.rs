@@ -94,7 +94,8 @@ pub fn swap(
     let actual_out = expected_out;
     let slippage_bps = if expected_out > 0 {
         let diff = expected_out.saturating_sub(actual_out);
-        (diff.saturating_mul(BASIS_POINTS_SCALE as i128)
+        (diff
+            .saturating_mul(BASIS_POINTS_SCALE as i128)
             .checked_div(expected_out)
             .unwrap_or(0)) as u32
     } else {
@@ -266,7 +267,9 @@ mod tests {
         env.as_contract(&contract_id_clone, || {
             set_dex_config(&env, &admin, new_config.clone()).unwrap();
         });
-        let stored = env.as_contract(&contract_id_clone, || get_dex_config(&env)).unwrap();
+        let stored = env
+            .as_contract(&contract_id_clone, || get_dex_config(&env))
+            .unwrap();
         assert_eq!(stored.max_slippage_bps, 50);
         assert!(!stored.is_active);
     }

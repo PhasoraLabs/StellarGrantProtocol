@@ -164,7 +164,12 @@ pub fn get_checklist(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Che
     Storage::get_checklist_submission(env, grant_id, milestone_idx)
 }
 
-pub fn get_criterion_status(env: &Env, grant_id: u64, milestone_idx: u32, criterion_idx: u32) -> Option<CriterionStatus> {
+pub fn get_criterion_status(
+    env: &Env,
+    grant_id: u64,
+    milestone_idx: u32,
+    criterion_idx: u32,
+) -> Option<CriterionStatus> {
     let submission = Storage::get_checklist_submission(env, grant_id, milestone_idx)?;
     submission.statuses.get(criterion_idx)
 }
@@ -234,7 +239,10 @@ mod tests {
             Storage::get_milestone_checklist(&env, 1, 0).unwrap()
         });
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored.get(0).unwrap().description, soroban_sdk::String::from_str(&env, "Code compiles"));
+        assert_eq!(
+            stored.get(0).unwrap().description,
+            soroban_sdk::String::from_str(&env, "Code compiles")
+        );
     }
 
     #[test]
@@ -260,7 +268,10 @@ mod tests {
         });
 
         let mut evidence: Vec<Option<String>> = Vec::new(&env);
-        evidence.push_back(Some(soroban_sdk::String::from_str(&env, "https://example.com")));
+        evidence.push_back(Some(soroban_sdk::String::from_str(
+            &env,
+            "https://example.com",
+        )));
         env.as_contract(&contract_id, || {
             submit_checklist(&env, &owner, 1, 0, evidence).unwrap();
         });

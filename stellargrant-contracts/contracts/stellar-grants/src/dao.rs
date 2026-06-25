@@ -1,7 +1,9 @@
 use soroban_sdk::{Address, Env, String};
 
 use crate::config;
-use crate::constants::{DEFAULT_DAO_VOTING_PERIOD_LEDGERS, MAX_DAO_DESCRIPTION_LEN, MAX_DAO_TITLE_LEN};
+use crate::constants::{
+    DEFAULT_DAO_VOTING_PERIOD_LEDGERS, MAX_DAO_DESCRIPTION_LEN, MAX_DAO_TITLE_LEN,
+};
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{ContractError, DaoProposal, DaoProposalStatus, DaoProposalType};

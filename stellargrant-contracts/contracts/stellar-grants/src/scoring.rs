@@ -19,7 +19,9 @@ pub fn validate_rubric(weights: &Vec<ScoringWeight>) -> Result<(), ContractError
     }
     let mut sum: u32 = 0;
     for w in weights.iter() {
-        sum = sum.checked_add(w.weight_bps).ok_or(ContractError::InvalidWeights)?;
+        sum = sum
+            .checked_add(w.weight_bps)
+            .ok_or(ContractError::InvalidWeights)?;
     }
     if sum != BASIS_POINTS_SCALE {
         return Err(ContractError::InvalidWeights);
@@ -79,7 +81,11 @@ fn compute_dimension_score(env: &Env, contributor: &Address, dimension: &Scoring
                     if total == 0 {
                         return 500;
                     }
-                    let rate = p.milestones_completed.saturating_mul(1000).checked_div(total).unwrap_or(0);
+                    let rate = p
+                        .milestones_completed
+                        .saturating_mul(1000)
+                        .checked_div(total)
+                        .unwrap_or(0);
                     rate.min(1000)
                 }
                 None => 0,
@@ -93,7 +99,11 @@ fn compute_dimension_score(env: &Env, contributor: &Address, dimension: &Scoring
                     if total == 0 {
                         return 500;
                     }
-                    let rate = p.milestones_completed.saturating_mul(1000).checked_div(total).unwrap_or(0);
+                    let rate = p
+                        .milestones_completed
+                        .saturating_mul(1000)
+                        .checked_div(total)
+                        .unwrap_or(0);
                     rate.min(1000)
                 }
                 None => 0,
@@ -129,7 +139,10 @@ fn compute_dimension_score(env: &Env, contributor: &Address, dimension: &Scoring
                     }
                     let disputes = p.milestones_rejected.min(1000);
                     let rate = 1000u32.saturating_sub(
-                        disputes.saturating_mul(1000).checked_div(total.max(1)).unwrap_or(0),
+                        disputes
+                            .saturating_mul(1000)
+                            .checked_div(total.max(1))
+                            .unwrap_or(0),
                     );
                     rate.min(1000)
                 }
@@ -144,7 +157,11 @@ fn compute_dimension_score(env: &Env, contributor: &Address, dimension: &Scoring
                     if total == 0 {
                         return 500;
                     }
-                    let satisfaction = p.milestones_completed.saturating_mul(1000).checked_div(total).unwrap_or(0);
+                    let satisfaction = p
+                        .milestones_completed
+                        .saturating_mul(1000)
+                        .checked_div(total)
+                        .unwrap_or(0);
                     satisfaction.min(1000)
                 }
                 None => 500,
@@ -153,7 +170,11 @@ fn compute_dimension_score(env: &Env, contributor: &Address, dimension: &Scoring
     }
 }
 
-pub fn score_contributor(env: &Env, contributor: &Address, rubric_id: u32) -> Result<ScoreResult, ContractError> {
+pub fn score_contributor(
+    env: &Env,
+    contributor: &Address,
+    rubric_id: u32,
+) -> Result<ScoreResult, ContractError> {
     let rubric = get_rubric(env, rubric_id)?;
 
     let mut dimension_scores: Vec<(ScoringDimension, u32)> = Vec::new(env);
@@ -191,7 +212,8 @@ fn insertion_sort(results: &mut Vec<ScoreResult>) {
     let n = results.len();
     for i in 1..n {
         let mut j = i;
-        while j > 0 && results.get(j - 1).unwrap().total_score < results.get(j).unwrap().total_score {
+        while j > 0 && results.get(j - 1).unwrap().total_score < results.get(j).unwrap().total_score
+        {
             let tmp = results.get(j).unwrap();
             let prev = results.get(j - 1).unwrap();
             let tmp_clone = tmp.clone();
@@ -203,7 +225,11 @@ fn insertion_sort(results: &mut Vec<ScoreResult>) {
     }
 }
 
-pub fn rank_contributors(env: &Env, contributors: Vec<Address>, rubric_id: u32) -> Vec<ScoreResult> {
+pub fn rank_contributors(
+    env: &Env,
+    contributors: Vec<Address>,
+    rubric_id: u32,
+) -> Vec<ScoreResult> {
     let mut results: Vec<ScoreResult> = Vec::new(env);
     for c in contributors.iter() {
         if let Ok(s) = score_contributor(env, &c, rubric_id) {
@@ -303,7 +329,10 @@ mod tests {
     fn test_empty_weights_rejected() {
         let env = Env::default();
         let weights: Vec<ScoringWeight> = Vec::new(&env);
-        assert_eq!(validate_rubric(&weights), Err(ContractError::InvalidWeights));
+        assert_eq!(
+            validate_rubric(&weights),
+            Err(ContractError::InvalidWeights)
+        );
     }
 
     #[test]
@@ -322,9 +351,13 @@ mod tests {
         });
 
         let name = String::from_str(&env, "RepOnly");
-        let id = env.as_contract(&contract_id, || define_rubric(&env, &admin, name, weights).unwrap());
+        let id = env.as_contract(&contract_id, || {
+            define_rubric(&env, &admin, name, weights).unwrap()
+        });
 
-        let result = env.as_contract(&contract_id, || score_contributor(&env, &contributor, id).unwrap());
+        let result = env.as_contract(&contract_id, || {
+            score_contributor(&env, &contributor, id).unwrap()
+        });
         assert_eq!(result.subject, contributor);
         assert!(result.total_score > 0);
     }
@@ -364,7 +397,9 @@ mod tests {
         });
 
         let name = String::from_str(&env, "Rank");
-        let id = env.as_contract(&contract_id, || define_rubric(&env, &admin, name, weights).unwrap());
+        let id = env.as_contract(&contract_id, || {
+            define_rubric(&env, &admin, name, weights).unwrap()
+        });
 
         let mut contributors: Vec<Address> = Vec::new(&env);
         contributors.push_back(c2.clone());

@@ -75,8 +75,8 @@ pub fn request_reviewer(
 pub fn accept_request(env: &Env, reviewer: &Address, grant_id: u64) -> Result<(), ContractError> {
     reviewer.require_auth();
 
-    let request =
-        Storage::get_reviewer_request(&env, grant_id, reviewer).ok_or(ContractError::InvalidState)?;
+    let request = Storage::get_reviewer_request(&env, grant_id, reviewer)
+        .ok_or(ContractError::InvalidState)?;
 
     if request.status != ReviewerRequestStatus::Pending {
         return Err(ContractError::InvalidState);
@@ -86,7 +86,8 @@ pub fn accept_request(env: &Env, reviewer: &Address, grant_id: u64) -> Result<()
         return Err(ContractError::InvalidState);
     }
 
-    let profile = Storage::get_reviewer_profile(&env, reviewer).ok_or(ContractError::InvalidState)?;
+    let profile =
+        Storage::get_reviewer_profile(&env, reviewer).ok_or(ContractError::InvalidState)?;
 
     if profile.availability != ReviewerAvailability::Available {
         return Err(ContractError::InvalidState);
@@ -105,8 +106,8 @@ pub fn accept_request(env: &Env, reviewer: &Address, grant_id: u64) -> Result<()
 pub fn decline_request(env: &Env, reviewer: &Address, grant_id: u64) -> Result<(), ContractError> {
     reviewer.require_auth();
 
-    let request =
-        Storage::get_reviewer_request(&env, grant_id, reviewer).ok_or(ContractError::InvalidState)?;
+    let request = Storage::get_reviewer_request(&env, grant_id, reviewer)
+        .ok_or(ContractError::InvalidState)?;
 
     if request.status != ReviewerRequestStatus::Pending {
         return Err(ContractError::InvalidState);

@@ -1,8 +1,12 @@
 use crate::storage::Storage;
-use crate::types::{ContractError, RelayableAction, RelayConfig, RelayAllowance};
+use crate::types::{ContractError, RelayAllowance, RelayConfig, RelayableAction};
 use soroban_sdk::{Address, Bytes, Env};
 
-pub fn set_relay_config(env: &Env, admin: &Address, config: RelayConfig) -> Result<(), ContractError> {
+pub fn set_relay_config(
+    env: &Env,
+    admin: &Address,
+    config: RelayConfig,
+) -> Result<(), ContractError> {
     admin.require_auth();
 
     if let Some(current_admin) = crate::Storage::get_global_admin(&env) {
@@ -36,11 +40,20 @@ pub fn execute_relayed(
     }
 
     let action_allowed = config.allowed_actions.iter().any(|a| {
-        matches!((&a, &action),
-            (RelayableAction::ContributorRegister, RelayableAction::ContributorRegister) |
-            (RelayableAction::MilestoneSubmit, RelayableAction::MilestoneSubmit) |
-            (RelayableAction::ClaimVested, RelayableAction::ClaimVested) |
-            (RelayableAction::WithdrawStream, RelayableAction::WithdrawStream))
+        matches!(
+            (&a, &action),
+            (
+                RelayableAction::ContributorRegister,
+                RelayableAction::ContributorRegister
+            ) | (
+                RelayableAction::MilestoneSubmit,
+                RelayableAction::MilestoneSubmit
+            ) | (RelayableAction::ClaimVested, RelayableAction::ClaimVested)
+                | (
+                    RelayableAction::WithdrawStream,
+                    RelayableAction::WithdrawStream
+                )
+        )
     });
 
     if !action_allowed {
@@ -54,12 +67,13 @@ pub fn execute_relayed(
 
     Storage::set_relay_nonce(&env, sender, nonce);
 
-    let mut allowance = Storage::get_relay_allowance(&env, sender).unwrap_or_else(|| RelayAllowance {
-        address: sender.clone(),
-        daily_relays_used: 0,
-        window_start: env.ledger().timestamp(),
-        total_relayed: 0,
-    });
+    let mut allowance =
+        Storage::get_relay_allowance(&env, sender).unwrap_or_else(|| RelayAllowance {
+            address: sender.clone(),
+            daily_relays_used: 0,
+            window_start: env.ledger().timestamp(),
+            total_relayed: 0,
+        });
 
     let current_time = env.ledger().timestamp();
     const SECONDS_PER_DAY: u64 = 86_400;
@@ -107,11 +121,20 @@ pub fn can_relay(env: &Env, sender: &Address, action: &RelayableAction) -> bool 
         }
 
         config.allowed_actions.iter().any(|a| {
-            matches!((&a, action),
-                (RelayableAction::ContributorRegister, RelayableAction::ContributorRegister) |
-                (RelayableAction::MilestoneSubmit, RelayableAction::MilestoneSubmit) |
-                (RelayableAction::ClaimVested, RelayableAction::ClaimVested) |
-                (RelayableAction::WithdrawStream, RelayableAction::WithdrawStream))
+            matches!(
+                (&a, action),
+                (
+                    RelayableAction::ContributorRegister,
+                    RelayableAction::ContributorRegister
+                ) | (
+                    RelayableAction::MilestoneSubmit,
+                    RelayableAction::MilestoneSubmit
+                ) | (RelayableAction::ClaimVested, RelayableAction::ClaimVested)
+                    | (
+                        RelayableAction::WithdrawStream,
+                        RelayableAction::WithdrawStream
+                    )
+            )
         })
     } else {
         false

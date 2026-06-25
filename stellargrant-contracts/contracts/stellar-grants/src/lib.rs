@@ -27,8 +27,8 @@ mod pagination;
 mod quadratic;
 mod reentrancy;
 mod registry;
-mod reputation;
 mod relay;
+mod reputation;
 mod reviewer_pool;
 mod scoring;
 mod storage;
@@ -48,11 +48,11 @@ pub use types::{
     HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, MigrationRecord,
     Milestone, MilestoneState, MilestoneSubmission, MultisigProposal, MultisigSigner, OracleConfig,
     PauseRecord, PaymentStream, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule,
-    QuadraticVoteRecord, RegistryEntry, RegistryEntryType, RelayableAction, RelayAllowance,
-    RelayConfig, RelayRecord, RenewalProposal, RenewalStatus, ReputationTier, ReviewerAvailability,
-    ReviewerProfile, ReviewerRequest, ReviewerRequestStatus, ScoreResult, ScoringDimension,
-    ScoringRubric, ScoringWeight, SignatureStatus, SwapResult, SwapRoute, TokenMetric,
-    VoiceCredits, VotingMechanism,
+    QuadraticVoteRecord, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig,
+    RelayRecord, RelayableAction, RenewalProposal, RenewalStatus, ReputationTier,
+    ReviewerAvailability, ReviewerProfile, ReviewerRequest, ReviewerRequestStatus, ScoreResult,
+    ScoringDimension, ScoringRubric, ScoringWeight, SignatureStatus, SwapResult, SwapRoute,
+    TokenMetric, VoiceCredits, VotingMechanism,
 };
 
 use metrics::MetricField;
@@ -1746,7 +1746,12 @@ impl StellarGrantsContract {
     }
 
     /// Remove a tag from a grant.
-    pub fn tags_remove_tag(env: Env, owner: Address, grant_id: u64, tag: String) -> Result<(), ContractError> {
+    pub fn tags_remove_tag(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        tag: String,
+    ) -> Result<(), ContractError> {
         grant_tags::remove_tag(&env, &owner, grant_id, &tag)
     }
 
@@ -1789,12 +1794,20 @@ impl StellarGrantsContract {
     }
 
     /// Activate an approved renewal.
-    pub fn renewal_activate(env: Env, owner: Address, original_grant_id: u64) -> Result<u64, ContractError> {
+    pub fn renewal_activate(
+        env: Env,
+        owner: Address,
+        original_grant_id: u64,
+    ) -> Result<u64, ContractError> {
         grant_renewal::activate_renewal(&env, &owner, original_grant_id)
     }
 
     /// Decline a renewal proposal.
-    pub fn renewal_decline(env: Env, caller: Address, original_grant_id: u64) -> Result<(), ContractError> {
+    pub fn renewal_decline(
+        env: Env,
+        caller: Address,
+        original_grant_id: u64,
+    ) -> Result<(), ContractError> {
         grant_renewal::decline_renewal(&env, &caller, original_grant_id)
     }
 
@@ -1831,11 +1844,7 @@ impl StellarGrantsContract {
         token_swap::swap(&env, &caller, route, amount_in)
     }
 
-    pub fn swap_quote(
-        env: Env,
-        route: SwapRoute,
-        amount_in: i128,
-    ) -> Result<i128, ContractError> {
+    pub fn swap_quote(env: Env, route: SwapRoute, amount_in: i128) -> Result<i128, ContractError> {
         token_swap::quote(&env, &route, amount_in)
     }
 
@@ -1859,7 +1868,14 @@ impl StellarGrantsContract {
         amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
-        token_swap::swap_and_pay(&env, grant_id, &recipient, &grant_token, &preferred_token, amount)
+        token_swap::swap_and_pay(
+            &env,
+            grant_id,
+            &recipient,
+            &grant_token,
+            &preferred_token,
+            amount,
+        )
     }
 
     // ── Issue #581: Milestone Checklist Entry Points ──────────────────────────
@@ -1895,7 +1911,14 @@ impl StellarGrantsContract {
         approve: bool,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
-        checklist::review_criterion(&env, &reviewer, grant_id, milestone_idx, criterion_idx, approve)
+        checklist::review_criterion(
+            &env,
+            &reviewer,
+            grant_id,
+            milestone_idx,
+            criterion_idx,
+            approve,
+        )
     }
 
     pub fn checklist_all_required_approved(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
@@ -2065,5 +2088,3 @@ fn apply_milestone_submission(
 
     Ok(())
 }
-
-

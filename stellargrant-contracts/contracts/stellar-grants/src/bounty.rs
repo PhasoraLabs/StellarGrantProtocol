@@ -45,7 +45,14 @@ pub fn create_bounty(
     };
 
     Storage::set_bounty(env, &bounty);
-    Events::emit_bounty_created(env, id, owner.clone(), title, prize_amount, submission_deadline);
+    Events::emit_bounty_created(
+        env,
+        id,
+        owner.clone(),
+        title,
+        prize_amount,
+        submission_deadline,
+    );
 
     Ok(id)
 }
@@ -169,11 +176,7 @@ pub fn get_bounty(env: &Env, bounty_id: u64) -> Option<BountyGrant> {
     Storage::get_bounty(env, bounty_id)
 }
 
-pub fn get_submission(
-    env: &Env,
-    bounty_id: u64,
-    submitter: &Address,
-) -> Option<BountySubmission> {
+pub fn get_submission(env: &Env, bounty_id: u64, submitter: &Address) -> Option<BountySubmission> {
     Storage::get_bounty_submission(env, bounty_id, submitter)
 }
 
