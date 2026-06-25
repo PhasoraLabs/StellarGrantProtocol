@@ -31,7 +31,7 @@
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "passport-twitter": "^0.1.5",
-    "pg": "^8.13.3",
+    "pg": "^8.21.0",
     "prom-client": "^14.0.0",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.3",
