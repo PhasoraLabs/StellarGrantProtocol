@@ -1,7 +1,7 @@
 use soroban_sdk::{Address, Env};
 
 use crate::storage::Storage;
-use crate::types::{ContractError, ProtocolConfig};
+use crate::types::{ContractError, DecayConfig, DecayType, ProtocolConfig};
 
 pub fn default_config() -> ProtocolConfig {
     ProtocolConfig {
@@ -16,6 +16,14 @@ pub fn default_config() -> ProtocolConfig {
         multisig_threshold: 0,
         rate_limit_multiplier: 1,
         referral_fee_bps: 1000,
+        decay_config: DecayConfig {
+            enabled: false,
+            decay_type: DecayType::None,
+            half_life_ledgers: 0,
+            linear_decay_per_day: 0,
+            decay_floor: 50,
+            inactivity_threshold_ledgers: 0,
+        },
     }
 }
 

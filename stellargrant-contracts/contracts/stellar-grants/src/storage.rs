@@ -191,6 +191,18 @@ pub enum DataKey {
     FunderGrantIndex(Address),
     MatchingContribution(Address),
     GrantCounterValue,
+    // Issue #597: efficient grant index
+    IndexByOwner(Address),
+    IndexByStatus(u32),
+    IndexByToken(Address),
+    IndexByContributor(Address),
+    GlobalGrantOrder,
+    // Issue #587: grant forking
+    ForkRecord(u64),
+    ForkChildren(u64),
+    // Issue #580: notification subscriptions
+    NotifSub(Address, u32, u32, u128),
+    NotifSubList(u32, u32),
 }
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -1959,5 +1971,32 @@ impl Storage {
             .persistent()
             .get(&DataKey::GrantCounter)
             .unwrap_or(0)
+    }
+
+    // ── Issue #587: Fork Record ───────────────────────────────────────────────
+
+    pub fn get_fork_record(env: &Env, grant_id: u64) -> Option<super::types::ForkRecord> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ForkRecord(grant_id))
+    }
+
+    pub fn set_fork_record(env: &Env, grant_id: u64, record: &super::types::ForkRecord) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::ForkRecord(grant_id), record);
+    }
+
+    pub fn get_fork_children(env: &Env, grant_id: u64) -> Vec<u64> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ForkChildren(grant_id))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_fork_children(env: &Env, grant_id: u64, children: &Vec<u64>) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::ForkChildren(grant_id), children);
     }
 }

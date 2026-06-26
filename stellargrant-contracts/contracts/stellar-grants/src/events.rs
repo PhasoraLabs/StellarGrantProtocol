@@ -1376,6 +1376,17 @@ impl Events {
         event.publish(env);
     }
 
+    // ── Issue #587: Grant Forked event ────────────────────────────────────────
+
+    pub fn emit_grant_forked(env: &Env, original_grant_id: u64, forked_grant_id: u64) {
+        let event = GrantForked {
+            original_grant_id,
+            forked_grant_id,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
     // ── Issue #564: Collateral event emitters ──────────────────────────────
 
     pub fn emit_collateral_deposited(
@@ -1452,4 +1463,14 @@ impl Events {
         };
         event.publish(env);
     }
+}
+
+// ── Issue #587: Grant Forked event ──────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantForked {
+    pub original_grant_id: u64,
+    pub forked_grant_id: u64,
+    pub timestamp: u64,
 }

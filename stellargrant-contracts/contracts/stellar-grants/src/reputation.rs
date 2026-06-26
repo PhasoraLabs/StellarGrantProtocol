@@ -1,6 +1,8 @@
 use soroban_sdk::Env;
 
+use crate::config;
 use crate::events::Events;
+use crate::reputation_decay;
 use crate::storage::Storage;
 use crate::types::{ContractError, ContributorProfile, ReputationTier};
 
@@ -48,6 +50,12 @@ pub fn calculate_score(profile: &ContributorProfile) -> u32 {
     scaled.min(MAX_SCORE) as u32
 }
 
+pub fn calculate_effective_score(env: &Env, profile: &ContributorProfile) -> u32 {
+    let raw = calculate_score(profile);
+    let cfg = config::get_config(env);
+    reputation_decay::apply_decay(env, raw, profile.last_action_at, &cfg.decay_config)
+}
+
 pub fn record_completion(
     env: &Env,
     grant_id: u64,
@@ -58,10 +66,11 @@ pub fn record_completion(
     profile.milestones_completed = profile.milestones_completed.saturating_add(1);
     profile.total_earned = profile.total_earned.saturating_add(amount_earned);
 
-    let new_score = calculate_score(profile);
+    let new_score = calculate_effective_score(env, profile);
     profile.reputation_score = new_score as u64;
 
     Storage::set_contributor(env, profile.contributor.clone(), profile);
+    reputation_decay::record_activity(env, &profile.contributor);
     Events::emit_reputation_updated(
         env,
         grant_id,
@@ -82,10 +91,11 @@ pub fn record_rejection(
 ) -> Result<u32, ContractError> {
     profile.milestones_rejected = profile.milestones_rejected.saturating_add(1);
 
-    let new_score = calculate_score(profile);
+    let new_score = calculate_effective_score(env, profile);
     profile.reputation_score = new_score as u64;
 
     Storage::set_contributor(env, profile.contributor.clone(), profile);
+    reputation_decay::record_activity(env, &profile.contributor);
     Events::emit_reputation_updated(
         env,
         grant_id,
@@ -127,6 +137,7 @@ mod tests {
             total_earned: 0,
             milestones_completed: 0,
             milestones_rejected: 0,
+            last_action_at: 0,
         }
     }
 

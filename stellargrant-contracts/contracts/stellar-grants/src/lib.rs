@@ -9,8 +9,11 @@ mod circuit_breaker;
 mod collateral;
 mod crowdfund;
 mod compliance;
+mod fork;
+mod grant_index;
 mod milestone_deps;
 mod milestone_nft;
+mod notification;
 mod open_review;
 mod portfolio;
 mod config;
@@ -49,6 +52,7 @@ mod referral;
 mod reentrancy;
 mod registry;
 mod reputation;
+mod reputation_decay;
 mod relay;
 mod reviewer_pool;
 mod scoring;
@@ -69,21 +73,21 @@ pub use types::{
     AcceptanceCriteria, AnalyticsSnapshot, AuditAction, AuditEntry, BreakerState, CategoryStats,
     ChecklistSubmission, ComplianceAttestation, ComplianceLevel, ComplianceStatus, ContractVersion,
     ContributorPortfolio, CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus,
-    CriterionStatus, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
+    CriterionStatus, DecayConfig, DecayType, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
     EscrowMode, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema, FeeRecord,
-    FunderLedger, Grant, GrantArchetype, GrantCategory, GrantFund, GrantStatus, GrantSummary, GrantTag,
+    ForkRecord, FunderLedger, Grant, GrantArchetype, GrantCategory, GrantFund, GrantStatus, GrantSummary, GrantTag,
     GrantVersion, Amendment, AmendmentStatus,
     GrantTemplate, HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy,
     Invoice, InvoiceStatus, IpRights, LicenseRecord, LicenseType, LineItem, MerkleCommitment,
     MerkleProof, MigrationRecord, Milestone, MilestoneDag, MilestoneDependency, MilestoneNft,
     MilestoneState, MilestoneSubmission, MultisigProposal, MultisigSigner,
-    NftMetadata, OracleConfig, ParamRecord, ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream,
+    NftMetadata, NotificationEvent, OracleConfig, ParamRecord, ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream,
     PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule, PublicReview, PublicReviewSignal,
     QuadraticVoteRecord, RateLimitAction, RegistryEntry, RegistryEntryType, RelayableAction,
     RelayAllowance, RelayConfig, RelayRecord, RenewalProposal, RenewalStatus, ReputationTier,
     ReviewerAvailability, ReviewerProfile, ReviewerRequest, ReviewerRequestStatus, Role,
     RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight,
-    SignatureStatus, SplitRecipient, StructuredEvidence, SwapResult, SwapRoute, SyndicateGrant,
+    SignatureStatus, SplitRecipient, StructuredEvidence, Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant,
     SyndicateMember, SyndicateStatus, TokenMetric, TransferProposal, TransferableRole, VoiceCredits, VotingMechanism,
     // Issue #569/#572/#573/#574: growth, extension, arbitration, and bond modules
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, BondStatus, ExtensionRequest,
@@ -237,6 +241,7 @@ impl StellarGrantsContract {
             total_earned: 0,
             milestones_completed: 0,
             milestones_rejected: 0,
+            last_action_at: env.ledger().timestamp(),
         };
 
         Storage::set_contributor(&env, contributor.clone(), &profile);
@@ -303,10 +308,13 @@ impl StellarGrantsContract {
 
             let mut grant =
                 Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
+            let old_status = grant.status;
             grant.status = GrantStatus::Cancelled;
             grant.escrow_balance = 0;
             grant.reason = Some(reason.clone());
             grant.timestamp = env.ledger().timestamp();
+
+            grant_index::on_status_changed(&env, grant_id, old_status, GrantStatus::Cancelled);
 
             Storage::set_grant(&env, grant_id, &grant);
 
@@ -2563,6 +2571,119 @@ impl StellarGrantsContract {
         milestone_deps::topological_order(&env, &deps, total)
     }
 
+    // ── Issue #597: Grant Index Entry Points ──────────────────────────────────
+
+    pub fn index_by_owner(env: Env, owner: Address, offset: u32, limit: u32) -> Vec<u64> {
+        grant_index::by_owner(&env, &owner, offset, limit)
+    }
+
+    pub fn index_by_status(env: Env, status: GrantStatus, offset: u32, limit: u32) -> Vec<u64> {
+        grant_index::by_status(&env, status, offset, limit)
+    }
+
+    pub fn index_by_token(env: Env, token: Address, offset: u32, limit: u32) -> Vec<u64> {
+        grant_index::by_token(&env, &token, offset, limit)
+    }
+
+    pub fn index_by_contributor(env: Env, contributor: Address, offset: u32, limit: u32) -> Vec<u64> {
+        grant_index::by_contributor(&env, &contributor, offset, limit)
+    }
+
+    pub fn index_recent(env: Env, offset: u32, limit: u32) -> Vec<u64> {
+        grant_index::recent(&env, offset, limit)
+    }
+
+    pub fn index_counts(env: Env, owner: Option<Address>) -> (u32, u32, u32) {
+        grant_index::index_counts(&env, owner.as_ref())
+    }
+
+    // ── Issue #587: Grant Forking Entry Points ────────────────────────────────
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fork_grant(
+        env: Env,
+        caller: Address,
+        original_grant_id: u64,
+        new_title: String,
+        new_description: String,
+        new_total_amount: i128,
+        new_token: Address,
+        inherit_reviewers: bool,
+        inherit_milestones: bool,
+    ) -> Result<u64, ContractError> {
+        caller.require_auth();
+        fork::fork_grant(
+            &env,
+            &caller,
+            original_grant_id,
+            new_title,
+            new_description,
+            new_total_amount,
+            &new_token,
+            inherit_reviewers,
+            inherit_milestones,
+        )
+    }
+
+    pub fn get_fork_record(env: Env, grant_id: u64) -> Option<ForkRecord> {
+        fork::get_fork_record(&env, grant_id)
+    }
+
+    pub fn get_forks(env: Env, original_grant_id: u64) -> Vec<u64> {
+        fork::get_forks(&env, original_grant_id)
+    }
+
+    pub fn fork_depth(env: Env, grant_id: u64) -> u32 {
+        fork::fork_depth(&env, grant_id)
+    }
+
+    pub fn is_descendant(env: Env, ancestor_id: u64, descendant_id: u64) -> bool {
+        fork::is_descendant(&env, ancestor_id, descendant_id)
+    }
+
+    // ── Issue #580: Notification Subscription Entry Points ────────────────────
+
+    pub fn subscribe(
+        env: Env,
+        subscriber: Address,
+        event: NotificationEvent,
+        scope: SubscriptionScope,
+    ) -> Result<(), ContractError> {
+        subscriber.require_auth();
+        notification::subscribe(&env, &subscriber, event, scope)
+    }
+
+    pub fn unsubscribe(
+        env: Env,
+        subscriber: Address,
+        event: NotificationEvent,
+        scope: SubscriptionScope,
+    ) -> Result<(), ContractError> {
+        subscriber.require_auth();
+        notification::unsubscribe(&env, &subscriber, event, &scope)
+    }
+
+    pub fn get_subscriptions(env: Env, subscriber: Address) -> Vec<Subscription> {
+        notification::get_subscriptions(&env, &subscriber)
+    }
+
+    pub fn get_subscribers(
+        env: Env,
+        event: NotificationEvent,
+        scope: SubscriptionScope,
+    ) -> Vec<Address> {
+        notification::get_subscribers(&env, event, &scope)
+    }
+
+    pub fn is_subscribed(
+        env: Env,
+        subscriber: Address,
+        event: NotificationEvent,
+        scope: SubscriptionScope,
+    ) -> bool {
+        notification::is_subscribed(&env, &subscriber, &event, &scope)
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     fn update_contributor_reputation(
@@ -3353,6 +3474,8 @@ pub(crate) fn internal_grant_create(
     Storage::set_multisig_signers(env, grant_id, &soroban_sdk::Vec::new(env));
 
     escrow::open(env, grant_id, owner, token)?;
+
+    grant_index::on_grant_created(env, grant_id, owner, token, GrantStatus::Active);
 
     Events::emit_grant_created(env, grant_id, owner.clone(), title, total_amount);
 

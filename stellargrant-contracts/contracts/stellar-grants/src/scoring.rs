@@ -269,6 +269,7 @@ mod tests {
             total_earned: 500_000_000_000,
             milestones_completed: 8,
             milestones_rejected: 2,
+            last_action_at: env.ledger().timestamp(),
         };
         env.as_contract(contract_id, || {
             Storage::set_contributor(env, c.clone(), &profile);
@@ -384,6 +385,7 @@ mod tests {
             total_earned: 100_000_000_000,
             milestones_completed: 3,
             milestones_rejected: 1,
+            last_action_at: env.ledger().timestamp(),
         };
         env.as_contract(&contract_id, || {
             Storage::set_contributor(&env, c2.clone(), &profile2);

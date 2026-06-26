@@ -213,6 +213,7 @@ mod tests {
             total_earned: 0,
             milestones_completed: 2,
             milestones_rejected: 0,
+            last_action_at: 1000,
         };
         Storage::set_contributor(env, contributor.clone(), &profile);
     }

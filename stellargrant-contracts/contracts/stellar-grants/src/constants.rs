@@ -115,6 +115,9 @@ mod tests {
     }
 }
 
+// ── Issue #580: Notification subscriptions ───────────────────────────────────
+pub const MAX_SUBSCRIPTIONS_PER_ADDRESS: u32 = 50;
+
 // ── Issue #590: Public Review ────────────────────────────────────────────────
 pub const MAX_PUBLIC_REVIEW_COMMENT_LEN: u32 = 500;
 

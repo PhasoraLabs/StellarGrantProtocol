@@ -120,6 +120,7 @@ pub struct ContributorProfile {
     pub total_earned: i128,
     pub milestones_completed: u32,
     pub milestones_rejected: u32,
+    pub last_action_at: u64,
 }
 
 #[contracttype]
@@ -393,6 +394,8 @@ pub struct ProtocolConfig {
     pub rate_limit_multiplier: u32,
     /// Share of the protocol fee paid to referrers, in basis points (#569). Default 1000 = 10%.
     pub referral_fee_bps: u32,
+    /// Decay configuration for reputation scores (#575)
+    pub decay_config: DecayConfig,
 }
 
 // ── Issue #517: Protocol Fee Collection ──────────────────────────────────────
@@ -1386,6 +1389,76 @@ pub struct MilestoneDag {
     pub grant_id: u64,
     pub dependencies: Vec<MilestoneDependency>,
     pub is_valid: bool,
+}
+
+// ── Issue #597: Fork Record ───────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForkRecord {
+    pub original_grant_id: u64,
+    pub forked_grant_id: u64,
+    pub forked_by: Address,
+    pub forked_at: u64,
+    pub inherited_fields: Vec<soroban_sdk::String>,
+    pub overridden_fields: Vec<soroban_sdk::String>,
+}
+
+// ── Issue #580: Notification types ────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum NotificationEvent {
+    NewGrant = 0,
+    MilestoneSubmitted = 1,
+    MilestoneApproved = 2,
+    MilestoneRejected = 3,
+    DisputeRaised = 4,
+    GrantCompleted = 5,
+    BountyPosted = 6,
+    ReviewerRequested = 7,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubscriptionScope {
+    Global,
+    PerGrant(u64),
+    PerContributor(Address),
+    PerTag(u128),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subscription {
+    pub subscriber: Address,
+    pub event: NotificationEvent,
+    pub scope: SubscriptionScope,
+    pub subscribed_at: u64,
+    pub is_active: bool,
+}
+
+// ── Issue #575: Decay Config types ────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum DecayType {
+    None = 0,
+    Linear = 1,
+    Exponential = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecayConfig {
+    pub enabled: bool,
+    pub decay_type: DecayType,
+    pub half_life_ledgers: u32,
+    pub linear_decay_per_day: u32,
+    pub decay_floor: u32,
+    pub inactivity_threshold_ledgers: u32,
 }
 
 // ── Issue #565: Contributor Public Portfolio ──────────────────────────────────
