@@ -1,5 +1,6 @@
 use soroban_sdk::{token, Address, Env, String, Vec};
 
+use crate::arbitration_pool;
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{ContractError, Dispute, DisputeStatus, Grant};
@@ -64,6 +65,26 @@ pub fn assign_arbiter(
         arbiter.clone(),
     );
     Ok(())
+}
+
+/// Assign a randomized community-pool panel to an open dispute (Issue #573).
+///
+/// Used instead of the manual `assign_arbiter` flow when community/pool
+/// arbitration is enabled. Delegates panel selection to the arbitration pool and
+/// moves the dispute into `UnderReview`. Returns the created arbitration case id.
+pub fn assign_pool_panel(
+    env: &Env,
+    dispute: &mut Dispute,
+    dispute_id: u32,
+    panel_size: u32,
+) -> Result<u32, ContractError> {
+    if dispute.status != DisputeStatus::Open {
+        return Err(ContractError::InvalidState);
+    }
+    let case_id = arbitration_pool::assign_panel(env, dispute_id, panel_size)?;
+    dispute.status = DisputeStatus::UnderReview;
+    Storage::set_dispute(env, dispute.grant_id, dispute.milestone_idx, dispute);
+    Ok(case_id)
 }
 
 pub fn arbiter_vote(
