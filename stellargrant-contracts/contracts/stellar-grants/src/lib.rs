@@ -5,6 +5,7 @@ mod analytics;
 mod audit;
 mod checklist;
 mod circuit_breaker;
+mod crowdfund;
 mod compliance;
 mod config;
 mod constants;
@@ -49,6 +50,7 @@ pub use storage::Storage;
 pub use types::{
     AcceptanceCriteria, AnalyticsSnapshot, AuditAction, AuditEntry, BreakerState, CategoryStats,
     ChecklistSubmission, ComplianceAttestation, ComplianceLevel, ComplianceStatus, ContractVersion,
+    CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus,
     CriterionStatus, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
     EscrowMode, EscrowState, FeeRecord, FunderLedger, Grant, GrantArchetype, GrantCategory,
     GrantFund, GrantStatus, GrantTag, GrantTemplate, HookCallResult, HookEvent, HookRegistration,
@@ -2219,6 +2221,93 @@ impl StellarGrantsContract {
     /// Renounce your own role (voluntary self-removal).
     pub fn rbac_renounce_role(env: Env, holder: Address, role: Role) -> Result<(), ContractError> {
         access_control::renounce_role(&env, &holder, role)
+    }
+
+    // ── Crowdfund Module ──────────────────────────────────────────────────────
+
+    /// Create a new crowdfunding campaign with a funding target and deadline.
+    /// If the target is met by the deadline the owner receives the tokens;
+    /// otherwise backers can reclaim their pledges via `crowdfund_refund`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn crowdfund_create(
+        env: Env,
+        owner: Address,
+        title: String,
+        description: String,
+        token: Address,
+        target_amount: i128,
+        deadline_ledgers: u32,
+    ) -> Result<u64, ContractError> {
+        owner.require_auth();
+        crowdfund::create_campaign(
+            &env,
+            &owner,
+            title,
+            description,
+            &token,
+            target_amount,
+            deadline_ledgers,
+        )
+    }
+
+    /// Pledge tokens to an active campaign. Caller must pre-approve the
+    /// contract to transfer `amount` tokens.
+    pub fn crowdfund_pledge(
+        env: Env,
+        campaign_id: u64,
+        backer: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        backer.require_auth();
+        crowdfund::pledge(&env, campaign_id, &backer, amount)
+    }
+
+    /// Finalize a campaign once its deadline has passed. Anyone may call this.
+    /// Returns the resulting `CrowdfundStatus` (Succeeded or Failed).
+    pub fn crowdfund_finalize(
+        env: Env,
+        campaign_id: u64,
+    ) -> Result<CrowdfundStatus, ContractError> {
+        crowdfund::finalize(&env, campaign_id)
+    }
+
+    /// Claim a pledge refund after a Failed or Cancelled campaign.
+    pub fn crowdfund_refund(
+        env: Env,
+        campaign_id: u64,
+        backer: Address,
+    ) -> Result<(), ContractError> {
+        backer.require_auth();
+        crowdfund::claim_refund(&env, campaign_id, &backer)
+    }
+
+    /// Cancel an active campaign. Only the campaign owner may call this.
+    pub fn crowdfund_cancel(
+        env: Env,
+        campaign_id: u64,
+        caller: Address,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        crowdfund::cancel(&env, campaign_id, &caller)
+    }
+
+    /// Fetch campaign details by id.
+    pub fn crowdfund_get_campaign(env: Env, campaign_id: u64) -> Option<CrowdfundCampaign> {
+        crowdfund::get_campaign(&env, campaign_id)
+    }
+
+    /// Fetch a specific backer's pledge for a campaign.
+    pub fn crowdfund_get_pledge(
+        env: Env,
+        campaign_id: u64,
+        backer: Address,
+    ) -> Option<CrowdfundPledge> {
+        crowdfund::get_pledge(&env, campaign_id, &backer)
+    }
+
+    /// List all backer addresses for a campaign.
+    pub fn crowdfund_list_backers(env: Env, campaign_id: u64) -> Vec<Address> {
+        crowdfund::list_backers(&env, campaign_id)
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────

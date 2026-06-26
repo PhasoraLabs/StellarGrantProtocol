@@ -1153,3 +1153,40 @@ pub struct RoleAssignment {
     pub expires_at: Option<u64>,
     pub is_active: bool,
 }
+
+// ── Crowdfund Module ──────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum CrowdfundStatus {
+    Active = 0,
+    Succeeded = 1,
+    Failed = 2,
+    Cancelled = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundCampaign {
+    pub id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub description: String,
+    pub token: Address,
+    pub target_amount: i128,
+    pub total_pledged: i128,
+    pub deadline: u64,
+    pub status: CrowdfundStatus,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundPledge {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub pledged_at: u64,
+    pub refunded: bool,
+}

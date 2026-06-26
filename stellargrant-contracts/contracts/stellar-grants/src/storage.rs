@@ -1,6 +1,6 @@
 use crate::types::{
     AcceptanceCriteria, AnalyticsSnapshot, AuditEntry, BreakerState, CategoryStats, ChecklistSubmission, ComplianceAttestation,
-    ContractError, ContractVersion, ContributorProfile, DexConfig, Dispute, EscrowAccount,
+    ContractError, ContractVersion, ContributorProfile, CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount,
     EscrowState, FunderLedger, Grant, GrantCategory, GrantTag, HookEvent, HookRegistration,
     InsuranceClaim, InsurancePolicy, Invoice, MerkleCommitment, MigrationRecord, Milestone,
     MultisigProposal, OracleConfig, ParamRecord, PauseRecord, PaymentStream, ProtocolConfig, ProtocolMetrics,
@@ -114,6 +114,11 @@ pub enum DataKey {
     // Issue #593: RBAC
     RoleAssignment(Address, Role),
     RoleMembers(Role),
+    // Crowdfund module
+    CrowdfundCampaign(u64),
+    CrowdfundPledge(u64, Address),
+    CrowdfundBackers(u64),
+    CrowdfundCounter,
 }
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -1031,6 +1036,7 @@ impl Storage {
     }
 }
 
+impl Storage {
     // ── Issue #566: Invoice Billing ─────────────────────────────────────────────
 
     pub fn get_invoice(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Invoice> {
@@ -1134,6 +1140,68 @@ impl Storage {
     pub fn set_role_members(env: &Env, role: &Role, members: &Vec<Address>) {
         let key = DataKey::RoleMembers(role.clone());
         env.storage().persistent().set(&key, members);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    // ── Crowdfund Module ──────────────────────────────────────────────────────
+
+    pub fn next_crowdfund_id(env: &Env) -> u64 {
+        let mut id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CrowdfundCounter)
+            .unwrap_or(0);
+        id += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::CrowdfundCounter, &id);
+        id
+    }
+
+    pub fn get_crowdfund_campaign(env: &Env, id: u64) -> Option<CrowdfundCampaign> {
+        let key = DataKey::CrowdfundCampaign(id);
+        let v = env.storage().persistent().get(&key);
+        if v.is_some() {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        v
+    }
+
+    pub fn set_crowdfund_campaign(env: &Env, campaign: &CrowdfundCampaign) {
+        let key = DataKey::CrowdfundCampaign(campaign.id);
+        env.storage().persistent().set(&key, campaign);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn get_crowdfund_pledge(
+        env: &Env,
+        campaign_id: u64,
+        backer: &Address,
+    ) -> Option<CrowdfundPledge> {
+        let key = DataKey::CrowdfundPledge(campaign_id, backer.clone());
+        let v = env.storage().persistent().get(&key);
+        if v.is_some() {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        v
+    }
+
+    pub fn set_crowdfund_pledge(env: &Env, pledge: &CrowdfundPledge) {
+        let key = DataKey::CrowdfundPledge(pledge.campaign_id, pledge.backer.clone());
+        env.storage().persistent().set(&key, pledge);
+        Self::bump_persistent_ttl(env, &key);
+    }
+
+    pub fn get_crowdfund_backers(env: &Env, campaign_id: u64) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::CrowdfundBackers(campaign_id))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_crowdfund_backers(env: &Env, campaign_id: u64, backers: &Vec<Address>) {
+        let key = DataKey::CrowdfundBackers(campaign_id);
+        env.storage().persistent().set(&key, backers);
         Self::bump_persistent_ttl(env, &key);
     }
 }

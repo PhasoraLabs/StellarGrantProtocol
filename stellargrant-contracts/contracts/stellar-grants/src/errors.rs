@@ -102,4 +102,10 @@ pub enum ContractError {
     // Invoice (#566)
     InvoiceNotFound = 82,
     InvoiceAlreadySubmitted = 83,
+    // Crowdfund module
+    CrowdfundNotFound = 84,
+    CrowdfundNotActive = 85,
+    CrowdfundDeadlineNotReached = 86,
+    CrowdfundAlreadyFinalized = 87,
+    AlreadyPledged = 88,
 }

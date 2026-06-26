@@ -1086,4 +1086,142 @@ impl Events {
         };
         event.publish(env);
     }
+
+    // ── Crowdfund emit methods ────────────────────────────────────────────────
+
+    pub fn emit_crowdfund_created(
+        env: &Env,
+        campaign_id: u64,
+        owner: Address,
+        title: String,
+        target_amount: i128,
+        deadline: u64,
+    ) {
+        let event = CrowdfundCreated {
+            campaign_id,
+            owner,
+            title,
+            target_amount,
+            deadline,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_crowdfund_pledged(
+        env: &Env,
+        campaign_id: u64,
+        backer: Address,
+        amount: i128,
+        total_pledged: i128,
+    ) {
+        let event = CrowdfundPledged {
+            campaign_id,
+            backer,
+            amount,
+            total_pledged,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_crowdfund_succeeded(env: &Env, campaign_id: u64, total_pledged: i128) {
+        let event = CrowdfundSucceeded {
+            campaign_id,
+            total_pledged,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_crowdfund_failed(env: &Env, campaign_id: u64, total_pledged: i128) {
+        let event = CrowdfundFailed {
+            campaign_id,
+            total_pledged,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_crowdfund_refunded(env: &Env, campaign_id: u64, backer: Address, amount: i128) {
+        let event = CrowdfundRefunded {
+            campaign_id,
+            backer,
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_crowdfund_cancelled(
+        env: &Env,
+        campaign_id: u64,
+        cancelled_by: Address,
+        total_pledged: i128,
+    ) {
+        let event = CrowdfundCancelled {
+            campaign_id,
+            cancelled_by,
+            total_pledged,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+}
+
+// ── Crowdfund events ──────────────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundCreated {
+    pub campaign_id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub target_amount: i128,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundPledged {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub total_pledged: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundSucceeded {
+    pub campaign_id: u64,
+    pub total_pledged: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundFailed {
+    pub campaign_id: u64,
+    pub total_pledged: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundRefunded {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrowdfundCancelled {
+    pub campaign_id: u64,
+    pub cancelled_by: Address,
+    pub total_pledged: i128,
+    pub timestamp: u64,
 }
