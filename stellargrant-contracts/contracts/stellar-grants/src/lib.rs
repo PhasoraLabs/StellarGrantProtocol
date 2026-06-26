@@ -2334,6 +2334,102 @@ impl StellarGrantsContract {
         crowdfund::list_backers(&env, campaign_id)
     }
 
+    // ── Open Review (#590) ────────────────────────────────────────────────────
+
+    pub fn open_review_submit(
+        env: Env,
+        reviewer: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        signal: PublicReviewSignal,
+        comment: String,
+    ) -> Result<(), ContractError> {
+        open_review::submit_review(&env, &reviewer, grant_id, milestone_idx, signal, comment)
+    }
+
+    pub fn open_review_mark_helpful(
+        env: Env,
+        voter: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        reviewer: Address,
+    ) -> Result<(), ContractError> {
+        open_review::mark_helpful(&env, &voter, grant_id, milestone_idx, &reviewer)
+    }
+
+    pub fn open_review_get_reviews(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<PublicReview> {
+        open_review::get_reviews(&env, grant_id, milestone_idx)
+    }
+
+    pub fn open_review_aggregate_signals(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> (u32, u32, u32) {
+        open_review::aggregate_signals(&env, grant_id, milestone_idx)
+    }
+
+    pub fn open_review_get_review(
+        env: Env,
+        reviewer: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<PublicReview> {
+        open_review::get_review(&env, &reviewer, grant_id, milestone_idx)
+    }
+
+    pub fn open_review_has_reviewed(
+        env: Env,
+        reviewer: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> bool {
+        open_review::has_reviewed(&env, &reviewer, grant_id, milestone_idx)
+    }
+
+    // ── Milestone DAG (#595) ──────────────────────────────────────────────────
+
+    pub fn milestone_deps_attach_dag(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        deps: Vec<MilestoneDependency>,
+    ) -> Result<(), ContractError> {
+        milestone_deps::attach_dag(&env, &owner, grant_id, deps)
+    }
+
+    pub fn milestone_deps_can_submit(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        milestone_deps::can_submit(&env, grant_id, milestone_idx)
+    }
+
+    pub fn milestone_deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
+        milestone_deps::unblocked_milestones(&env, grant_id)
+    }
+
+    pub fn milestone_deps_dependents_of(env: Env, grant_id: u64, idx: u32) -> Vec<u32> {
+        milestone_deps::dependents_of(&env, grant_id, idx)
+    }
+
+    pub fn milestone_deps_get_dag(env: Env, grant_id: u64) -> Option<MilestoneDag> {
+        milestone_deps::get_dag(&env, grant_id)
+    }
+
+    pub fn milestone_deps_topological_order(
+        env: Env,
+        deps: Vec<MilestoneDependency>,
+        total: u32,
+    ) -> Result<Vec<u32>, ContractError> {
+        milestone_deps::topological_order(&env, &deps, total)
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     fn update_contributor_reputation(
