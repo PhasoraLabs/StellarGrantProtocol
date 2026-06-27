@@ -10,16 +10,29 @@ pub fn safe_sub(a: i128, b: i128) -> Result<i128, ContractError> {
     a.checked_sub(b).ok_or(ContractError::InvalidInput)
 }
 
-/// Calculate `basis_points / 10_000` of `amount` (e.g. 250 bps = 2.5%).
+/// Compute `basis_points / 10_000` of `amount` safely without intermediate overflow.
+/// Uses the identity: `(amount / 10_000) * bps + (amount % 10_000) * bps / 10_000`
 /// Returns Err(InvalidInput) if basis_points > 10_000.
 pub fn basis_points_of(amount: i128, basis_points: u32) -> Result<i128, ContractError> {
     if basis_points > 10_000 {
         return Err(ContractError::InvalidInput);
     }
-    amount
-        .checked_mul(basis_points as i128)
-        .ok_or(ContractError::InvalidInput)?
+    if basis_points == 0 {
+        return Ok(0);
+    }
+    let bps_i = basis_points as i128;
+    let whole = amount
         .checked_div(10_000)
+        .ok_or(ContractError::InvalidInput)?
+        .checked_mul(bps_i)
+        .ok_or(ContractError::InvalidInput)?;
+    let remainder = amount
+        .checked_rem_euclid(10_000)
+        .ok_or(ContractError::InvalidInput)?
+        .checked_mul(bps_i)
+        .ok_or(ContractError::InvalidInput)?
+        / 10_000;
+    whole.checked_add(remainder)
         .ok_or(ContractError::InvalidInput)
 }
 
@@ -42,16 +55,11 @@ pub fn split_evenly(total: i128, n: u32) -> Result<(i128, i128), ContractError> 
     Ok((per_part, remainder))
 }
 
-/// Proportional share: (part / whole) * scale. Used for reviewer fee splits.
-/// Returns Err(InvalidInput) if whole == 0.
-pub fn proportional_share(part: i128, whole: i128, scale: i128) -> Result<i128, ContractError> {
-    if whole == 0 {
-        return Err(ContractError::InvalidInput);
-    }
-    part.checked_mul(scale)
-        .ok_or(ContractError::InvalidInput)?
-        .checked_div(whole)
-        .ok_or(ContractError::InvalidInput)
+/// Proportional share: compute `share_bps / 10_000 * total` safely.
+/// Delegates to `basis_points_of` for overflow-safe arithmetic.
+/// Returns Err(InvalidInput) if share_bps > 10_000.
+pub fn proportional_share(total: i128, share_bps: u32) -> Result<i128, ContractError> {
+    basis_points_of(total, share_bps)
 }
 
 #[cfg(test)]
@@ -88,6 +96,20 @@ mod tests {
         assert_eq!(basis_points_of(10000, 10000).unwrap(), 10000); // 100%
         assert_eq!(basis_points_of(10000, 0).unwrap(), 0); // 0%
         assert_eq!(basis_points_of(10000, 250).unwrap(), 250); // 2.5%
+        assert_eq!(basis_points_of(0, 5000).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_basis_points_of_large_amount_no_overflow() {
+        // i128::MAX * 1 would overflow the old implementation; the new one handles it.
+        let result = basis_points_of(i128::MAX, 1);
+        assert!(result.is_ok());
+        assert!(result.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_basis_points_of_max_bps() {
+        assert_eq!(basis_points_of(i128::MAX, 10_000).unwrap(), i128::MAX);
     }
 
     #[test]
@@ -100,7 +122,6 @@ mod tests {
 
     #[test]
     fn test_basis_points_of_overflow() {
-        // Large amount * large bps should not panic
         let result = basis_points_of(i128::MAX, 10000);
         assert!(result.is_err());
     }
@@ -124,10 +145,12 @@ mod tests {
 
     #[test]
     fn test_proportional_share_ok() {
-        // 50 is 50% of 100, scale 100 => 50
-        assert_eq!(proportional_share(50, 100, 100).unwrap(), 50);
-        // 25 is 25% of 100, scale 1000 => 250
-        assert_eq!(proportional_share(25, 100, 1000).unwrap(), 250);
+        // 50% of 100
+        assert_eq!(proportional_share(100, 5000).unwrap(), 50);
+        // 2.5% of 10000
+        assert_eq!(proportional_share(10000, 250).unwrap(), 250);
+        // 100% of anything
+        assert_eq!(proportional_share(999, 10_000).unwrap(), 999);
     }
 
     #[test]
@@ -140,6 +163,7 @@ mod tests {
 
     #[test]
     fn test_proportional_share_overflow() {
-        assert!(proportional_share(i128::MAX, 1, 2).is_err());
+        // With the safe algorithm this should not overflow
+        assert!(proportional_share(i128::MAX, 1).is_ok());
     }
 }
