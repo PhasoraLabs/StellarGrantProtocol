@@ -12,6 +12,7 @@
 ///  - Proportional refunds in `grant_cancel` may lose at most
 ///    `(n_funders - 1)` stroops due to integer division; the last funder
 ///    always receives the leftover, so the total distributed == escrow_balance.
+mod fees_fuzz;
 use proptest::prelude::*;
 
 /// Maximum values kept small enough to avoid i128 overflow while still

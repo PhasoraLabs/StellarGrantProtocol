@@ -71,6 +71,8 @@ mod types;
 mod versioning;
 pub mod math;
 mod whitelist;
+mod lockup;
+mod data_export;
 
 pub use errors::ContractError;
 pub use events::Events;
@@ -225,9 +227,11 @@ pub use types::{
     VoiceCredits,
     VotingMechanism,
     // Issue #512: whitelist
-    WhitelistEntry,
-    WhitelistMode,
-    WhitelistScope,
+    WhitelistEntry, WhitelistMode, WhitelistScope,
+    // Issue #609: lockup
+    LockupRecord, LockupStatus,
+    // Issue #619: data export
+    ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage,
 };
 
 use metrics::MetricField;
@@ -3569,6 +3573,98 @@ impl StellarGrantsContract {
     /// Return the collateral requirement for a grant.
     pub fn collateral_get_requirement(env: Env, grant_id: u64) -> Option<CollateralRequirement> {
         collateral::get_requirement(&env, grant_id)
+    }
+
+    // ── Issue #609: Token Lockup Entry Points ─────────────────────────────────
+
+    /// Attach a lockup to a milestone payout. Owner sets before first submission.
+    pub fn lockup_attach(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        lockup_duration_seconds: u64,
+    ) -> Result<(), ContractError> {
+        lockup::attach_lockup(&env, &owner, grant_id, milestone_idx, lockup_duration_seconds)
+    }
+
+    /// Lock funds on milestone approval. Called internally by payout path.
+    pub fn lockup_lock_payout(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        holder: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        lockup::lock_payout(&env, grant_id, milestone_idx, &holder, &token, amount)
+    }
+
+    /// Contributor releases their own lockup after unlock time.
+    pub fn lockup_release(
+        env: Env,
+        holder: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<i128, ContractError> {
+        lockup::release(&env, &holder, grant_id, milestone_idx)
+    }
+
+    /// Return whether a lockup has expired and is claimable.
+    pub fn lockup_is_unlocked(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
+        lockup::is_unlocked(&env, grant_id, milestone_idx)
+    }
+
+    /// Return the lockup record for a milestone.
+    pub fn lockup_get(env: Env, grant_id: u64, milestone_idx: u32) -> Option<LockupRecord> {
+        lockup::get_lockup(&env, grant_id, milestone_idx)
+    }
+
+    /// Admin revoke: return funds to escrow (fraud/dispute resolution).
+    pub fn lockup_revoke(
+        env: Env,
+        admin: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        lockup::revoke(&env, &admin, grant_id, milestone_idx)
+    }
+
+    // ── Issue #619: Structured Data Export Entry Points ──────────────────────
+
+    /// Export a paginated list of grants, optionally filtered by last_updated_after timestamp.
+    pub fn export_grants(
+        env: Env,
+        offset: u32,
+        limit: u32,
+        last_updated_after: Option<u64>,
+    ) -> ExportGrantPage {
+        data_export::export_grants(&env, offset, limit, last_updated_after)
+    }
+
+    /// Export milestones for a specific grant.
+    pub fn export_milestones(env: Env, grant_id: u64) -> soroban_sdk::Vec<ExportMilestone> {
+        data_export::export_milestones(&env, grant_id)
+    }
+
+    /// Export all milestones updated after a timestamp (cross-grant, paginated).
+    pub fn export_milestones_since(
+        env: Env,
+        since: u64,
+        offset: u32,
+        limit: u32,
+    ) -> ExportMilestonePage {
+        data_export::export_milestones_since(&env, since, offset, limit)
+    }
+
+    /// Return the last-updated timestamp for the entire dataset (for cache invalidation).
+    pub fn last_global_update(env: Env) -> u64 {
+        data_export::last_global_update(&env)
+    }
+
+    /// Return a compact state hash for the protocol (fingerprint for change detection).
+    pub fn state_fingerprint(env: Env) -> soroban_sdk::BytesN<32> {
+        data_export::state_fingerprint(&env)
     }
 
     // ── Issue #598: Funder Report Entry Points ───────────────────────────────
