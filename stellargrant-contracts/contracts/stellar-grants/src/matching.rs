@@ -1,6 +1,6 @@
+use crate::errors::ContractError;
 use crate::storage::keys::{DataKey, MatchingKey};
 use crate::types::{MatchingAllocation, MatchingContribution, MatchingRound};
-use crate::errors::ContractError;
 use soroban_sdk::{token, Address, Env, Vec};
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -70,16 +70,20 @@ pub fn create_round(
     // Store round
     let round_key = DataKey::Matching(MatchingKey::Round(round_id));
     env.storage().persistent().set(&round_key, &round);
-    env.storage()
-        .persistent()
-        .extend_ttl(&round_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Create pool entry
     let pool_key = DataKey::Matching(MatchingKey::Pool(round_id));
     env.storage().persistent().set(&pool_key, &matching_pool);
-    env.storage()
-        .persistent()
-        .extend_ttl(&pool_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &pool_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Transfer matching pool from admin to contract
     token::Client::new(env, token).transfer(admin, &env.current_contract_address(), &matching_pool);
@@ -131,7 +135,11 @@ pub fn contribute(
     }
 
     // Get or create contribution
-    let contrib_key = DataKey::Matching(MatchingKey::Contribution(round_id, contributor.clone(), grant_id));
+    let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+        round_id,
+        contributor.clone(),
+        grant_id,
+    ));
     let mut contribution: MatchingContribution = env
         .storage()
         .persistent()
@@ -147,13 +155,18 @@ pub fn contribute(
     contribution.contributed_at = env.ledger().timestamp();
 
     env.storage().persistent().set(&contrib_key, &contribution);
-    env.storage()
-        .persistent()
-        .extend_ttl(&contrib_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &contrib_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Transfer from contributor to contract escrow
-    token::Client::new(env, &round.token)
-        .transfer(contributor, &env.current_contract_address(), &amount);
+    token::Client::new(env, &round.token).transfer(
+        contributor,
+        &env.current_contract_address(),
+        &amount,
+    );
 
     Ok(())
 }
@@ -226,9 +239,11 @@ pub fn compute_allocations(
     round.finalized = true;
 
     env.storage().persistent().set(&round_key, &round);
-    env.storage()
-        .persistent()
-        .extend_ttl(&round_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     Ok(allocations)
 }
@@ -268,9 +283,11 @@ pub fn distribute(env: &Env, round_id: u32) -> Result<(), ContractError> {
     round.distributed = true;
 
     env.storage().persistent().set(&round_key, &round);
-    env.storage()
-        .persistent()
-        .extend_ttl(&round_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     Ok(())
 }
@@ -291,7 +308,11 @@ pub fn get_contribution(
     contributor: &Address,
     grant_id: u64,
 ) -> Option<MatchingContribution> {
-    let contrib_key = DataKey::Matching(MatchingKey::Contribution(round_id, contributor.clone(), grant_id));
+    let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+        round_id,
+        contributor.clone(),
+        grant_id,
+    ));
     env.storage().persistent().get(&contrib_key)
 }
 

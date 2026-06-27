@@ -41,11 +41,17 @@ pub fn deduct_and_transfer(
 
     // Split fee: reviewer reward pool + treasury
     let reviewer_reward_amount = basis_points_of(fee, reviewer_reward_bps)?;
-    let treasury_amount = fee.checked_sub(reviewer_reward_amount).ok_or(ContractError::InvalidInput)?;
+    let treasury_amount = fee
+        .checked_sub(reviewer_reward_amount)
+        .ok_or(ContractError::InvalidInput)?;
 
     // Transfer treasury share to treasury
     if treasury_amount > 0 {
-        token::Client::new(env, token).transfer(&env.current_contract_address(), treasury, &treasury_amount);
+        token::Client::new(env, token).transfer(
+            &env.current_contract_address(),
+            treasury,
+            &treasury_amount,
+        );
     }
 
     // Fund reviewer reward pool

@@ -1,7 +1,7 @@
-use soroban_sdk::{Address, Env, Symbol, Vec};
-use crate::types::{ParamRecord, ParamValue};
 use crate::errors::ContractError;
 use crate::storage::Storage;
+use crate::types::{ParamRecord, ParamValue};
+use soroban_sdk::{Address, Env, Symbol, Vec};
 
 const MAX_HISTORY_SIZE: u32 = 20;
 
@@ -33,12 +33,12 @@ pub fn set_param(
     // Save old value to history if exists
     if let Some(old_record) = Storage::get_param(env, &key) {
         let mut history = Storage::get_param_history(env, &key);
-        
+
         // Evict oldest if at max size
         if history.len() >= MAX_HISTORY_SIZE {
             history.remove(0);
         }
-        
+
         history.push_back(old_record);
         Storage::set_param_history(env, &key, &history);
     }

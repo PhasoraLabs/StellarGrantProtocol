@@ -50,12 +50,7 @@ pub fn commit_evidence_root(
 }
 
 /// Verify that `proof.leaf` is included in the committed root.
-pub fn verify_proof(
-    env: &Env,
-    grant_id: u64,
-    milestone_idx: u32,
-    proof: &MerkleProof,
-) -> bool {
+pub fn verify_proof(env: &Env, grant_id: u64, milestone_idx: u32, proof: &MerkleProof) -> bool {
     let Some(commitment) = Storage::get_merkle_commitment(env, grant_id, milestone_idx) else {
         return false;
     };
@@ -90,11 +85,7 @@ pub fn hash_leaf(env: &Env, data: &Bytes) -> Bytes {
 }
 
 /// Return the committed root for a milestone, if any.
-pub fn get_commitment(
-    env: &Env,
-    grant_id: u64,
-    milestone_idx: u32,
-) -> Option<MerkleCommitment> {
+pub fn get_commitment(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<MerkleCommitment> {
     Storage::get_merkle_commitment(env, grant_id, milestone_idx)
 }
 

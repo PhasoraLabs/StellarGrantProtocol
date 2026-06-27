@@ -7,28 +7,23 @@ mod audit;
 mod checklist;
 mod circuit_breaker;
 mod collateral;
-mod crowdfund;
 mod compliance;
-mod fork;
-mod grant_index;
-mod milestone_deps;
-mod milestone_nft;
-mod notification;
-mod open_review;
-mod portfolio;
 mod config;
 mod constants;
 mod cross_contract;
+mod crowdfund;
 mod dispute;
 mod emergency;
 mod errors;
 mod escrow;
-mod evidence_schema;
 mod events;
+mod evidence_schema;
 mod factory;
 mod fees;
+mod fork;
 mod funder_report;
 mod governance;
+mod grant_index;
 mod grant_renewal;
 mod grant_tags;
 mod grant_transfer;
@@ -37,28 +32,34 @@ mod insurance;
 mod interfaces;
 mod invoice;
 mod license;
+mod matching;
+mod math;
 pub mod merkle;
 mod metrics;
 mod migration;
+mod milestone_deps;
 mod milestone_extension;
+mod milestone_nft;
+mod multi_grant;
 mod multisig;
+mod notification;
+mod open_review;
 mod oracle;
 mod pagination;
 mod params;
 mod performance_bond;
+mod portfolio;
 mod provenance;
 mod quadratic;
-mod reviewer_reward;
-mod multi_grant;
-mod matching;
 mod rate_limit;
-mod referral;
 mod reentrancy;
+mod referral;
 mod registry;
+mod relay;
 mod reputation;
 mod reputation_decay;
-mod relay;
 mod reviewer_pool;
+mod reviewer_reward;
 mod scoring;
 mod split_payment;
 mod storage;
@@ -67,41 +68,164 @@ mod syndication;
 mod token_swap;
 mod types;
 mod versioning;
-mod math;
 mod whitelist;
 
 pub use errors::ContractError;
 pub use events::Events;
 pub use storage::Storage;
 pub use types::{
-    AcceptanceCriteria, AnalyticsSnapshot, AuditAction, AuditEntry, BatchResult, BreakerState, CategoryStats,
-    ChecklistSubmission, ComplianceAttestation, ComplianceLevel, ComplianceStatus, ContractVersion,
-    ContributorPortfolio, ContributionType, CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus,
-    CriterionStatus, DecayConfig, DecayType, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
-    EscrowMode, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema, FeeRecord,
-    ForkRecord, FunderLedger, Grant, GrantArchetype, GrantCategory, GrantFund, GrantPortfolio, GrantStatus, GrantSummary, GrantTag,
-    GrantVersion, Amendment, AmendmentStatus,
-    GrantTemplate, HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy,
-    Invoice, InvoiceStatus, IpRights, LicenseRecord, LicenseType, LineItem, MerkleCommitment,
-    MerkleProof, MigrationRecord, Milestone, MilestoneDag, MilestoneDependency, MilestoneNft,
-    MilestoneState, MilestoneSubmission, MatchingAllocation, MatchingContribution, MatchingRound, MultisigProposal, MultisigSigner,
-    NftMetadata, NotificationEvent, OracleConfig, ParamRecord, ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream,
-    PortfolioFilter, PortfolioStats, PriceQuote, ProvenanceRecord, ProtocolConfig, ProtocolMetrics, ProtocolModule, PublicReview, PublicReviewSignal,
-    QuadraticVoteRecord, RateLimitAction, RegistryEntry, RegistryEntryType, RelayableAction,
-    RelayAllowance, RelayConfig, RelayRecord, RenewalProposal, RenewalStatus, ReputationTier,
-    ReviewerAvailability, ReviewerProfile, ReviewerRequest, ReviewerRequestStatus, ReviewParticipation, ReviewerRewardRecord, ReviewerRewardPool, Role,
-    RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight,
-    SignatureStatus, SplitRecipient, StructuredEvidence, Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant,
-    SyndicateMember, SyndicateStatus, TokenMetric, TransferProposal, TransferableRole, VoiceCredits, VotingMechanism,
+    AcceptanceCriteria,
+    Amendment,
+    AmendmentStatus,
+    AnalyticsSnapshot,
     // Issue #569/#572/#573/#574: growth, extension, arbitration, and bond modules
-    Arbiter, ArbiterVote, ArbitrationCase, BondClaim, BondStatus, ExtensionRequest,
-    ExtensionStatus, PerformanceBond, ReferralCode, ReferralRecord, ReferralReward,
+    Arbiter,
+    ArbiterVote,
+    ArbitrationCase,
+    AuditAction,
+    AuditEntry,
+    BatchResult,
+    BondClaim,
+    BondStatus,
+    BreakerState,
+    CategoryStats,
+    ChecklistSubmission,
     // Issue #564: collateral escrow
-    CollateralDeposit, CollateralRequirement, CollateralStatus,
+    CollateralDeposit,
+    CollateralRequirement,
+    CollateralStatus,
+    ComplianceAttestation,
+    ComplianceLevel,
+    ComplianceStatus,
+    ContractVersion,
+    ContributionType,
+    ContributorPortfolio,
+    CriterionStatus,
+    CrowdfundCampaign,
+    CrowdfundPledge,
+    CrowdfundStatus,
+    DecayConfig,
+    DecayType,
+    DexConfig,
+    Dispute,
+    DisputeStatus,
+    EscrowAccount,
+    EscrowLifecycleState,
+    EscrowMode,
+    EscrowState,
+    EvidenceField,
+    EvidenceFieldType,
+    EvidenceSchema,
+    ExtensionRequest,
+    ExtensionStatus,
+    FeeRecord,
+    ForkRecord,
     // Issue #598: funder report
-    FunderGrantSummary, FunderReport, FunderTokenSummary,
+    FunderGrantSummary,
+    FunderLedger,
+    FunderReport,
+    FunderTokenSummary,
+    Grant,
+    GrantArchetype,
+    GrantCategory,
+    GrantFund,
+    GrantPortfolio,
+    GrantStatus,
+    GrantSummary,
+    GrantTag,
+    GrantTemplate,
+    GrantVersion,
+    HookCallResult,
+    HookEvent,
+    HookRegistration,
+    InsuranceClaim,
+    InsurancePolicy,
+    Invoice,
+    InvoiceStatus,
+    IpRights,
+    LicenseRecord,
+    LicenseType,
+    LineItem,
+    MatchingAllocation,
+    MatchingContribution,
+    MatchingRound,
+    MerkleCommitment,
+    MerkleProof,
+    MigrationRecord,
+    Milestone,
+    MilestoneDag,
+    MilestoneDependency,
+    MilestoneNft,
+    MilestoneState,
+    MilestoneSubmission,
+    MultisigProposal,
+    MultisigSigner,
+    NftMetadata,
+    NotificationEvent,
+    OracleConfig,
+    ParamRecord,
+    ParamType,
+    ParamValue,
+    PauseRecord,
+    PaymentSplit,
+    PaymentStream,
+    PerformanceBond,
+    PortfolioFilter,
+    PortfolioStats,
+    PriceQuote,
+    ProtocolConfig,
+    ProtocolMetrics,
+    ProtocolModule,
+    ProvenanceRecord,
+    PublicReview,
+    PublicReviewSignal,
+    QuadraticVoteRecord,
+    RateLimitAction,
+    ReferralCode,
+    ReferralRecord,
+    ReferralReward,
+    RegistryEntry,
+    RegistryEntryType,
+    RelayAllowance,
+    RelayConfig,
+    RelayRecord,
+    RelayableAction,
+    RenewalProposal,
+    RenewalStatus,
+    ReputationTier,
+    ReviewParticipation,
+    ReviewerAvailability,
+    ReviewerProfile,
+    ReviewerRequest,
+    ReviewerRequestStatus,
+    ReviewerRewardPool,
+    ReviewerRewardRecord,
+    Role,
+    RoleAssignment,
+    RollingWindow,
+    ScoreResult,
+    ScoringDimension,
+    ScoringRubric,
+    ScoringWeight,
+    SignatureStatus,
+    SplitRecipient,
+    StructuredEvidence,
+    Subscription,
+    SubscriptionScope,
+    SwapResult,
+    SwapRoute,
+    SyndicateGrant,
+    SyndicateMember,
+    SyndicateStatus,
+    TokenMetric,
+    TransferProposal,
+    TransferableRole,
+    VoiceCredits,
+    VotingMechanism,
     // Issue #512: whitelist
-    WhitelistEntry, WhitelistMode, WhitelistScope,
+    WhitelistEntry,
+    WhitelistMode,
+    WhitelistScope,
 };
 
 use metrics::MetricField;
@@ -683,7 +807,8 @@ impl StellarGrantsContract {
         }
 
         // Issue #574: a required bond must be posted before any milestone submission.
-        require_bond_posted(&env, grant_id)?;require_bond_posted(&env, grant_id)?;
+        require_bond_posted(&env, grant_id)?;
+        require_bond_posted(&env, grant_id)?;
 
         // Issue #564: a required collateral deposit must be posted before submission.
         collateral::require_deposited(&env, grant_id, &recipient)?;
@@ -728,7 +853,8 @@ impl StellarGrantsContract {
         }
 
         // Issue #574: a required bond must be posted before any milestone submission.
-        require_bond_posted(&env, grant_id)?;require_bond_posted(&env, grant_id)?;
+        require_bond_posted(&env, grant_id)?;
+        require_bond_posted(&env, grant_id)?;
 
         // Issue #564: a required collateral deposit must be posted before submission.
         collateral::require_deposited(&env, grant_id, &recipient)?;
@@ -1017,7 +1143,11 @@ impl StellarGrantsContract {
     }
 
     /// Get pending reviewer rewards for a specific token.
-    pub fn get_reviewer_rewards(env: Env, reviewer: Address, token: Address) -> Option<ReviewerRewardRecord> {
+    pub fn get_reviewer_rewards(
+        env: Env,
+        reviewer: Address,
+        token: Address,
+    ) -> Option<ReviewerRewardRecord> {
         reviewer_reward::get_reward_record(&env, &reviewer, &token)
     }
 
@@ -1087,7 +1217,14 @@ impl StellarGrantsContract {
         eligible_grant_ids: Vec<u64>,
     ) -> Result<u32, ContractError> {
         admin.require_auth();
-        matching::create_round(&env, &admin, &token, matching_pool, duration_ledgers, eligible_grant_ids)
+        matching::create_round(
+            &env,
+            &admin,
+            &token,
+            matching_pool,
+            duration_ledgers,
+            eligible_grant_ids,
+        )
     }
 
     /// Contribute to a grant within an active matching round.
@@ -1103,7 +1240,10 @@ impl StellarGrantsContract {
     }
 
     /// Compute QF allocations after a round ends.
-    pub fn compute_qf_allocations(env: Env, round_id: u32) -> Result<Vec<MatchingAllocation>, ContractError> {
+    pub fn compute_qf_allocations(
+        env: Env,
+        round_id: u32,
+    ) -> Result<Vec<MatchingAllocation>, ContractError> {
         matching::compute_allocations(&env, round_id)
     }
 
@@ -1435,7 +1575,14 @@ impl StellarGrantsContract {
         root: Bytes,
         leaf_count: u32,
     ) -> Result<(), ContractError> {
-        merkle::commit_evidence_root(&env, &contributor, grant_id, milestone_idx, root, leaf_count)
+        merkle::commit_evidence_root(
+            &env,
+            &contributor,
+            grant_id,
+            milestone_idx,
+            root,
+            leaf_count,
+        )
     }
 
     pub fn verify_evidence_proof(
@@ -2041,7 +2188,12 @@ impl StellarGrantsContract {
     }
 
     /// Remove a tag from a grant.
-    pub fn tags_remove_tag(env: Env, owner: Address, grant_id: u64, tag: String) -> Result<(), ContractError> {
+    pub fn tags_remove_tag(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        tag: String,
+    ) -> Result<(), ContractError> {
         grant_tags::remove_tag(&env, &owner, grant_id, &tag)
     }
 
@@ -2084,12 +2236,20 @@ impl StellarGrantsContract {
     }
 
     /// Activate an approved renewal.
-    pub fn renewal_activate(env: Env, owner: Address, original_grant_id: u64) -> Result<u64, ContractError> {
+    pub fn renewal_activate(
+        env: Env,
+        owner: Address,
+        original_grant_id: u64,
+    ) -> Result<u64, ContractError> {
         grant_renewal::activate_renewal(&env, &owner, original_grant_id)
     }
 
     /// Decline a renewal proposal.
-    pub fn renewal_decline(env: Env, caller: Address, original_grant_id: u64) -> Result<(), ContractError> {
+    pub fn renewal_decline(
+        env: Env,
+        caller: Address,
+        original_grant_id: u64,
+    ) -> Result<(), ContractError> {
         grant_renewal::decline_renewal(&env, &caller, original_grant_id)
     }
 
@@ -2126,11 +2286,7 @@ impl StellarGrantsContract {
         token_swap::swap(&env, &caller, route, amount_in)
     }
 
-    pub fn swap_quote(
-        env: Env,
-        route: SwapRoute,
-        amount_in: i128,
-    ) -> Result<i128, ContractError> {
+    pub fn swap_quote(env: Env, route: SwapRoute, amount_in: i128) -> Result<i128, ContractError> {
         token_swap::quote(&env, &route, amount_in)
     }
 
@@ -2154,7 +2310,14 @@ impl StellarGrantsContract {
         amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
-        token_swap::swap_and_pay(&env, grant_id, &recipient, &grant_token, &preferred_token, amount)
+        token_swap::swap_and_pay(
+            &env,
+            grant_id,
+            &recipient,
+            &grant_token,
+            &preferred_token,
+            amount,
+        )
     }
 
     // ── Issue #581: Milestone Checklist Entry Points ──────────────────────────
@@ -2190,7 +2353,14 @@ impl StellarGrantsContract {
         approve: bool,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
-        checklist::review_criterion(&env, &reviewer, grant_id, milestone_idx, criterion_idx, approve)
+        checklist::review_criterion(
+            &env,
+            &reviewer,
+            grant_id,
+            milestone_idx,
+            criterion_idx,
+            approve,
+        )
     }
 
     pub fn checklist_all_required_approved(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
@@ -2573,7 +2743,10 @@ impl StellarGrantsContract {
 
     // ── Portfolio (#565) ──────────────────────────────────────────────────────
 
-    pub fn get_portfolio(env: Env, contributor: Address) -> Result<ContributorPortfolio, ContractError> {
+    pub fn get_portfolio(
+        env: Env,
+        contributor: Address,
+    ) -> Result<ContributorPortfolio, ContractError> {
         portfolio::get_portfolio(&env, &contributor)
     }
 
@@ -2739,7 +2912,12 @@ impl StellarGrantsContract {
         grant_index::by_token(&env, &token, offset, limit)
     }
 
-    pub fn index_by_contributor(env: Env, contributor: Address, offset: u32, limit: u32) -> Vec<u64> {
+    pub fn index_by_contributor(
+        env: Env,
+        contributor: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
         grant_index::by_contributor(&env, &contributor, offset, limit)
     }
 
@@ -2881,7 +3059,14 @@ impl StellarGrantsContract {
     ) -> Result<LicenseRecord, ContractError> {
         emergency::require_not_paused(&env)?;
         license::attach_license(
-            &env, &caller, grant_id, milestone_idx, spdx_id, license_type, rights, restrictions,
+            &env,
+            &caller,
+            grant_id,
+            milestone_idx,
+            spdx_id,
+            license_type,
+            rights,
+            restrictions,
         )
     }
 
@@ -2906,11 +3091,7 @@ impl StellarGrantsContract {
     }
 
     /// Return the registered payment split for a milestone, if any.
-    pub fn get_payment_split(
-        env: Env,
-        grant_id: u64,
-        milestone_idx: u32,
-    ) -> Option<PaymentSplit> {
+    pub fn get_payment_split(env: Env, grant_id: u64, milestone_idx: u32) -> Option<PaymentSplit> {
         split_payment::get_split(&env, grant_id, milestone_idx)
     }
 
@@ -2949,11 +3130,7 @@ impl StellarGrantsContract {
         syndication::join_syndicate(&env, &member, grant_id, amount)
     }
 
-    pub fn close_syndicate(
-        env: Env,
-        lead: Address,
-        grant_id: u64,
-    ) -> Result<(), ContractError> {
+    pub fn close_syndicate(env: Env, lead: Address, grant_id: u64) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
         lead.require_auth();
         syndication::close_syndicate(&env, &lead, grant_id)
@@ -3060,7 +3237,12 @@ impl StellarGrantsContract {
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
         grant_transfer::propose_transfer(
-            &env, &caller, grant_id, new_holder, role, reviewer_to_replace,
+            &env,
+            &caller,
+            grant_id,
+            new_holder,
+            role,
+            reviewer_to_replace,
         )
     }
 
@@ -3386,10 +3568,7 @@ impl StellarGrantsContract {
     }
 
     /// Return the collateral requirement for a grant.
-    pub fn collateral_get_requirement(
-        env: Env,
-        grant_id: u64,
-    ) -> Option<CollateralRequirement> {
+    pub fn collateral_get_requirement(env: Env, grant_id: u64) -> Option<CollateralRequirement> {
         collateral::get_requirement(&env, grant_id)
     }
 
@@ -3401,11 +3580,7 @@ impl StellarGrantsContract {
     }
 
     /// Return per-token financial summary for a funder.
-    pub fn funder_token_summary(
-        env: Env,
-        funder: Address,
-        token: Address,
-    ) -> FunderTokenSummary {
+    pub fn funder_token_summary(env: Env, funder: Address, token: Address) -> FunderTokenSummary {
         funder_report::token_summary(&env, &funder, &token)
     }
 
@@ -3420,11 +3595,7 @@ impl StellarGrantsContract {
     }
 
     /// Return total amount currently in escrow across all grants for a funder (per token).
-    pub fn funder_total_in_escrow(
-        env: Env,
-        funder: Address,
-        token: Address,
-    ) -> i128 {
+    pub fn funder_total_in_escrow(env: Env, funder: Address, token: Address) -> i128 {
         funder_report::total_in_escrow(&env, &funder, &token)
     }
 
@@ -3458,11 +3629,7 @@ impl StellarGrantsContract {
 
     /// Check if an address is on the whitelist for a scope.
     /// If mode is Open, always returns true.
-    pub fn whitelist_is_allowed(
-        env: Env,
-        address: Address,
-        scope: WhitelistScope,
-    ) -> bool {
+    pub fn whitelist_is_allowed(env: Env, address: Address, scope: WhitelistScope) -> bool {
         whitelist::is_allowed(&env, &address, &scope)
     }
 
@@ -3584,12 +3751,12 @@ pub(crate) fn internal_grant_create(
         return Err(ContractError::InvalidInput);
     }
 
-        // Issue #512: check whitelist for reviewers
-        for r in reviewers.iter() {
-            if !whitelist::is_allowed(env, &r, &WhitelistScope::GlobalReviewer) {
-                return Err(ContractError::AddressNotWhitelisted);
-            }
+    // Issue #512: check whitelist for reviewers
+    for r in reviewers.iter() {
+        if !whitelist::is_allowed(env, &r, &WhitelistScope::GlobalReviewer) {
+            return Err(ContractError::AddressNotWhitelisted);
         }
+    }
 
     if reviewers.len() > protocol_cfg.max_reviewers {
         return Err(ContractError::ReviewerLimitExceeded);

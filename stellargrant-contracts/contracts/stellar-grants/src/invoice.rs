@@ -1,9 +1,9 @@
-use soroban_sdk::{Address, Env, String, Vec};
-use crate::types::{Invoice, InvoiceStatus, LineItem};
 use crate::errors::ContractError;
-use crate::storage::Storage;
 use crate::events::Events;
 use crate::governance;
+use crate::storage::Storage;
+use crate::types::{Invoice, InvoiceStatus, LineItem};
+use soroban_sdk::{Address, Env, String, Vec};
 
 /// Submit an invoice for a milestone. Contributor only.
 pub fn submit_invoice(
@@ -85,8 +85,8 @@ pub fn approve_invoice(
         return Err(ContractError::Unauthorized);
     }
 
-    let mut invoice = Storage::get_invoice(env, grant_id, milestone_idx)
-        .ok_or(ContractError::InvoiceNotFound)?;
+    let mut invoice =
+        Storage::get_invoice(env, grant_id, milestone_idx).ok_or(ContractError::InvoiceNotFound)?;
 
     if invoice.status != InvoiceStatus::Submitted {
         return Err(ContractError::InvalidState);
@@ -124,8 +124,8 @@ pub fn reject_invoice(
         return Err(ContractError::Unauthorized);
     }
 
-    let mut invoice = Storage::get_invoice(env, grant_id, milestone_idx)
-        .ok_or(ContractError::InvoiceNotFound)?;
+    let mut invoice =
+        Storage::get_invoice(env, grant_id, milestone_idx).ok_or(ContractError::InvoiceNotFound)?;
 
     if invoice.status != InvoiceStatus::Submitted {
         return Err(ContractError::InvalidState);
@@ -159,8 +159,8 @@ pub fn resubmit_invoice(
     let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
         .ok_or(ContractError::MilestoneNotFound)?;
 
-    let mut invoice = Storage::get_invoice(env, grant_id, milestone_idx)
-        .ok_or(ContractError::InvoiceNotFound)?;
+    let mut invoice =
+        Storage::get_invoice(env, grant_id, milestone_idx).ok_or(ContractError::InvoiceNotFound)?;
 
     if invoice.status != InvoiceStatus::Rejected {
         return Err(ContractError::InvalidState);
@@ -201,7 +201,10 @@ pub fn get_invoice(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Invoi
 }
 
 /// Validate line items: each `total == quantity * unit_price`, grand total matches sum of line items + tax.
-pub fn validate_line_items(items: &Vec<LineItem>, tax_bps: u32) -> Result<(i128, i128), ContractError> {
+pub fn validate_line_items(
+    items: &Vec<LineItem>,
+    tax_bps: u32,
+) -> Result<(i128, i128), ContractError> {
     if items.is_empty() {
         return Err(ContractError::InvalidInput);
     }

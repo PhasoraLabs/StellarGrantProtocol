@@ -205,7 +205,10 @@ mod tests {
     fn test_invalid_template_rejected() {
         let mut template = template_for(GrantArchetype::CommunityProject);
         template.quorum_threshold_bps = 4_000;
-        assert_eq!(validate_template(&template), Err(ContractError::InvalidInput));
+        assert_eq!(
+            validate_template(&template),
+            Err(ContractError::InvalidInput)
+        );
     }
 
     #[test]

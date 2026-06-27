@@ -77,9 +77,8 @@ pub fn mark_helpful(
 ) -> Result<(), ContractError> {
     voter.require_auth();
 
-    let mut review =
-        Storage::get_public_reviewer_record(env, reviewer, grant_id, milestone_idx)
-            .ok_or(ContractError::ReviewNotFound)?;
+    let mut review = Storage::get_public_reviewer_record(env, reviewer, grant_id, milestone_idx)
+        .ok_or(ContractError::ReviewNotFound)?;
 
     review.helpful_votes = review.helpful_votes.saturating_add(1);
     Storage::set_public_reviewer_record(env, reviewer, grant_id, milestone_idx, &review);
@@ -274,14 +273,7 @@ mod tests {
             break; // 501 chars
         }
 
-        let result = submit_review(
-            &env,
-            &reviewer,
-            1,
-            0,
-            PublicReviewSignal::Positive,
-            s,
-        );
+        let result = submit_review(&env, &reviewer, 1, 0, PublicReviewSignal::Positive, s);
         assert_eq!(result, Err(ContractError::CommentTooLong));
     }
 }

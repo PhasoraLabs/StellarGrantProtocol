@@ -1,6 +1,6 @@
 use crate::storage::keys::{DataKey, ProvenanceKey};
 use crate::types::{ContributionType, ProvenanceRecord};
-use soroban_sdk::{Address, Env, Vec, Bytes};
+use soroban_sdk::{Address, Bytes, Env, Vec};
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
 const PERSISTENT_TTL_EXTEND_TO: u32 = 1_000_000;
@@ -42,9 +42,11 @@ pub fn record(
     // Store record by ID
     let record_key = DataKey::Provenance(ProvenanceKey::Record(record_id));
     env.storage().persistent().set(&record_key, &record);
-    env.storage()
-        .persistent()
-        .extend_ttl(&record_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &record_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Update counter
     env.storage().persistent().set(&counter_key, &counter);
@@ -58,9 +60,11 @@ pub fn record(
         .unwrap_or_else(|| Vec::new(env));
     address_records.push_back(record_id);
     env.storage().persistent().set(&index_key, &address_records);
-    env.storage()
-        .persistent()
-        .extend_ttl(&index_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &index_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Update by-grant index
     let grant_key = DataKey::Provenance(ProvenanceKey::ByGrant(grant_id));
@@ -71,13 +75,20 @@ pub fn record(
         .unwrap_or_else(|| Vec::new(env));
     grant_records.push_back(record_id);
     env.storage().persistent().set(&grant_key, &grant_records);
-    env.storage()
-        .persistent()
-        .extend_ttl(&grant_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &grant_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 }
 
 /// Return all provenance records for an address, paginated.
-pub fn get_by_address(env: &Env, address: &Address, offset: u32, limit: u32) -> Vec<ProvenanceRecord> {
+pub fn get_by_address(
+    env: &Env,
+    address: &Address,
+    offset: u32,
+    limit: u32,
+) -> Vec<ProvenanceRecord> {
     let index_key = DataKey::Provenance(ProvenanceKey::Index(address.clone()));
     let record_ids: Vec<u32> = env
         .storage()
@@ -87,7 +98,11 @@ pub fn get_by_address(env: &Env, address: &Address, offset: u32, limit: u32) -> 
 
     let mut result = Vec::new(env);
     let len = record_ids.len() as u32;
-    let end = if offset + limit > len { len } else { offset + limit };
+    let end = if offset + limit > len {
+        len
+    } else {
+        offset + limit
+    };
 
     if offset < len {
         for i in offset..end {

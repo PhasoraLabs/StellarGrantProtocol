@@ -1,7 +1,7 @@
-use crate::storage::keys::{DataKey, GrantKey};
-use crate::types::{BatchResult, GrantPortfolio, GrantStatus, PortfolioFilter, PortfolioStats};
 use crate::errors::ContractError;
+use crate::storage::keys::{DataKey, GrantKey};
 use crate::storage::Storage;
+use crate::types::{BatchResult, GrantPortfolio, GrantStatus, PortfolioFilter, PortfolioStats};
 use soroban_sdk::{Address, Env, Vec};
 
 /// Return portfolio stats for an owner address.
@@ -103,18 +103,26 @@ pub fn filter_grants(env: &Env, filter: PortfolioFilter, offset: u32, limit: u32
 
     let mut results = Vec::new(env);
     let len = grant_ids.len() as u32;
-    let end = if offset + limit > len { len } else { offset + limit };
+    let end = if offset + limit > len {
+        len
+    } else {
+        offset + limit
+    };
 
     if offset < len {
         for i in offset..end {
             if let Some(grant_id) = grant_ids.get(i) {
                 if let Some(grant) = Storage::get_grant(env, grant_id) {
                     // Apply all filters
-                    let matches_status = filter.status.is_none() || filter.status == Some(grant.status);
-                    let matches_token = filter.token.is_none() || filter.token == Some(grant.token.clone());
+                    let matches_status =
+                        filter.status.is_none() || filter.status == Some(grant.status);
+                    let matches_token =
+                        filter.token.is_none() || filter.token == Some(grant.token.clone());
                     let matches_amount = {
-                        let min_ok = filter.min_amount.is_none() || filter.min_amount <= Some(grant.total_amount);
-                        let max_ok = filter.max_amount.is_none() || filter.max_amount >= Some(grant.total_amount);
+                        let min_ok = filter.min_amount.is_none()
+                            || filter.min_amount <= Some(grant.total_amount);
+                        let max_ok = filter.max_amount.is_none()
+                            || filter.max_amount >= Some(grant.total_amount);
                         min_ok && max_ok
                     };
 

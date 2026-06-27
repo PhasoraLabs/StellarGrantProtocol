@@ -1,6 +1,6 @@
-use crate::storage::keys::{DataKey, ReviewerRewardKey};
-use crate::types::{ReviewParticipation, ReviewerRewardRecord, ReviewerRewardPool};
 use crate::errors::ContractError;
+use crate::storage::keys::{DataKey, ReviewerRewardKey};
+use crate::types::{ReviewParticipation, ReviewerRewardPool, ReviewerRewardRecord};
 use soroban_sdk::{token, Address, Env, Vec};
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
@@ -13,32 +13,32 @@ pub fn fund_pool(env: &Env, token: &Address, amount: i128) {
     }
 
     let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(token.clone()));
-    let mut pool: ReviewerRewardPool = env
-        .storage()
-        .persistent()
-        .get(&pool_key)
-        .unwrap_or_else(|| ReviewerRewardPool {
-            token: token.clone(),
-            balance: 0,
-            total_deposited: 0,
-            total_paid_out: 0,
-        });
+    let mut pool: ReviewerRewardPool =
+        env.storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| ReviewerRewardPool {
+                token: token.clone(),
+                balance: 0,
+                total_deposited: 0,
+                total_paid_out: 0,
+            });
 
     pool.balance = pool.balance.saturating_add(amount);
     pool.total_deposited = pool.total_deposited.saturating_add(amount);
 
     env.storage().persistent().set(&pool_key, &pool);
-    env.storage()
-        .persistent()
-        .extend_ttl(&pool_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &pool_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 }
 
 /// Record a reviewer's participation in a milestone vote.
 pub fn record_participation(env: &Env, reviewer: &Address, grant_id: u64, was_fast: bool) {
-    let part_key = DataKey::ReviewerReward(ReviewerRewardKey::Participation(
-        reviewer.clone(),
-        grant_id,
-    ));
+    let part_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::Participation(reviewer.clone(), grant_id));
 
     let mut participation: ReviewParticipation = env
         .storage()
@@ -60,9 +60,11 @@ pub fn record_participation(env: &Env, reviewer: &Address, grant_id: u64, was_fa
     participation.last_vote_at = env.ledger().timestamp();
 
     env.storage().persistent().set(&part_key, &participation);
-    env.storage()
-        .persistent()
-        .extend_ttl(&part_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &part_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 }
 
 /// Compute reward entitlement for a reviewer based on participation.
@@ -84,7 +86,11 @@ pub fn compute_reward(
 }
 
 /// Accrue computed reward into reviewer's pending balance.
-pub fn accrue_reward(env: &Env, reviewer: &Address, token: &Address) -> Result<i128, ContractError> {
+pub fn accrue_reward(
+    env: &Env,
+    reviewer: &Address,
+    token: &Address,
+) -> Result<i128, ContractError> {
     let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
         reviewer.clone(),
         token.clone(),
@@ -112,15 +118,21 @@ pub fn accrue_reward(env: &Env, reviewer: &Address, token: &Address) -> Result<i
         .ok_or(ContractError::InvalidInput)?;
 
     env.storage().persistent().set(&reward_key, &reward_record);
-    env.storage()
-        .persistent()
-        .extend_ttl(&reward_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &reward_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     Ok(accrued)
 }
 
 /// Reviewer claims all pending rewards.
-pub fn claim_rewards(env: &Env, reviewer: &Address, token: &Address) -> Result<i128, ContractError> {
+pub fn claim_rewards(
+    env: &Env,
+    reviewer: &Address,
+    token: &Address,
+) -> Result<i128, ContractError> {
     let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
         reviewer.clone(),
         token.clone(),
@@ -150,8 +162,7 @@ pub fn claim_rewards(env: &Env, reviewer: &Address, token: &Address) -> Result<i
     }
 
     // Transfer from contract to reviewer
-    token::Client::new(env, token)
-        .transfer(&env.current_contract_address(), reviewer, &claimable);
+    token::Client::new(env, token).transfer(&env.current_contract_address(), reviewer, &claimable);
 
     // Update reward record
     reward_record.pending_amount = reward_record
@@ -161,18 +172,28 @@ pub fn claim_rewards(env: &Env, reviewer: &Address, token: &Address) -> Result<i
     reward_record.last_claimed_at = Some(env.ledger().timestamp());
 
     env.storage().persistent().set(&reward_key, &reward_record);
-    env.storage()
-        .persistent()
-        .extend_ttl(&reward_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &reward_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     // Update pool
-    pool.balance = pool.balance.checked_sub(claimable).ok_or(ContractError::InvalidInput)?;
-    pool.total_paid_out = pool.total_paid_out.checked_add(claimable).ok_or(ContractError::InvalidInput)?;
+    pool.balance = pool
+        .balance
+        .checked_sub(claimable)
+        .ok_or(ContractError::InvalidInput)?;
+    pool.total_paid_out = pool
+        .total_paid_out
+        .checked_add(claimable)
+        .ok_or(ContractError::InvalidInput)?;
 
     env.storage().persistent().set(&pool_key, &pool);
-    env.storage()
-        .persistent()
-        .extend_ttl(&pool_key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+    env.storage().persistent().extend_ttl(
+        &pool_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
 
     Ok(claimable)
 }
@@ -201,11 +222,13 @@ pub fn pool_balance(env: &Env, token: &Address) -> i128 {
 }
 
 /// Get reviewer participation record for a grant.
-pub fn get_participation(env: &Env, reviewer: &Address, grant_id: u64) -> Option<ReviewParticipation> {
-    let part_key = DataKey::ReviewerReward(ReviewerRewardKey::Participation(
-        reviewer.clone(),
-        grant_id,
-    ));
+pub fn get_participation(
+    env: &Env,
+    reviewer: &Address,
+    grant_id: u64,
+) -> Option<ReviewParticipation> {
+    let part_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::Participation(reviewer.clone(), grant_id));
     env.storage().persistent().get(&part_key)
 }
 
@@ -272,8 +295,10 @@ mod tests {
         fund_pool(&env, &token, 100);
 
         // Create reward record with 200 pending
-        let reward_key =
-            DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(reviewer.clone(), token.clone()));
+        let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
+            reviewer.clone(),
+            token.clone(),
+        ));
         let reward_record = ReviewerRewardRecord {
             reviewer: reviewer.clone(),
             token: token.clone(),
@@ -299,8 +324,10 @@ mod tests {
         assert_eq!(get_reward_record(&env, &reviewer, &token), None);
 
         // Create a record
-        let reward_key =
-            DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(reviewer.clone(), token.clone()));
+        let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
+            reviewer.clone(),
+            token.clone(),
+        ));
         let record = ReviewerRewardRecord {
             reviewer: reviewer.clone(),
             token: token.clone(),

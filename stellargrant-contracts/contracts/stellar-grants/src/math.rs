@@ -33,7 +33,11 @@ pub fn split_evenly(total: i128, n: u32) -> Result<(i128, i128), ContractError> 
         .checked_div(n as i128)
         .ok_or(ContractError::InvalidInput)?;
     let remainder = total
-        .checked_sub(per_part.checked_mul(n as i128).ok_or(ContractError::InvalidInput)?)
+        .checked_sub(
+            per_part
+                .checked_mul(n as i128)
+                .ok_or(ContractError::InvalidInput)?,
+        )
         .ok_or(ContractError::InvalidInput)?;
     Ok((per_part, remainder))
 }
@@ -88,7 +92,10 @@ mod tests {
 
     #[test]
     fn test_basis_points_of_invalid() {
-        assert_eq!(basis_points_of(10000, 10001), Err(ContractError::InvalidInput));
+        assert_eq!(
+            basis_points_of(10000, 10001),
+            Err(ContractError::InvalidInput)
+        );
     }
 
     #[test]
@@ -125,7 +132,10 @@ mod tests {
 
     #[test]
     fn test_proportional_share_zero_whole() {
-        assert_eq!(proportional_share(50, 0, 100), Err(ContractError::InvalidInput));
+        assert_eq!(
+            proportional_share(50, 0, 100),
+            Err(ContractError::InvalidInput)
+        );
     }
 
     #[test]
