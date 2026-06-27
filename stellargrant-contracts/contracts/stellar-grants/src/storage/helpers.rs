@@ -11,9 +11,10 @@ use crate::types::{
     MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal, OracleConfig,
     ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig, ProtocolMetrics,
     ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction, RateLimitRecord,
-    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile, ReviewerRequest,
-    Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence, SyndicateGrant,
-    SyndicateMember, TokenMetric, TransferProposal, VoiceCredits, VotingMechanism,
+    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, RevenueEpoch, ReviewerProfile,
+    ReviewerRequest, Role, RoleAssignment, RollingWindow, ScoringRubric, StakerEpochRecord,
+    StructuredEvidence, SyndicateGrant, SyndicateMember, TokenMetric, TransferProposal,
+    VoiceCredits, VotingMechanism,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -539,6 +540,42 @@ impl Storage {
     pub fn set_protocol_config(env: &Env, cfg: &ProtocolConfig) {
         let key = DataKey::Config;
         env.storage().persistent().set(&key, cfg);
+        Self::bump(env, &key);
+    }
+
+    // ── Issue #631: Revenue Sharing ─────────────────────────────────────────
+
+    pub fn get_revenue_epoch(env: &Env, epoch_id: u32) -> Option<RevenueEpoch> {
+        let key = DataKey::RevenueEpoch(epoch_id);
+        let epoch = env.storage().persistent().get(&key);
+        if epoch.is_some() {
+            Self::bump(env, &key);
+        }
+        epoch
+    }
+
+    pub fn set_revenue_epoch(env: &Env, epoch: &RevenueEpoch) {
+        let key = DataKey::RevenueEpoch(epoch.id);
+        env.storage().persistent().set(&key, epoch);
+        Self::bump(env, &key);
+    }
+
+    pub fn get_staker_epoch_record(
+        env: &Env,
+        staker: &Address,
+        epoch_id: u32,
+    ) -> Option<StakerEpochRecord> {
+        let key = DataKey::StakerEpochRecord(staker.clone(), epoch_id);
+        let record = env.storage().persistent().get(&key);
+        if record.is_some() {
+            Self::bump(env, &key);
+        }
+        record
+    }
+
+    pub fn set_staker_epoch_record(env: &Env, record: &StakerEpochRecord) {
+        let key = DataKey::StakerEpochRecord(record.staker.clone(), record.epoch_id);
+        env.storage().persistent().set(&key, record);
         Self::bump(env, &key);
     }
 

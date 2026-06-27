@@ -430,6 +430,34 @@ pub struct ProtocolConfig {
     pub reviewer_reward_pool_bps: u32,
     /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
     pub fast_bonus_bps: u32,
+    /// Share of protocol fee directed to the staker revenue pool. Default 2000 = 20%.
+    pub revenue_share_pool_bps: u32,
+}
+
+// ── Issue #631: Revenue Sharing ─────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RevenueEpoch {
+    pub id: u32,
+    pub start_at: u64,
+    pub end_at: u64,
+    pub total_revenue: i128,
+    pub token: Address,
+    pub total_stake_weight: i128,
+    pub finalized: bool,
+    pub claimed_count: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StakerEpochRecord {
+    pub staker: Address,
+    pub epoch_id: u32,
+    pub stake_weight: i128,
+    pub claimable: i128,
+    pub claimed: bool,
+    pub claimed_at: Option<u64>,
 }
 
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
