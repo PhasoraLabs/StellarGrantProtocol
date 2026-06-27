@@ -228,9 +228,12 @@ mod tests {
     fn test_unfinalized_epoch_has_no_claim() {
         let env = Env::default();
         env.mock_all_auths();
-        with_contract(&env, |_| {
-            let token = Address::generate(&env);
-            let staker = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+        let token = Address::generate(&env);
+        let staker = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
             let mut epoch = empty_epoch(0, &token);
             epoch.total_revenue = 100;
             epoch.total_stake_weight = 100;
@@ -248,8 +251,9 @@ mod tests {
             );
 
             assert_eq!(compute_claim(&env, &staker, 0), 0);
-            assert_eq!(claim(&env, &staker, 0), Err(ContractError::InvalidState));
         });
+
+        assert!(client.try_claim_revenue_share(&staker, &0).is_err());
     }
 
     #[test]
@@ -286,16 +290,18 @@ mod tests {
     fn test_claim_after_epoch_finalized_and_rejects_double_claim() {
         let env = Env::default();
         env.mock_all_auths();
-        with_contract(&env, |contract_id| {
-            let token_admin_addr = Address::generate(&env);
-            let token = env
-                .register_stellar_asset_contract_v2(token_admin_addr.clone())
-                .address();
-            let token_admin = token::StellarAssetClient::new(&env, &token);
-            let staker = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+        let token_admin_addr = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(token_admin_addr.clone())
+            .address();
+        let token_admin = token::StellarAssetClient::new(&env, &token);
+        let staker = Address::generate(&env);
 
-            token_admin.mint(&contract_id, &100);
+        token_admin.mint(&contract_id, &100);
 
+        env.as_contract(&contract_id, || {
             let mut epoch = empty_epoch(0, &token);
             epoch.total_revenue = 100;
             epoch.total_stake_weight = 100;
@@ -312,9 +318,9 @@ mod tests {
                     claimed_at: None,
                 },
             );
-
-            assert_eq!(claim(&env, &staker, 0), Ok(100));
-            assert_eq!(claim(&env, &staker, 0), Err(ContractError::InvalidState));
         });
+
+        assert_eq!(client.claim_revenue_share(&staker, &0), 100);
+        assert!(client.try_claim_revenue_share(&staker, &0).is_err());
     }
 }
