@@ -18,7 +18,8 @@ pub fn fork_grant(
     inherit_reviewers: bool,
     inherit_milestones: bool,
 ) -> Result<u64, ContractError> {
-    let original = Storage::get_grant(env, original_grant_id).ok_or(ContractError::GrantNotFound)?;
+    let original =
+        Storage::get_grant(env, original_grant_id).ok_or(ContractError::GrantNotFound)?;
 
     if original.status == GrantStatus::Cancelled {
         return Err(ContractError::InvalidState);

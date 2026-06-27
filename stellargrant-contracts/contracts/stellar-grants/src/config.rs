@@ -24,6 +24,8 @@ pub fn default_config() -> ProtocolConfig {
             decay_floor: 50,
             inactivity_threshold_ledgers: 0,
         },
+        reviewer_reward_pool_bps: 2000,
+        fast_bonus_bps: 500,
     }
 }
 

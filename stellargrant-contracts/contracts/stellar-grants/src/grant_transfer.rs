@@ -28,7 +28,9 @@ pub fn propose_transfer(
             }
         }
         TransferableRole::Reviewer => {
-            let to_replace = reviewer_to_replace.as_ref().ok_or(ContractError::InvalidInput)?;
+            let to_replace = reviewer_to_replace
+                .as_ref()
+                .ok_or(ContractError::InvalidInput)?;
             if !grant.reviewers.contains(to_replace.clone()) {
                 return Err(ContractError::Unauthorized);
             }
@@ -52,7 +54,11 @@ pub fn propose_transfer(
 
 /// Accept a pending transfer proposal. The caller must be the proposed new holder.
 /// On acceptance the grant state is updated and the proposal is cleared.
-pub fn accept_transfer(env: &Env, new_holder: &Address, grant_id: u64) -> Result<(), ContractError> {
+pub fn accept_transfer(
+    env: &Env,
+    new_holder: &Address,
+    grant_id: u64,
+) -> Result<(), ContractError> {
     new_holder.require_auth();
 
     let proposal =
@@ -69,7 +75,9 @@ pub fn accept_transfer(env: &Env, new_holder: &Address, grant_id: u64) -> Result
             grant.owner = new_holder.clone();
         }
         TransferableRole::Reviewer => {
-            let to_replace = proposal.reviewer_to_replace.ok_or(ContractError::InvalidInput)?;
+            let to_replace = proposal
+                .reviewer_to_replace
+                .ok_or(ContractError::InvalidInput)?;
             for i in 0..grant.reviewers.len() {
                 if grant.reviewers.get(i).unwrap() == to_replace {
                     grant.reviewers.set(i, new_holder.clone());

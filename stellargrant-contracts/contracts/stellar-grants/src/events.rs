@@ -1014,12 +1014,7 @@ impl Events {
         event.publish(env);
     }
 
-    pub fn invoice_approved(
-        env: &Env,
-        grant_id: u64,
-        milestone_idx: u32,
-        approved_by: Address,
-    ) {
+    pub fn invoice_approved(env: &Env, grant_id: u64, milestone_idx: u32, approved_by: Address) {
         let event = InvoiceApproved {
             grant_id,
             milestone_idx,
@@ -1389,12 +1384,7 @@ impl Events {
 
     // ── Issue #564: Collateral event emitters ──────────────────────────────
 
-    pub fn emit_collateral_deposited(
-        env: &Env,
-        grant_id: u64,
-        contributor: Address,
-        amount: i128,
-    ) {
+    pub fn emit_collateral_deposited(env: &Env, grant_id: u64, contributor: Address, amount: i128) {
         let event = CollateralDeposited {
             grant_id,
             contributor,
@@ -1404,12 +1394,7 @@ impl Events {
         event.publish(env);
     }
 
-    pub fn emit_collateral_released(
-        env: &Env,
-        grant_id: u64,
-        contributor: Address,
-        amount: i128,
-    ) {
+    pub fn emit_collateral_released(env: &Env, grant_id: u64, contributor: Address, amount: i128) {
         let event = CollateralReleased {
             grant_id,
             contributor,

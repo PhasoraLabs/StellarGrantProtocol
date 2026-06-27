@@ -11,8 +11,12 @@ const baseMilestone = (
   description: `Deliverables for milestone ${idx + 1} of the grant.`,
   amount: 250_000_000n,
   submitted: false,
+  approved: false,
   paid: false,
   proof_hash: "",
+  submitted_at: null,
+  approved_at: null,
+  paid_at: null,
   deadline: BigInt(Math.floor(Date.now() / 1000) + 86400 * (idx + 1) * 14),
   ...overrides,
 });

@@ -272,14 +272,20 @@ mod tests {
         let env = Env::default();
         // 0 -> 1 -> 0 (cycle)
         let deps = make_deps(&env, &[(1, &[0]), (0, &[1])]);
-        assert_eq!(validate_dag(&env, &deps, 2), Err(ContractError::DagCycleDetected));
+        assert_eq!(
+            validate_dag(&env, &deps, 2),
+            Err(ContractError::DagCycleDetected)
+        );
     }
 
     #[test]
     fn self_dependency_rejected() {
         let env = Env::default();
         let deps = make_deps(&env, &[(1, &[1])]);
-        assert_eq!(validate_dag(&env, &deps, 2), Err(ContractError::DagCycleDetected));
+        assert_eq!(
+            validate_dag(&env, &deps, 2),
+            Err(ContractError::DagCycleDetected)
+        );
     }
 
     #[test]

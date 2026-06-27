@@ -25,7 +25,11 @@ pub fn set_schema(
         return Err(ContractError::InvalidInput);
     }
 
-    let schema = EvidenceSchema { grant_id, milestone_idx, fields };
+    let schema = EvidenceSchema {
+        grant_id,
+        milestone_idx,
+        fields,
+    };
     Storage::set_evidence_schema(env, grant_id, milestone_idx, &schema);
     Ok(())
 }
@@ -68,7 +72,11 @@ pub fn submit_evidence(
 /// Validate that structured evidence satisfying the schema has been submitted.
 /// Returns Ok(()) if no schema exists (nothing to validate).
 /// Returns Err(InvalidInput) if required fields are missing from submitted evidence.
-pub fn validate_evidence(env: &Env, grant_id: u64, milestone_idx: u32) -> Result<(), ContractError> {
+pub fn validate_evidence(
+    env: &Env,
+    grant_id: u64,
+    milestone_idx: u32,
+) -> Result<(), ContractError> {
     let schema = match Storage::get_evidence_schema(env, grant_id, milestone_idx) {
         Some(s) => s,
         None => return Ok(()),

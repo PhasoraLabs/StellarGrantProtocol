@@ -9,14 +9,15 @@ use crate::errors::ContractError;
 use crate::oracle;
 use crate::reputation;
 use crate::storage::Storage;
-use crate::types::{
-    BadgeType, ContributorPortfolio, GrantStatus, GrantSummary, MilestoneState,
-};
+use crate::types::{BadgeType, ContributorPortfolio, GrantStatus, GrantSummary, MilestoneState};
 
 /// Build and return the full portfolio for a contributor. Read-only.
-pub fn get_portfolio(env: &Env, contributor: &Address) -> Result<ContributorPortfolio, ContractError> {
-    let profile = Storage::get_contributor(env, contributor.clone())
-        .ok_or(ContractError::InvalidInput)?;
+pub fn get_portfolio(
+    env: &Env,
+    contributor: &Address,
+) -> Result<ContributorPortfolio, ContractError> {
+    let profile =
+        Storage::get_contributor(env, contributor.clone()).ok_or(ContractError::InvalidInput)?;
 
     let reputation_score = reputation::calculate_score(&profile);
     let tier = reputation::tier_from_score(reputation_score);

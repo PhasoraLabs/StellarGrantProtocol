@@ -19,12 +19,7 @@ pub fn safe_call(
 
 /// Call a hook receiver contract's `on_hook` function.
 /// Returns false if the call fails (non-fatal).
-pub fn call_hook_receiver(
-    env: &Env,
-    contract: &Address,
-    event_type: u32,
-    payload: Bytes,
-) -> bool {
+pub fn call_hook_receiver(env: &Env, contract: &Address, event_type: u32, payload: Bytes) -> bool {
     let args: Vec<Val> = Vec::from_array(env, [event_type.into_val(env), payload.into_val(env)]);
     let symbol = Symbol::new(env, "on_hook");
     safe_call(env, contract, &symbol, args).is_ok()

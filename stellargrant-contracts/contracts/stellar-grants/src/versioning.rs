@@ -8,7 +8,12 @@ fn field(env: &Env, name: &str) -> String {
     String::from_str(env, name)
 }
 
-fn grant_to_version(env: &Env, grant: &Grant, version: u32, amendment_id: Option<u32>) -> GrantVersion {
+fn grant_to_version(
+    env: &Env,
+    grant: &Grant,
+    version: u32,
+    amendment_id: Option<u32>,
+) -> GrantVersion {
     GrantVersion {
         grant_id: grant.id,
         version,
@@ -145,8 +150,8 @@ pub fn vote_amendment(
         return Err(ContractError::Unauthorized);
     }
 
-    let mut amendment =
-        Storage::get_amendment(env, grant_id, amendment_version).ok_or(ContractError::InvalidInput)?;
+    let mut amendment = Storage::get_amendment(env, grant_id, amendment_version)
+        .ok_or(ContractError::InvalidInput)?;
     if amendment.status != AmendmentStatus::Proposed {
         return Err(ContractError::InvalidState);
     }
@@ -178,8 +183,8 @@ pub fn apply_amendment(
     grant_id: u64,
     amendment_version: u32,
 ) -> Result<GrantVersion, ContractError> {
-    let amendment =
-        Storage::get_amendment(env, grant_id, amendment_version).ok_or(ContractError::InvalidInput)?;
+    let amendment = Storage::get_amendment(env, grant_id, amendment_version)
+        .ok_or(ContractError::InvalidInput)?;
     if amendment.status != AmendmentStatus::Approved {
         return Err(ContractError::InvalidState);
     }

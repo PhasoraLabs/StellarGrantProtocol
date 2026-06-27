@@ -56,14 +56,17 @@ pub fn apply_decay(env: &Env, raw_score: u32, last_action_at: u64, config: &Deca
             let days_idle = days_inactive(env, last_action_at);
             linear_decay(raw_score, days_idle, config)
         }
-        DecayType::Exponential => {
-            exponential_decay(raw_score, ledgers_idle, config)
-        }
+        DecayType::Exponential => exponential_decay(raw_score, ledgers_idle, config),
     }
 }
 
 pub fn effective_score(env: &Env, profile: &ContributorProfile, config: &DecayConfig) -> u32 {
-    apply_decay(env, profile.reputation_score as u32, profile.last_action_at, config)
+    apply_decay(
+        env,
+        profile.reputation_score as u32,
+        profile.last_action_at,
+        config,
+    )
 }
 
 pub fn record_activity(env: &Env, contributor: &soroban_sdk::Address) {

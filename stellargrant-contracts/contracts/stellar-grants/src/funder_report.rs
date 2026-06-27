@@ -24,8 +24,7 @@ pub fn get_report(env: &Env, funder: &Address) -> Result<FunderReport, ContractE
     }
 
     // matching_contributions: try to read the matching module if present.
-    matching_total = Storage::get_matching_contribution(env, funder)
-        .unwrap_or(0);
+    matching_total = Storage::get_matching_contribution(env, funder).unwrap_or(0);
 
     // insurance_premiums_paid: iterate grants and sum from policy storage.
     for g in grants.iter() {
@@ -252,17 +251,15 @@ fn build_token_summaries(
     for g in grants.iter() {
         let token = g.token.clone();
 
-        let summary = map
-            .get(token.clone())
-            .unwrap_or(FunderTokenSummary {
-                token: token.clone(),
-                total_committed: 0,
-                total_paid_out: 0,
-                total_refunded: 0,
-                total_in_escrow: 0,
-                total_yield_earned: 0,
-                net_deployed: 0,
-            });
+        let summary = map.get(token.clone()).unwrap_or(FunderTokenSummary {
+            token: token.clone(),
+            total_committed: 0,
+            total_paid_out: 0,
+            total_refunded: 0,
+            total_in_escrow: 0,
+            total_yield_earned: 0,
+            net_deployed: 0,
+        });
 
         let mut s = summary;
         s.total_committed = s.total_committed.saturating_add(g.funded_amount);
@@ -290,7 +287,7 @@ fn build_token_summaries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FunderLedger, Grant, GrantFund, GrantStatus, EscrowAccount};
+    use crate::types::{EscrowAccount, FunderLedger, Grant, GrantFund, GrantStatus};
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::Vec;
 

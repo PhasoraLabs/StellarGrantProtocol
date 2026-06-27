@@ -43,6 +43,36 @@ pub enum RegistryEntryType {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
+pub enum ContributionType {
+    GrantCreated = 0,
+    MilestoneDelivered = 1,
+    MilestoneReviewed = 2,
+    GrantFunded = 3,
+    DisputeResolved = 4,
+    BountyDelivered = 5,
+    ArbitrationProvided = 6,
+    ReviewerServiceProvided = 7,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProvenanceRecord {
+    pub id: u32,
+    pub contribution_type: ContributionType,
+    pub actor: Address,
+    pub grant_id: u64,
+    pub milestone_idx: Option<u32>,
+    pub amount: Option<i128>,
+    pub token: Option<Address>,
+    pub timestamp: u64,
+    pub ledger_sequence: u32,
+    pub co_contributors: Vec<Address>,
+    pub tags: Vec<String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum MilestoneState {
     Pending = 0,
     Submitted = 1,
@@ -396,6 +426,42 @@ pub struct ProtocolConfig {
     pub referral_fee_bps: u32,
     /// Decay configuration for reputation scores (#575)
     pub decay_config: DecayConfig,
+    /// Share of protocol fee directed to reviewer reward pool, in basis points. Default 2000 = 20%.
+    pub reviewer_reward_pool_bps: u32,
+    /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
+    pub fast_bonus_bps: u32,
+}
+
+// ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewParticipation {
+    pub reviewer: Address,
+    pub grant_id: u64,
+    pub votes_cast: u32,
+    pub fast_votes: u32,
+    pub alignment_score: u32,
+    pub last_vote_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRewardRecord {
+    pub reviewer: Address,
+    pub token: Address,
+    pub pending_amount: i128,
+    pub total_earned: i128,
+    pub last_claimed_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRewardPool {
+    pub token: Address,
+    pub balance: i128,
+    pub total_deposited: i128,
+    pub total_paid_out: i128,
 }
 
 // ── Issue #517: Protocol Fee Collection ──────────────────────────────────────
@@ -1492,6 +1558,86 @@ pub struct ContributorPortfolio {
     pub badges: Vec<BadgeType>,
     pub recent_grants: Vec<GrantSummary>,
     pub member_since: u64,
+}
+
+// ── Issue #XXX: Quadratic Funding Matching Rounds ──────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingContribution {
+    pub contributor: Address,
+    pub grant_id: u64,
+    pub amount: i128,
+    pub contributed_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingAllocation {
+    pub grant_id: u64,
+    pub direct_contributions: i128,
+    pub match_amount: i128,
+    pub unique_contributors: u32,
+    pub qf_score: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingRound {
+    pub id: u32,
+    pub token: Address,
+    pub matching_pool: i128,
+    pub start_ledger: u32,
+    pub end_ledger: u32,
+    pub eligible_grant_ids: Vec<u64>,
+    pub allocations: Vec<MatchingAllocation>,
+    pub finalized: bool,
+    pub distributed: bool,
+    pub created_by: Address,
+}
+
+// ── Issue #XXX: Multi-Grant Portfolio Management ──────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortfolioFilter {
+    pub owner: Option<Address>,
+    pub status: Option<GrantStatus>,
+    pub token: Option<Address>,
+    pub category_id: Option<u32>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortfolioStats {
+    pub owner: Address,
+    pub total_grants: u32,
+    pub active_grants: u32,
+    pub completed_grants: u32,
+    pub total_funded: i128,
+    pub total_paid_out: i128,
+    pub total_in_escrow: i128,
+    pub unique_contributors: u32,
+    pub unique_reviewers: u32,
+    pub avg_completion_rate_bps: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPortfolio {
+    pub owner: Address,
+    pub grant_ids: Vec<u64>,
+    pub stats: PortfolioStats,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchResult {
+    pub successful: u32,
+    pub failed: u32,
+    pub total: u32,
 }
 
 // ── Issue #570: NFT Certificate per Approved Milestone ───────────────────────
