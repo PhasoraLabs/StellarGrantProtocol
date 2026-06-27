@@ -154,7 +154,14 @@ pub enum ContractError {
     // Whitelist (#512)
     AddressNotWhitelisted = 124,
     // KYC verification (#632)
-    KycRequired = 125,
+    KycRequired = 131,
     // Math (#528) — no specific errors, reuses ZeroAmount / InvalidInput
     // Funder report (#598) — no specific errors, read-only
+    // Lockup (#609)
+    LockupNotFound = 125,
+    LockupAlreadyExists = 126,
+    NotYetUnlocked = 127,
+    LockupAlreadyReleased = 128,
+    LockupAlreadyRevoked = 129,
+    LockupRevocationUnauthorized = 130,
 }

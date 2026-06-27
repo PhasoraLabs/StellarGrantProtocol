@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::storage::Storage;
 use crate::types::{AnalyticsSnapshot, CategoryStats, RollingWindow};
 use soroban_sdk::{Env, Symbol, Vec};
@@ -17,7 +18,7 @@ pub fn record(env: &Env, metric: Symbol, value: i128) {
     });
 
     // Evict oldest if window is full
-    if window.window_size >= MAX_WINDOW_SIZE {
+    if window.window_size >= constants::MAX_ROLLING_WINDOW_SIZE {
         let oldest_val = window.values.get(0).unwrap();
         window.sum = window.sum.saturating_sub(oldest_val);
         window.values.remove(0);
@@ -78,7 +79,7 @@ pub fn category_stats(env: &Env, category_id: u32) -> CategoryStats {
     };
 
     let success_rate_bps = if total_grants > 0 {
-        (completed_grants * 10_000) / total_grants
+        (completed_grants * constants::BASIS_POINTS_SCALE) / total_grants
     } else {
         0
     };
@@ -102,7 +103,7 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
 
     let overall_success_rate_bps = if let Some(window) = success_window {
         if window.count > 0 {
-            ((window.sum * 10_000) / (window.count as i128)) as u32
+            ((window.sum * constants::BASIS_POINTS_SCALE as i128) / (window.count as i128)) as u32
         } else {
             0
         }
@@ -133,7 +134,8 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
                 .get(window.window_size.saturating_sub(7))
                 .unwrap();
             if tvl_7days_ago > 0 {
-                ((current_tvl - tvl_7days_ago) * 10_000) / tvl_7days_ago
+                ((current_tvl - tvl_7days_ago) * constants::BASIS_POINTS_SCALE as i128)
+                    / tvl_7days_ago
             } else {
                 0
             }
@@ -165,7 +167,9 @@ pub fn get_snapshot(env: &Env) -> Option<AnalyticsSnapshot> {
     let current_ledger = env.ledger().sequence();
     let snapshot_ledger = env.ledger().sequence(); // Simplified - in real impl track ledger
 
-    if current_ledger.saturating_sub(snapshot_ledger) >= STALENESS_THRESHOLD {
+    if current_ledger.saturating_sub(snapshot_ledger)
+        >= constants::ANALYTICS_SNAPSHOT_STALENESS_LEDGERS
+    {
         // Stale, rebuild
         return Some(build_snapshot(env));
     }
