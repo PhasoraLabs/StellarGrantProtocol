@@ -4,8 +4,7 @@ use crate::errors::ContractError;
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{ForkRecord, GrantStatus};
-
-const MAX_FORK_DEPTH: u32 = 5;
+use crate::constants;
 
 pub fn fork_grant(
     env: &Env,
@@ -26,7 +25,7 @@ pub fn fork_grant(
     }
 
     let depth = fork_depth(env, original_grant_id);
-    if depth >= MAX_FORK_DEPTH {
+    if depth >= constants::MAX_FORK_DEPTH {
         return Err(ContractError::InvalidInput);
     }
 

@@ -97,6 +97,11 @@ pub struct Milestone {
     pub submission_timestamp: u64,
     /// Optional milestone deadline (ledger timestamp). Updated by approved extensions (#572).
     pub deadline: Option<u64>,
+    /// Snapshot of the reviewer count at submission time (#624).
+    /// Quorum calculations use this value instead of the live reviewer list
+    /// to prevent premature approval or impossible-to-reach quorum when
+    /// reviewers are added or removed mid-vote.
+    pub reviewer_count_snapshot: u32,
 }
 
 #[contracttype]
@@ -893,6 +898,79 @@ pub struct BreakerState {
     pub tripped_at: Option<u64>,
     pub reason: Option<soroban_sdk::String>,
     pub auto_reset_ledger: Option<u32>,
+}
+
+// ── Issue #609: Token Lockup Periods ─────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum LockupStatus {
+    Active = 0,
+    Released = 1,
+    Revoked = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LockupRecord {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub holder: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub unlocks_at: u64,
+    pub unlocks_at_ledger: u32,
+    pub status: LockupStatus,
+    pub locked_at: u64,
+    pub released_at: Option<u64>,
+}
+
+// ── Issue #619: Structured Data Export ──────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrant {
+    pub id: u64,
+    pub owner: Address,
+    pub contributor: Option<Address>,
+    pub token: Address,
+    pub total_amount: i128,
+    pub paid_out: i128,
+    pub status: GrantStatus,
+    pub milestone_count: u32,
+    pub created_at: u64,
+    pub last_updated_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportMilestone {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub state: MilestoneState,
+    pub amount: i128,
+    pub submitted_at: Option<u64>,
+    pub approved_at: Option<u64>,
+    pub proof_url: Option<soroban_sdk::String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrantPage {
+    pub items: soroban_sdk::Vec<ExportGrant>,
+    pub total: u32,
+    pub offset: u32,
+    pub has_more: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportMilestonePage {
+    pub items: soroban_sdk::Vec<ExportMilestone>,
+    pub total: u32,
+    pub offset: u32,
+    pub has_more: bool,
 }
 
 // ── Delegation (#603) ─────────────────────────────────────────────────────────
