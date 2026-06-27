@@ -50,6 +50,7 @@ pub fn has_split(env: &Env, grant_id: u64, milestone_idx: u32) -> bool {
 
 /// Distribute `total_amount` among the registered recipients proportionally.
 /// Called internally from the payout path when a split is registered.
+/// The last recipient receives the remainder to prevent integer truncation loss.
 pub fn execute_split(
     env: &Env,
     grant_id: u64,
@@ -59,13 +60,22 @@ pub fn execute_split(
     let split = Storage::get_payment_split(env, grant_id, milestone_idx)
         .ok_or(ContractError::InvalidState)?;
 
-    for r in split.recipients.iter() {
-        let share = total_amount
-            .saturating_mul(r.share_bps as i128)
-            .checked_div(10_000)
-            .unwrap_or(0);
+    let recipients_len = split.recipients.len();
+    let mut distributed: i128 = 0;
+
+    for (i, r) in split.recipients.iter().enumerate() {
+        let is_last = (i as u32) + 1 == recipients_len;
+        let share = if is_last {
+            total_amount - distributed
+        } else {
+            total_amount
+                .saturating_mul(r.share_bps as i128)
+                .checked_div(10_000)
+                .unwrap_or(0)
+        };
         if share > 0 {
             escrow::release(env, grant_id, &r.recipient, share)?;
+            distributed += share;
         }
     }
     Ok(())

@@ -75,6 +75,7 @@ mod tests {
                 proof_url: Some(String::from_str(env, "https://proof.url")),
                 submission_timestamp: env.ledger().timestamp(),
                 deadline: None,
+                reviewer_count_snapshot: 1,
             };
             Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
         });

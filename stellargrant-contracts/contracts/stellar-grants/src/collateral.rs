@@ -183,7 +183,7 @@ pub fn require_deposited(
         .ok_or(ContractError::CollateralNotDeposited)?;
 
     if deposit.status != CollateralStatus::Deposited {
-        return Err(ContractError::BondNotPosted);
+        return Err(ContractError::CollateralNotDeposited);
     }
 
     // Verify that the deposited token and amount match the requirement.
@@ -288,7 +288,7 @@ mod tests {
         // No deposit yet
         assert_eq!(
             require_deposited(&env, 1, &owner),
-            Err(ContractError::BondNotPosted)
+            Err(ContractError::CollateralNotDeposited)
         );
     }
 

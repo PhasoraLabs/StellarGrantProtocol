@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::storage::Storage;
 use crate::types::{ContractError, RelayAllowance, RelayConfig, RelayableAction};
 use soroban_sdk::{Address, Bytes, Env};
@@ -76,9 +77,8 @@ pub fn execute_relayed(
         });
 
     let current_time = env.ledger().timestamp();
-    const SECONDS_PER_DAY: u64 = 86_400;
 
-    if current_time > allowance.window_start + SECONDS_PER_DAY {
+    if current_time > allowance.window_start + constants::SECONDS_PER_DAY {
         allowance.daily_relays_used = 0;
         allowance.window_start = current_time;
     }
@@ -108,9 +108,8 @@ pub fn can_relay(env: &Env, sender: &Address, action: &RelayableAction) -> bool 
         };
 
         let current_time = env.ledger().timestamp();
-        const SECONDS_PER_DAY: u64 = 86_400;
 
-        let daily_relays_used = if current_time > allowance.window_start + SECONDS_PER_DAY {
+        let daily_relays_used = if current_time > allowance.window_start + constants::SECONDS_PER_DAY {
             0
         } else {
             allowance.daily_relays_used
