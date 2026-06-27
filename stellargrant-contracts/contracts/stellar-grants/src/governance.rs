@@ -85,10 +85,9 @@ pub fn cast_vote(
         milestone.rejections += reputation;
     }
 
-    let mut total_weight: u32 = 0;
-    for r in grant.reviewers.iter() {
-        total_weight += Storage::get_reviewer_reputation(env, r);
-    }
+    // Use the snapshotted reviewer count from submission time to prevent
+    // quorum miscalculation when reviewers are added/removed mid-vote (#624).
+    let total_weight = milestone.reviewer_count_snapshot;
 
     let approval_quorum = quorum_reached(milestone.approvals, total_weight);
     let rejection_quorum = quorum_reached(milestone.rejections, total_weight);
@@ -238,6 +237,7 @@ mod tests {
             proof_url: None,
             submission_timestamp: 0,
             deadline: None,
+            reviewer_count_snapshot: 3,
         };
         let result = VoteResult {
             approved: true,
@@ -264,6 +264,7 @@ mod tests {
             proof_url: None,
             submission_timestamp: 0,
             deadline: None,
+            reviewer_count_snapshot: 3,
         };
         let result = VoteResult {
             approved: false,

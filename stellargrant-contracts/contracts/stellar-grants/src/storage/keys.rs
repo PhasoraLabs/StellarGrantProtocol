@@ -240,6 +240,15 @@ pub enum DataKey {
     NotifSub(Address, u32, u32, u128),
     NotifSubList(u32, u32),
 
+    // Issue #609: Lockup
+    Lockup(u64, u32),
+
+    // Issue #619: Data export timestamps
+    GrantLastUpdated(u64),
+
+    // Issue #619: Data export state fingerprint
+    GlobalLastUpdated,
+
     // Migration guard
     V2KeysMigrated,
 }

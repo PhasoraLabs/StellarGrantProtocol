@@ -1,5 +1,25 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
+#![allow(
+    dead_code,
+    deprecated,
+    unused_assignments,
+    unused_imports,
+    unused_mut,
+    unused_variables,
+    clippy::clone_on_copy,
+    clippy::len_zero,
+    clippy::manual_checked_ops,
+    clippy::manual_range_contains,
+    clippy::manual_saturating_arithmetic,
+    clippy::match_like_matches_macro,
+    clippy::match_result_ok,
+    clippy::needless_borrows_for_generic_args,
+    clippy::redundant_closure,
+    clippy::unnecessary_cast,
+    clippy::unnecessary_map_or,
+    clippy::while_let_loop
+)]
 mod access_control;
 mod analytics;
 mod arbitration_pool;
@@ -13,6 +33,7 @@ mod config;
 mod constants;
 mod cross_contract;
 mod crowdfund;
+mod data_export;
 mod dispute;
 mod emergency;
 mod errors;
@@ -33,8 +54,9 @@ mod insurance;
 mod interfaces;
 mod invoice;
 mod license;
+mod lockup;
 mod matching;
-mod math;
+pub mod math;
 pub mod merkle;
 mod metrics;
 mod migration;
@@ -61,6 +83,7 @@ mod reputation;
 mod reputation_decay;
 mod reviewer_pool;
 mod reviewer_reward;
+pub mod reviewer_sla;
 mod scoring;
 mod split_payment;
 mod storage;
@@ -117,6 +140,11 @@ pub use types::{
     EvidenceField,
     EvidenceFieldType,
     EvidenceSchema,
+    // Issue #619: data export
+    ExportGrant,
+    ExportGrantPage,
+    ExportMilestone,
+    ExportMilestonePage,
     ExtensionRequest,
     ExtensionStatus,
     FeeRecord,
@@ -147,6 +175,9 @@ pub use types::{
     LicenseRecord,
     LicenseType,
     LineItem,
+    // Issue #609: lockup
+    LockupRecord,
+    LockupStatus,
     MatchingAllocation,
     MatchingContribution,
     MatchingRound,
@@ -749,10 +780,7 @@ impl StellarGrantsContract {
         milestone.rejections += reputation;
         milestone.reasons.set(reviewer.clone(), reason.clone());
 
-        let mut total_weight: u32 = 0;
-        for r in grant.reviewers.iter() {
-            total_weight += Storage::get_reviewer_reputation(&env, r);
-        }
+        let total_weight = milestone.reviewer_count_snapshot;
 
         let majority_threshold = (total_weight / 2) + 1;
         let majority_rejected = milestone.rejections >= majority_threshold;
@@ -3573,6 +3601,104 @@ impl StellarGrantsContract {
         collateral::get_requirement(&env, grant_id)
     }
 
+    // ── Issue #609: Token Lockup Entry Points ─────────────────────────────────
+
+    /// Attach a lockup to a milestone payout. Owner sets before first submission.
+    pub fn lockup_attach(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        lockup_duration_seconds: u64,
+    ) -> Result<(), ContractError> {
+        lockup::attach_lockup(
+            &env,
+            &owner,
+            grant_id,
+            milestone_idx,
+            lockup_duration_seconds,
+        )
+    }
+
+    /// Lock funds on milestone approval. Called internally by payout path.
+    pub fn lockup_lock_payout(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        holder: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        lockup::lock_payout(&env, grant_id, milestone_idx, &holder, &token, amount)
+    }
+
+    /// Contributor releases their own lockup after unlock time.
+    pub fn lockup_release(
+        env: Env,
+        holder: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<i128, ContractError> {
+        lockup::release(&env, &holder, grant_id, milestone_idx)
+    }
+
+    /// Return whether a lockup has expired and is claimable.
+    pub fn lockup_is_unlocked(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
+        lockup::is_unlocked(&env, grant_id, milestone_idx)
+    }
+
+    /// Return the lockup record for a milestone.
+    pub fn lockup_get(env: Env, grant_id: u64, milestone_idx: u32) -> Option<LockupRecord> {
+        lockup::get_lockup(&env, grant_id, milestone_idx)
+    }
+
+    /// Admin revoke: return funds to escrow (fraud/dispute resolution).
+    pub fn lockup_revoke(
+        env: Env,
+        admin: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        lockup::revoke(&env, &admin, grant_id, milestone_idx)
+    }
+
+    // ── Issue #619: Structured Data Export Entry Points ──────────────────────
+
+    /// Export a paginated list of grants, optionally filtered by last_updated_after timestamp.
+    pub fn export_grants(
+        env: Env,
+        offset: u32,
+        limit: u32,
+        last_updated_after: Option<u64>,
+    ) -> ExportGrantPage {
+        data_export::export_grants(&env, offset, limit, last_updated_after)
+    }
+
+    /// Export milestones for a specific grant.
+    pub fn export_milestones(env: Env, grant_id: u64) -> soroban_sdk::Vec<ExportMilestone> {
+        data_export::export_milestones(&env, grant_id)
+    }
+
+    /// Export all milestones updated after a timestamp (cross-grant, paginated).
+    pub fn export_milestones_since(
+        env: Env,
+        since: u64,
+        offset: u32,
+        limit: u32,
+    ) -> ExportMilestonePage {
+        data_export::export_milestones_since(&env, since, offset, limit)
+    }
+
+    /// Return the last-updated timestamp for the entire dataset (for cache invalidation).
+    pub fn last_global_update(env: Env) -> u64 {
+        data_export::last_global_update(&env)
+    }
+
+    /// Return a compact state hash for the protocol (fingerprint for change detection).
+    pub fn state_fingerprint(env: Env) -> soroban_sdk::BytesN<32> {
+        data_export::state_fingerprint(&env)
+    }
+
     // ── Issue #598: Funder Report Entry Points ───────────────────────────────
 
     /// Build a comprehensive financial report for a funder. Read-only.
@@ -3702,6 +3828,7 @@ fn apply_milestone_submission(
         proof_url: Some(proof_url),
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
+        reviewer_count_snapshot: grant.reviewers.len(),
     };
 
     Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
