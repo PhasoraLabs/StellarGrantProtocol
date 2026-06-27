@@ -50,6 +50,7 @@ pub fn purchase_policy(
     token: &Address,
     coverage_amount: i128,
 ) -> Result<InsurancePolicy, ContractError> {
+    crate::reentrancy::protect(env)?;
     policyholder.require_auth();
 
     if coverage_amount <= 0 {
@@ -68,7 +69,10 @@ pub fn purchase_policy(
 
     if premium > 0 {
         let token_client = token::Client::new(env, token);
-        token_client.transfer(policyholder, env.current_contract_address(), &premium);
+        crate::reentrancy::protect_external_call(env, || {
+            token_client.transfer(policyholder, env.current_contract_address(), &premium);
+            Ok(())
+        })?;
     }
 
     // Add premium to pool
@@ -165,6 +169,7 @@ pub fn approve_claim(
     claim_id: u32,
     payout_amount: i128,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     admin.require_auth();
 
     if payout_amount <= 0 {
@@ -209,11 +214,14 @@ pub fn approve_claim(
     Storage::set_insurance_claim(env, &claim);
 
     let token_client = token::Client::new(env, &policy.token);
-    token_client.transfer(
-        &env.current_contract_address(),
-        &claim.claimant,
-        &actual_payout,
-    );
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(
+            &env.current_contract_address(),
+            &claim.claimant,
+            &actual_payout,
+        );
+        Ok(())
+    })?;
 
     ClaimApproved {
         claim_id,

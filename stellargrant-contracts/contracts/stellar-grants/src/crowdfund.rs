@@ -68,6 +68,7 @@ pub fn pledge(
 ) -> Result<(), ContractError> {
     emergency::require_not_paused(env)?;
     circuit_breaker::require_open(env, ProtocolModule::Crowdfund)?;
+    crate::reentrancy::protect(env)?;
 
     if amount <= 0 {
         return Err(ContractError::ZeroAmount);
@@ -83,11 +84,14 @@ pub fn pledge(
         return Err(ContractError::DeadlinePassed);
     }
 
-    token::Client::new(env, &campaign.token).transfer(
-        backer,
-        &env.current_contract_address(),
-        &amount,
-    );
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, &campaign.token).transfer(
+            backer,
+            &env.current_contract_address(),
+            &amount,
+        );
+        Ok(())
+    })?;
 
     let existing = Storage::get_crowdfund_pledge(env, campaign_id, backer);
     let (new_amount, is_new_backer) = match existing {
@@ -138,6 +142,7 @@ pub fn pledge(
 /// - If `total_pledged < target_amount`: marks the campaign as Failed so that
 ///   backers can call `claim_refund`.
 pub fn finalize(env: &Env, campaign_id: u64) -> Result<CrowdfundStatus, ContractError> {
+    crate::reentrancy::protect(env)?;
     let mut campaign = Storage::get_crowdfund_campaign(env, campaign_id)
         .ok_or(ContractError::CrowdfundNotFound)?;
 
@@ -149,11 +154,14 @@ pub fn finalize(env: &Env, campaign_id: u64) -> Result<CrowdfundStatus, Contract
     }
 
     let new_status = if campaign.total_pledged >= campaign.target_amount {
-        token::Client::new(env, &campaign.token).transfer(
-            &env.current_contract_address(),
-            &campaign.owner,
-            &campaign.total_pledged,
-        );
+        crate::reentrancy::protect_external_call(env, || {
+            token::Client::new(env, &campaign.token).transfer(
+                &env.current_contract_address(),
+                &campaign.owner,
+                &campaign.total_pledged,
+            );
+            Ok(())
+        })?;
         Events::emit_crowdfund_succeeded(env, campaign_id, campaign.total_pledged);
         CrowdfundStatus::Succeeded
     } else {
@@ -170,6 +178,7 @@ pub fn finalize(env: &Env, campaign_id: u64) -> Result<CrowdfundStatus, Contract
 /// Claim a refund after a campaign has Failed or been Cancelled.
 /// Each backer may only claim once.
 pub fn claim_refund(env: &Env, campaign_id: u64, backer: &Address) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     let campaign = Storage::get_crowdfund_campaign(env, campaign_id)
         .ok_or(ContractError::CrowdfundNotFound)?;
 
@@ -188,11 +197,14 @@ pub fn claim_refund(env: &Env, campaign_id: u64, backer: &Address) -> Result<(),
     }
 
     let refund_amount = pledge.amount;
-    token::Client::new(env, &campaign.token).transfer(
-        &env.current_contract_address(),
-        backer,
-        &refund_amount,
-    );
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, &campaign.token).transfer(
+            &env.current_contract_address(),
+            backer,
+            &refund_amount,
+        );
+        Ok(())
+    })?;
 
     pledge.refunded = true;
     Storage::set_crowdfund_pledge(env, &pledge);

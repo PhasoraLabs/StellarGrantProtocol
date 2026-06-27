@@ -33,6 +33,7 @@ pub fn set_requirement(
 /// Contributor deposits required collateral to begin work.
 pub fn deposit(env: &Env, contributor: &Address, grant_id: u64) -> Result<(), ContractError> {
     contributor.require_auth();
+    crate::reentrancy::protect(env)?;
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     if grant.owner != *contributor {
@@ -49,7 +50,10 @@ pub fn deposit(env: &Env, contributor: &Address, grant_id: u64) -> Result<(), Co
 
     // Transfer tokens from contributor to contract.
     let token_client = token::Client::new(env, &req.token);
-    token_client.transfer(contributor, &env.current_contract_address(), &req.amount);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(contributor, &env.current_contract_address(), &req.amount);
+        Ok(())
+    })?;
 
     let now = env.ledger().timestamp();
     let deposit_record = CollateralDeposit {
@@ -71,6 +75,7 @@ pub fn deposit(env: &Env, contributor: &Address, grant_id: u64) -> Result<(), Co
 
 /// Release collateral back to contributor on grant completion.
 pub fn release(env: &Env, grant_id: u64, contributor: &Address) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     let mut deposit = Storage::get_collateral_deposit(env, grant_id, contributor)
         .ok_or(ContractError::InvalidState)?;
 
@@ -85,7 +90,10 @@ pub fn release(env: &Env, grant_id: u64, contributor: &Address) -> Result<i128, 
 
     if net_amount > 0 {
         let token_client = token::Client::new(env, &deposit.token);
-        token_client.transfer(&env.current_contract_address(), contributor, &net_amount);
+        crate::reentrancy::protect_external_call(env, || {
+            token_client.transfer(&env.current_contract_address(), contributor, &net_amount);
+            Ok(())
+        })?;
     }
 
     deposit.status = CollateralStatus::Released;
@@ -104,6 +112,7 @@ pub fn forfeit(
     forfeit_bps: u32,
     reason: String,
 ) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     if forfeit_bps > 10_000 {
         return Err(ContractError::InvalidInput);
     }
@@ -142,11 +151,14 @@ pub fn forfeit(
         let treasury_addr =
             Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
         let token_client = token::Client::new(env, &deposit.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &treasury_addr,
-            &actual_forfeit,
-        );
+        crate::reentrancy::protect_external_call(env, || {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &treasury_addr,
+                &actual_forfeit,
+            );
+            Ok(())
+        })?;
         treasury::deposit(
             env,
             &deposit.token,

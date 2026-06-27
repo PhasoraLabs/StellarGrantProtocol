@@ -15,6 +15,7 @@ pub enum ContractError {
     AlreadyVoted = 8,
     MilestoneNotFound = 9,
     InvalidState = 10,
+    Reentrancy = 25,
     NoRefundableAmount = 11,
     GrantAlreadyReleased = 12,
     NotMultisigSigner = 13,
