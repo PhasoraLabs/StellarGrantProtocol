@@ -1,9 +1,8 @@
 use soroban_sdk::{Address, Env, Vec};
 
+use crate::constants;
 use crate::storage::{DataKey, GrantKey};
 use crate::types::GrantStatus;
-
-const INDEX_BUCKET_LIMIT: u32 = 10_000;
 
 fn push_to_index(env: &Env, key: &DataKey, grant_id: u64) {
     let mut list: Vec<u64> = env
@@ -11,7 +10,7 @@ fn push_to_index(env: &Env, key: &DataKey, grant_id: u64) {
         .persistent()
         .get(key)
         .unwrap_or_else(|| Vec::new(env));
-    if list.len() < INDEX_BUCKET_LIMIT && !list.contains(grant_id) {
+    if list.len() < constants::MAX_INDEX_ENTRIES && !list.contains(grant_id) {
         list.push_back(grant_id);
         env.storage().persistent().set(key, &list);
     }
@@ -57,7 +56,7 @@ pub fn on_grant_created(
         .persistent()
         .get(&order_key)
         .unwrap_or_else(|| Vec::new(env));
-    if order.len() < INDEX_BUCKET_LIMIT {
+    if order.len() < constants::MAX_INDEX_ENTRIES {
         order.push_back(grant_id);
         env.storage().persistent().set(&order_key, &order);
     }

@@ -5,20 +5,11 @@ use crate::storage::Storage;
 use crate::types::ContractError;
 
 #[allow(dead_code)]
-fn basis_points_of(amount: i128, bps: u32) -> Result<i128, ContractError> {
-    amount
-        .checked_mul(bps as i128)
-        .ok_or(ContractError::InvalidInput)?
-        .checked_div(10_000)
-        .ok_or(ContractError::InvalidInput)
-}
-
-#[allow(dead_code)]
 pub fn compute_fee(gross: i128, fee_bps: u32) -> Result<i128, ContractError> {
     if fee_bps == 0 || gross <= 0 {
         return Ok(0);
     }
-    basis_points_of(gross, fee_bps)
+    crate::math::basis_points_of(gross, fee_bps)
 }
 
 #[allow(dead_code)]
@@ -41,8 +32,8 @@ pub fn deduct_and_transfer(
     let revenue_share_bps = config.revenue_share_pool_bps;
 
     // Split fee: revenue share pool + reviewer reward pool + treasury
-    let revenue_share_amount = basis_points_of(fee, revenue_share_bps)?;
-    let reviewer_reward_amount = basis_points_of(fee, reviewer_reward_bps)?;
+    let revenue_share_amount = crate::math::basis_points_of(fee, revenue_share_bps)?;
+    let reviewer_reward_amount = crate::math::basis_points_of(fee, reviewer_reward_bps)?;
     let treasury_amount = fee
         .checked_sub(revenue_share_amount)
         .ok_or(ContractError::InvalidInput)?
