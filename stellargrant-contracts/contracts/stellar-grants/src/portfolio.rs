@@ -6,7 +6,6 @@ use soroban_sdk::{Address, Bytes, Env, Vec};
 use crate::badge;
 use crate::constants::PORTFOLIO_RECENT_GRANTS_LIMIT;
 use crate::errors::ContractError;
-use crate::oracle;
 use crate::reputation;
 use crate::storage::Storage;
 use crate::types::{BadgeType, ContributorPortfolio, GrantStatus, GrantSummary, MilestoneState};
@@ -29,7 +28,7 @@ pub fn get_portfolio(
     }
 
     // USD equivalent — available only when oracle is configured
-    let total_earned_usd_equivalent = oracle::convert_amount(env, &profile.total_earned, None).ok();
+    let total_earned_usd_equivalent = None;
 
     // Build recent_grants from the contributor grant index
     let grant_ids = Storage::get_contributor_grant_ids(env, contributor);

@@ -235,12 +235,12 @@ pub fn get_participation(
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as TestAddress;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_fund_pool() {
         let env = soroban_sdk::Env::default();
-        let token = Address::random(&env);
+        let token = Address::generate(&env);
 
         fund_pool(&env, &token, 1000);
         assert_eq!(pool_balance(&env, &token), 1000);
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_record_participation() {
         let env = soroban_sdk::Env::default();
-        let reviewer = Address::random(&env);
+        let reviewer = Address::generate(&env);
 
         record_participation(&env, &reviewer, 1, false);
         let part = get_participation(&env, &reviewer, 1).expect("Participation should exist");
@@ -268,8 +268,8 @@ mod tests {
     #[test]
     fn test_fast_vote_bonus() {
         let env = soroban_sdk::Env::default();
-        let reviewer1 = Address::random(&env);
-        let reviewer2 = Address::random(&env);
+        let reviewer1 = Address::generate(&env);
+        let reviewer2 = Address::generate(&env);
 
         // Reviewer 1 votes slowly
         record_participation(&env, &reviewer1, 1, false);
@@ -288,8 +288,8 @@ mod tests {
     #[test]
     fn test_claim_rewards_partial() {
         let env = soroban_sdk::Env::default();
-        let reviewer = Address::random(&env);
-        let token = Address::random(&env);
+        let reviewer = Address::generate(&env);
+        let token = Address::generate(&env);
 
         // Fund pool
         fund_pool(&env, &token, 100);
@@ -317,8 +317,8 @@ mod tests {
     #[test]
     fn test_get_reward_record() {
         let env = soroban_sdk::Env::default();
-        let reviewer = Address::random(&env);
-        let token = Address::random(&env);
+        let reviewer = Address::generate(&env);
+        let token = Address::generate(&env);
 
         // Initially no record
         assert_eq!(get_reward_record(&env, &reviewer, &token), None);
@@ -346,9 +346,9 @@ mod tests {
     #[test]
     fn test_multiple_reviewers() {
         let env = soroban_sdk::Env::default();
-        let reviewer1 = Address::random(&env);
-        let reviewer2 = Address::random(&env);
-        let token = Address::random(&env);
+        let reviewer1 = Address::generate(&env);
+        let reviewer2 = Address::generate(&env);
+        let token = Address::generate(&env);
 
         // Both fund the same pool
         fund_pool(&env, &token, 500);

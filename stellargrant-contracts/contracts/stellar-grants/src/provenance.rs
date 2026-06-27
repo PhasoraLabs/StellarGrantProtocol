@@ -184,11 +184,12 @@ pub fn proof_hash(env: &Env, record_id: u32) -> Option<Bytes> {
 mod tests {
     use super::*;
     use crate::types::ContributionType;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_record_append_and_retrieve() {
         let env = soroban_sdk::Env::default();
-        let actor = Address::random(&env);
+        let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         record(
@@ -214,7 +215,7 @@ mod tests {
     #[test]
     fn test_address_index_updated() {
         let env = soroban_sdk::Env::default();
-        let actor = Address::random(&env);
+        let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         record(
@@ -246,8 +247,8 @@ mod tests {
     #[test]
     fn test_get_by_grant() {
         let env = soroban_sdk::Env::default();
-        let actor1 = Address::random(&env);
-        let actor2 = Address::random(&env);
+        let actor1 = Address::generate(&env);
+        let actor2 = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         record(
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn test_proof_hash_consistency() {
         let env = soroban_sdk::Env::default();
-        let actor = Address::random(&env);
+        let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         record(
@@ -302,7 +303,7 @@ mod tests {
     #[test]
     fn test_proof_hash_changes_with_different_data() {
         let env = soroban_sdk::Env::default();
-        let actor = Address::random(&env);
+        let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         record(
@@ -336,7 +337,7 @@ mod tests {
     #[test]
     fn test_pagination() {
         let env = soroban_sdk::Env::default();
-        let actor = Address::random(&env);
+        let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
         for i in 0..5 {

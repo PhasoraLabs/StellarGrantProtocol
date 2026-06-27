@@ -115,7 +115,7 @@ pub fn filter_grants(env: &Env, filter: PortfolioFilter, offset: u32, limit: u32
                 if let Some(grant) = Storage::get_grant(env, grant_id) {
                     // Apply all filters
                     let matches_status =
-                        filter.status.is_none() || filter.status == Some(grant.status);
+                        filter.status.is_none() || filter.status == Some(grant.status as u32);
                     let matches_token =
                         filter.token.is_none() || filter.token == Some(grant.token.clone());
                     let matches_amount = {
@@ -353,11 +353,12 @@ fn remove_reviewer_from_grant(
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_portfolio_stats_aggregation() {
         let env = soroban_sdk::Env::default();
-        let owner = Address::random(&env);
+        let owner = Address::generate(&env);
 
         // Stats for non-existent owner should return empty stats
         let stats = get_portfolio_stats(&env, &owner);
@@ -369,12 +370,12 @@ mod tests {
     #[test]
     fn test_filter_grants_by_status() {
         let env = soroban_sdk::Env::default();
-        let owner = Address::random(&env);
+        let owner = Address::generate(&env);
 
         // Create a filter
         let filter = PortfolioFilter {
             owner: Some(owner.clone()),
-            status: Some(GrantStatus::Active),
+            status: Some(GrantStatus::Active as u32),
             token: None,
             category_id: None,
             min_amount: None,
@@ -389,8 +390,8 @@ mod tests {
     #[test]
     fn test_total_escrow_balance() {
         let env = soroban_sdk::Env::default();
-        let owner = Address::random(&env);
-        let token = Address::random(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
 
         // Balance for non-existent owner should be 0
         let balance = total_escrow_balance(&env, &owner, &token);
@@ -400,7 +401,7 @@ mod tests {
     #[test]
     fn test_recent_grants_empty() {
         let env = soroban_sdk::Env::default();
-        let owner = Address::random(&env);
+        let owner = Address::generate(&env);
 
         let recent = recent_grants(&env, &owner, 5);
         assert_eq!(recent.len(), 0);
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn test_get_portfolio_structure() {
         let env = soroban_sdk::Env::default();
-        let owner = Address::random(&env);
+        let owner = Address::generate(&env);
 
         let portfolio = get_portfolio(&env, &owner);
         assert_eq!(portfolio.owner, owner);
