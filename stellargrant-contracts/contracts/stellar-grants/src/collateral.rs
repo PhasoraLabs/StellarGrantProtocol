@@ -3,7 +3,6 @@ use soroban_sdk::{token, Address, Env, String};
 use crate::errors::ContractError;
 use crate::events::Events;
 use crate::storage::Storage;
-use crate::treasury;
 use crate::types::{CollateralDeposit, CollateralRequirement, CollateralStatus};
 
 /// Set collateral requirement for a grant. Owner only, before work starts.
@@ -159,12 +158,6 @@ pub fn forfeit(
             );
             Ok(())
         })?;
-        treasury::deposit(
-            env,
-            &deposit.token,
-            &env.current_contract_address(),
-            actual_forfeit,
-        )?;
     }
 
     deposit.forfeited_amount = deposit

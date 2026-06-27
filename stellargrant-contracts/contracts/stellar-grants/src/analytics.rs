@@ -133,7 +133,7 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
                 .get(window.window_size.saturating_sub(7))
                 .unwrap();
             if tvl_7days_ago > 0 {
-                (((current_tvl - tvl_7days_ago) * 10_000) / tvl_7days_ago) as i32
+                ((current_tvl - tvl_7days_ago) * 10_000) / tvl_7days_ago
             } else {
                 0
             }
@@ -145,8 +145,8 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
     };
 
     let snapshot = AnalyticsSnapshot {
-        avg_milestone_completion_ledgers: milestone_avg as u32,
-        avg_reviewer_turnaround_ledgers: reviewer_avg as u32,
+        avg_milestone_comp_ledgers: milestone_avg as u32,
+        avg_reviewer_turn_ledgers: reviewer_avg as u32,
         overall_success_rate_bps,
         top_category_id,
         tvl_7day_growth_bps,

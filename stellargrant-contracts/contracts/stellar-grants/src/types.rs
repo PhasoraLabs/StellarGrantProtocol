@@ -1156,11 +1156,11 @@ pub struct CategoryStats {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnalyticsSnapshot {
-    pub avg_milestone_completion_ledgers: u32,
-    pub avg_reviewer_turnaround_ledgers: u32,
+    pub avg_milestone_comp_ledgers: u32,
+    pub avg_reviewer_turn_ledgers: u32,
     pub overall_success_rate_bps: u32,
     pub top_category_id: Option<u32>,
-    pub tvl_7day_growth_bps: i32,
+    pub tvl_7day_growth_bps: i128,
     pub snapshot_at: u64,
 }
 
@@ -1602,7 +1602,7 @@ pub struct MatchingRound {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PortfolioFilter {
     pub owner: Option<Address>,
-    pub status: Option<GrantStatus>,
+    pub status: Option<u32>,
     pub token: Option<Address>,
     pub category_id: Option<u32>,
     pub min_amount: Option<i128>,

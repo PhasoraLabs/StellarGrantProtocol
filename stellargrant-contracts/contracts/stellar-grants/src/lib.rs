@@ -4,6 +4,7 @@ mod access_control;
 mod analytics;
 mod arbitration_pool;
 mod audit;
+mod badge;
 mod checklist;
 mod circuit_breaker;
 mod collateral;
@@ -2878,7 +2879,7 @@ impl StellarGrantsContract {
         milestone_deps::can_submit(&env, grant_id, milestone_idx)
     }
 
-    pub fn milestone_deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
+    pub fn deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
         milestone_deps::unblocked_milestones(&env, grant_id)
     }
 
