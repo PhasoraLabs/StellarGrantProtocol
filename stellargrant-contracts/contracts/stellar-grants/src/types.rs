@@ -430,6 +430,44 @@ pub struct ProtocolConfig {
     pub reviewer_reward_pool_bps: u32,
     /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
     pub fast_bonus_bps: u32,
+    /// Payouts above this amount require KYC verification. i128::MAX disables the gate.
+    pub kyc_payout_threshold: i128,
+}
+
+// ── Issue #632: Contributor Verification ───────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum VerificationLevel {
+    None = 0,
+    EmailVerified = 1,
+    IdVerified = 2,
+    AmlCleared = 3,
+    FullKyc = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum VerificationStatus {
+    Unverified = 0,
+    Pending = 1,
+    Verified = 2,
+    Revoked = 3,
+    Expired = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationAttestation {
+    pub subject: Address,
+    pub verifier: Address,
+    pub level: VerificationLevel,
+    pub status: VerificationStatus,
+    pub attested_at: u64,
+    pub expires_at: Option<u64>,
+    pub attestation_hash: soroban_sdk::Bytes,
 }
 
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
@@ -1156,11 +1194,11 @@ pub struct CategoryStats {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnalyticsSnapshot {
-    pub avg_milestone_completion_ledgers: u32,
-    pub avg_reviewer_turnaround_ledgers: u32,
+    pub avg_milestone_comp_ledgers: u32,
+    pub avg_reviewer_turn_ledgers: u32,
     pub overall_success_rate_bps: u32,
     pub top_category_id: Option<u32>,
-    pub tvl_7day_growth_bps: i32,
+    pub tvl_7day_growth_bps: i128,
     pub snapshot_at: u64,
 }
 
@@ -1602,7 +1640,7 @@ pub struct MatchingRound {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PortfolioFilter {
     pub owner: Option<Address>,
-    pub status: Option<GrantStatus>,
+    pub status: Option<u32>,
     pub token: Option<Address>,
     pub category_id: Option<u32>,
     pub min_amount: Option<i128>,

@@ -26,6 +26,7 @@ pub fn default_config() -> ProtocolConfig {
         },
         reviewer_reward_pool_bps: 2000,
         fast_bonus_bps: 500,
+        kyc_payout_threshold: i128::MAX,
     }
 }
 

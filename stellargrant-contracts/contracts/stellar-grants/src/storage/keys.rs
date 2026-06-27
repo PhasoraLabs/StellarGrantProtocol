@@ -235,6 +235,8 @@ pub enum DataKey {
     ReferralCode(Bytes),
     WhitelistEntries(WhitelistScope),
     WhitelistMode(WhitelistScope),
+    VerifierContract,
+    VerificationAttestation(Address),
 
     // Notifications
     NotifSub(Address, u32, u32, u128),

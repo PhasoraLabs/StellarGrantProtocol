@@ -92,7 +92,7 @@ pub fn revoke_role(
     // Remove from role members list
     let mut members = Storage::get_role_members(env, &role);
     if let Some(index) = members.iter().position(|a| a == *holder) {
-        members.remove(index);
+        members.remove(index as u32);
         Storage::set_role_members(env, &role, &members);
     }
 
@@ -152,18 +152,16 @@ pub fn role_members(env: &Env, role: Role) -> Vec<Address> {
 pub fn roles_of(env: &Env, address: &Address) -> Vec<Role> {
     let mut roles = Vec::new(env);
 
-    // Check all role types
-    let all_roles = vec![
-        Role::SuperAdmin,
-        Role::ProtocolAdmin,
-        Role::TreasuryManager,
-        Role::ComplianceOfficer,
-        Role::DisputeArbiter,
-        Role::OracleOperator,
-        Role::ReviewerModerator,
-        Role::EmergencyPauser,
-        Role::Relayer,
-    ];
+    let mut all_roles = Vec::new(env);
+    all_roles.push_back(Role::SuperAdmin);
+    all_roles.push_back(Role::ProtocolAdmin);
+    all_roles.push_back(Role::TreasuryManager);
+    all_roles.push_back(Role::ComplianceOfficer);
+    all_roles.push_back(Role::DisputeArbiter);
+    all_roles.push_back(Role::OracleOperator);
+    all_roles.push_back(Role::ReviewerModerator);
+    all_roles.push_back(Role::EmergencyPauser);
+    all_roles.push_back(Role::Relayer);
 
     for role in all_roles {
         if has_role(env, address, role.clone()) {
@@ -191,7 +189,7 @@ pub fn renounce_role(env: &Env, holder: &Address, role: Role) -> Result<(), Cont
     // Remove from role members list
     let mut members = Storage::get_role_members(env, &role);
     if let Some(index) = members.iter().position(|a| a == *holder) {
-        members.remove(index);
+        members.remove(index as u32);
         Storage::set_role_members(env, &role, &members);
     }
 
