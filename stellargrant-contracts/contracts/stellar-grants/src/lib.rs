@@ -16,6 +16,7 @@ mod dispute;
 mod emergency;
 mod errors;
 mod escrow;
+mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
@@ -23,7 +24,9 @@ mod fees;
 mod fork;
 mod funder_report;
 mod governance;
+mod grant_bridge;
 mod grant_index;
+mod grant_pause;
 mod grant_renewal;
 mod grant_tags;
 mod grant_transfer;
@@ -40,6 +43,7 @@ mod migration;
 mod milestone_deps;
 mod milestone_extension;
 mod milestone_nft;
+mod milestone_template;
 mod multi_grant;
 mod multisig;
 mod notification;
@@ -579,6 +583,8 @@ impl StellarGrantsContract {
             return Err(ContractError::InvalidState);
         }
 
+        crate::grant_pause::require_not_paused(env, grant_id)?;
+
         // Compliance gate: if the grant requires KYC, check the owner/contributor.
         if let Some(required_level) = grant.require_compliance {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
@@ -604,7 +610,12 @@ impl StellarGrantsContract {
                 }
             }
             if owner_amount > 0 {
-                escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                let config: ProtocolConfig = env.storage().persistent().get(&storage::keys::DataKey::Config).unwrap();
+                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                    crate::escrow_multisig::create_request(env, grant_id, 0, owner_amount, grant.owner.clone())?;
+                } else {
+                    escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                }
             }
         }
         if remaining_balance > 0 {
@@ -648,6 +659,7 @@ impl StellarGrantsContract {
         feedback: Option<String>,
     ) -> Result<bool, ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         reviewer.require_auth();
 
@@ -803,6 +815,7 @@ impl StellarGrantsContract {
         proof_url: String,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         recipient.require_auth();
         rate_limit::check_and_increment(&env, &recipient, RateLimitAction::MilestoneSubmit)?;
@@ -843,6 +856,7 @@ impl StellarGrantsContract {
         submissions: Vec<MilestoneSubmission>,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         recipient.require_auth();
 
         let batch_len = submissions.len();
@@ -1281,6 +1295,29 @@ impl StellarGrantsContract {
     /// Get all allocations for a round after computation.
     pub fn get_matching_allocations(env: Env, round_id: u32) -> Vec<MatchingAllocation> {
         matching::get_allocations(&env, round_id)
+    }
+
+    // ── Milestone Templates ────────────────────────────────────────────────────
+    
+    pub fn save_template(
+        env: Env,
+        owner: Address,
+        name: String,
+        description: String,
+        category: crate::types::TemplateCategory,
+        default_amount_pct: u32,
+        is_public: bool,
+    ) -> Result<u64, ContractError> {
+        milestone_template::save_template(&env, owner, name, description, category, default_amount_pct, is_public)
+    }
+    
+    pub fn create_milestones_from_template(
+        env: Env,
+        caller: Address,
+        template_ids: Vec<u64>,
+        total_amount: i128,
+    ) -> Result<Vec<(String, i128)>, ContractError> {
+        milestone_template::create_from_templates(&env, caller, template_ids, total_amount)
     }
 
     // ── KYC Integration (#43) ───────────────────────────────────────
@@ -3936,6 +3973,17 @@ fn apply_milestone_submission(
     // Validate structured evidence against the schema when one has been registered.
     evidence_schema::validate_evidence(env, grant_id, milestone_idx)?;
 
+    let is_cross_chain = crate::grant_bridge::has_valid_proof(env, grant_id, milestone_idx);
+    let final_proof_url = if is_cross_chain {
+        if let Some(proof) = crate::grant_bridge::get_proof(env, grant_id, milestone_idx) {
+            proof.tx_hash
+        } else {
+            proof_url
+        }
+    } else {
+        proof_url
+    };
+    
     let milestone = Milestone {
         idx: milestone_idx,
         description: description.clone(),
@@ -3946,7 +3994,7 @@ fn apply_milestone_submission(
         rejections: 0,
         reasons: soroban_sdk::Map::new(env),
         status_updated_at: 0,
-        proof_url: Some(proof_url),
+        proof_url: Some(final_proof_url),
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
         reviewer_count_snapshot: grant.reviewers.len(),

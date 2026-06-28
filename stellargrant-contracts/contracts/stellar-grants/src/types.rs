@@ -435,6 +435,80 @@ pub struct ProtocolConfig {
     pub reviewer_reward_pool_bps: u32,
     /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
     pub fast_bonus_bps: u32,
+    /// Number of required approvals for high value grant release. Default is 2.
+    pub multisig_escrow_threshold: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseApproval {
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseRequest {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub recipient: Address,
+    pub approvals: Vec<EscrowReleaseApproval>,
+    pub expires_at: u64,
+    pub executed: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ChainId {
+    Ethereum = 1,
+    Polygon = 137,
+    Arbitrum = 42161,
+    Optimism = 10,
+    Base = 8453,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BridgeRelayer {
+    pub address: Address,
+    pub is_active: bool,
+    pub registered_at: u64,
+    pub authorized_chains: Vec<ChainId>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossChainProof {
+    pub chain_id: ChainId,
+    pub tx_hash: String,
+    pub relayer: Address,
+    pub verified_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TemplateCategory {
+    General = 0,
+    Engineering = 1,
+    Design = 2,
+    Marketing = 3,
+    Research = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MilestoneTemplate {
+    pub id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub description: String,
+    pub category: TemplateCategory,
+    pub default_amount_pct: u32,
+    pub is_public: bool,
+    pub use_count: u32,
 }
 
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
@@ -2188,4 +2262,15 @@ pub struct TimerRecord {
     pub fired: bool,
     pub fired_at: Option<u64>,
     pub triggered_by: Option<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPauseRecord {
+    pub grant_id: u64,
+    pub paused_by: Address,
+    pub paused_at: u64,
+    pub reason: String,
+    pub auto_unpause_at: Option<u64>,
+    pub unpause_history: Vec<(Address, u64)>,
 }
