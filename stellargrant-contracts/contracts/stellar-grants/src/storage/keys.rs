@@ -254,6 +254,9 @@ pub enum DataKey {
 
     EscrowReleaseRequest(u64, u32),
 
+    BridgeRelayer(Address),
+    CrossChainProof(u64, u32),
+
     // Migration guard
     V2KeysMigrated,
 }

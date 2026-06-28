@@ -458,6 +458,35 @@ pub struct EscrowReleaseRequest {
     pub executed: bool,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ChainId {
+    Ethereum = 1,
+    Polygon = 137,
+    Arbitrum = 42161,
+    Optimism = 10,
+    Base = 8453,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BridgeRelayer {
+    pub address: Address,
+    pub is_active: bool,
+    pub registered_at: u64,
+    pub authorized_chains: Vec<ChainId>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossChainProof {
+    pub chain_id: ChainId,
+    pub tx_hash: String,
+    pub relayer: Address,
+    pub verified_at: u64,
+}
+
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
 
 #[contracttype]

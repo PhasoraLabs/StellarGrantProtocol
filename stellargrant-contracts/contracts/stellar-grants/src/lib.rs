@@ -24,6 +24,7 @@ mod fees;
 mod fork;
 mod funder_report;
 mod governance;
+mod grant_bridge;
 mod grant_index;
 mod grant_pause;
 mod grant_renewal;
@@ -3948,6 +3949,17 @@ fn apply_milestone_submission(
     // Validate structured evidence against the schema when one has been registered.
     evidence_schema::validate_evidence(env, grant_id, milestone_idx)?;
 
+    let is_cross_chain = crate::grant_bridge::has_valid_proof(env, grant_id, milestone_idx);
+    let final_proof_url = if is_cross_chain {
+        if let Some(proof) = crate::grant_bridge::get_proof(env, grant_id, milestone_idx) {
+            proof.tx_hash
+        } else {
+            proof_url
+        }
+    } else {
+        proof_url
+    };
+    
     let milestone = Milestone {
         idx: milestone_idx,
         description: description.clone(),
@@ -3958,7 +3970,7 @@ fn apply_milestone_submission(
         rejections: 0,
         reasons: soroban_sdk::Map::new(env),
         status_updated_at: 0,
-        proof_url: Some(proof_url),
+        proof_url: Some(final_proof_url),
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
         reviewer_count_snapshot: grant.reviewers.len(),
