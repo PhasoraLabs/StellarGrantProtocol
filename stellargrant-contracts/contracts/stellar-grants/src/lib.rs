@@ -24,6 +24,7 @@ mod fork;
 mod funder_report;
 mod governance;
 mod grant_index;
+mod grant_pause;
 mod grant_renewal;
 mod grant_tags;
 mod grant_transfer;
@@ -579,6 +580,8 @@ impl StellarGrantsContract {
             return Err(ContractError::InvalidState);
         }
 
+        crate::grant_pause::require_not_paused(env, grant_id)?;
+
         // Compliance gate: if the grant requires KYC, check the owner/contributor.
         if let Some(required_level) = grant.require_compliance {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
@@ -648,6 +651,7 @@ impl StellarGrantsContract {
         feedback: Option<String>,
     ) -> Result<bool, ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         reviewer.require_auth();
 
@@ -803,6 +807,7 @@ impl StellarGrantsContract {
         proof_url: String,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         recipient.require_auth();
         rate_limit::check_and_increment(&env, &recipient, RateLimitAction::MilestoneSubmit)?;
@@ -843,6 +848,7 @@ impl StellarGrantsContract {
         submissions: Vec<MilestoneSubmission>,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         recipient.require_auth();
 
         let batch_len = submissions.len();

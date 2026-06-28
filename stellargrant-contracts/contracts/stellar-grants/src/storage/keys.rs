@@ -249,6 +249,9 @@ pub enum DataKey {
     // Issue #619: Data export state fingerprint
     GlobalLastUpdated,
 
+    // Per-grant pause
+    GrantPaused(u64),
+
     // Migration guard
     V2KeysMigrated,
 }

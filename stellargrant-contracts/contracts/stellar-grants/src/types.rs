@@ -2189,3 +2189,14 @@ pub struct TimerRecord {
     pub fired_at: Option<u64>,
     pub triggered_by: Option<Address>,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPauseRecord {
+    pub grant_id: u64,
+    pub paused_by: Address,
+    pub paused_at: u64,
+    pub reason: String,
+    pub auto_unpause_at: Option<u64>,
+    pub unpause_history: Vec<(Address, u64)>,
+}
