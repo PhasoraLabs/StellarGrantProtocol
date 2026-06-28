@@ -2,8 +2,7 @@ use soroban_sdk::{Address, Env, Vec};
 
 use crate::storage::{DataKey, GrantKey};
 use crate::types::GrantStatus;
-
-const INDEX_BUCKET_LIMIT: u32 = 10_000;
+use crate::constants;
 
 fn push_to_index(env: &Env, key: &DataKey, grant_id: u64) {
     let mut list: Vec<u64> = env
@@ -11,7 +10,7 @@ fn push_to_index(env: &Env, key: &DataKey, grant_id: u64) {
         .persistent()
         .get(key)
         .unwrap_or_else(|| Vec::new(env));
-    if list.len() < INDEX_BUCKET_LIMIT && !list.contains(grant_id) {
+    if list.len() < constants::MAX_INDEX_ENTRIES && !list.contains(grant_id) {
         list.push_back(grant_id);
         env.storage().persistent().set(key, &list);
     }
@@ -29,31 +28,66 @@ fn remove_from_index(env: &Env, key: &DataKey, grant_id: u64) {
     }
 }
 
-pub fn on_grant_created(env: &Env, grant_id: u64, owner: &Address, token: &Address, status: GrantStatus) {
-    push_to_index(env, &DataKey::Grant(GrantKey::OwnerIndex(owner.clone())), grant_id);
-    push_to_index(env, &DataKey::Grant(GrantKey::StatusIndex(status as u32)), grant_id);
-    push_to_index(env, &DataKey::Grant(GrantKey::TokenIndex(token.clone())), grant_id);
+pub fn on_grant_created(
+    env: &Env,
+    grant_id: u64,
+    owner: &Address,
+    token: &Address,
+    status: GrantStatus,
+) {
+    push_to_index(
+        env,
+        &DataKey::Grant(GrantKey::OwnerIndex(owner.clone())),
+        grant_id,
+    );
+    push_to_index(
+        env,
+        &DataKey::Grant(GrantKey::StatusIndex(status as u32)),
+        grant_id,
+    );
+    push_to_index(
+        env,
+        &DataKey::Grant(GrantKey::TokenIndex(token.clone())),
+        grant_id,
+    );
     let order_key = DataKey::Grant(GrantKey::GlobalOrder);
     let mut order: Vec<u64> = env
         .storage()
         .persistent()
         .get(&order_key)
         .unwrap_or_else(|| Vec::new(env));
-    if order.len() < INDEX_BUCKET_LIMIT {
+    if order.len() < constants::MAX_INDEX_ENTRIES {
         order.push_back(grant_id);
         env.storage().persistent().set(&order_key, &order);
     }
 }
 
-pub fn on_status_changed(env: &Env, grant_id: u64, old_status: GrantStatus, new_status: GrantStatus) {
+pub fn on_status_changed(
+    env: &Env,
+    grant_id: u64,
+    old_status: GrantStatus,
+    new_status: GrantStatus,
+) {
     if old_status != new_status {
-        remove_from_index(env, &DataKey::Grant(GrantKey::StatusIndex(old_status as u32)), grant_id);
-        push_to_index(env, &DataKey::Grant(GrantKey::StatusIndex(new_status as u32)), grant_id);
+        remove_from_index(
+            env,
+            &DataKey::Grant(GrantKey::StatusIndex(old_status as u32)),
+            grant_id,
+        );
+        push_to_index(
+            env,
+            &DataKey::Grant(GrantKey::StatusIndex(new_status as u32)),
+            grant_id,
+        );
     }
 }
 
 pub fn on_contributor_assigned(env: &Env, grant_id: u64, contributor: &Address) {
-    push_to_index(env, &DataKey::Grant(GrantKey::ContribIndex(contributor.clone())), grant_id);
+    push_to_index(
+        env,
+        &DataKey::Grant(GrantKey::ContribIndex(contributor.clone())),
+        grant_id,
+    );
 }
 
 pub fn by_owner(env: &Env, owner: &Address, offset: u32, limit: u32) -> Vec<u64> {
@@ -115,7 +149,9 @@ pub fn index_counts(env: &Env, owner: Option<&Address>) -> (u32, u32, u32) {
     let active: Vec<u64> = env
         .storage()
         .persistent()
-        .get(&DataKey::Grant(GrantKey::StatusIndex(GrantStatus::Active as u32)))
+        .get(&DataKey::Grant(GrantKey::StatusIndex(
+            GrantStatus::Active as u32,
+        )))
         .unwrap_or_else(|| Vec::new(env));
     let contributed = if let Some(o) = owner {
         let list: Vec<u64> = env

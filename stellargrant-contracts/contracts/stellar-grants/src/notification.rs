@@ -51,7 +51,11 @@ pub fn subscribe(
 
     let scope_type = scope_type_and_data(&scope).0;
     let list_key = DataKey::NotifSubList(event as u32, scope_type);
-    let mut list: Vec<Address> = env.storage().persistent().get(&list_key).unwrap_or_else(|| Vec::new(env));
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&list_key)
+        .unwrap_or_else(|| Vec::new(env));
     if !list.contains(subscriber.clone()) {
         list.push_back(subscriber.clone());
         env.storage().persistent().set(&list_key, &list);
@@ -88,7 +92,11 @@ pub fn unsubscribe(
 
     let scope_type = scope_type_and_data(scope).0;
     let list_key = DataKey::NotifSubList(event as u32, scope_type);
-    let mut list: Vec<Address> = env.storage().persistent().get(&list_key).unwrap_or_else(|| Vec::new(env));
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&list_key)
+        .unwrap_or_else(|| Vec::new(env));
     if let Some(pos) = (0..list.len()).find(|&i| list.get(i) == Some(subscriber.clone())) {
         list.remove(pos);
         env.storage().persistent().set(&list_key, &list);
@@ -104,23 +112,43 @@ pub fn get_subscriptions(env: &Env, subscriber: &Address) -> Vec<Subscription> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn get_subscribers(env: &Env, event: NotificationEvent, scope: &SubscriptionScope) -> Vec<Address> {
+pub fn get_subscribers(
+    env: &Env,
+    event: NotificationEvent,
+    scope: &SubscriptionScope,
+) -> Vec<Address> {
     let scope_type = scope_type_and_data(scope).0;
     let list_key = DataKey::NotifSubList(event as u32, scope_type);
-    env.storage().persistent().get(&list_key).unwrap_or_else(|| Vec::new(env))
+    env.storage()
+        .persistent()
+        .get(&list_key)
+        .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn emit_notification(env: &Env, event: NotificationEvent, scope: &SubscriptionScope, payload: u128) {
+pub fn emit_notification(
+    env: &Env,
+    event: NotificationEvent,
+    scope: &SubscriptionScope,
+    payload: u128,
+) {
     let (scope_type, scope_data) = scope_type_and_data(scope);
-    env.events().publish((
-        soroban_sdk::Symbol::new(env, "notification"),
-        event as u32,
-        scope_type,
-        scope_data,
-    ), payload);
+    env.events().publish(
+        (
+            soroban_sdk::Symbol::new(env, "notification"),
+            event as u32,
+            scope_type,
+            scope_data,
+        ),
+        payload,
+    );
 }
 
-pub fn is_subscribed(env: &Env, subscriber: &Address, event: &NotificationEvent, scope: &SubscriptionScope) -> bool {
+pub fn is_subscribed(
+    env: &Env,
+    subscriber: &Address,
+    event: &NotificationEvent,
+    scope: &SubscriptionScope,
+) -> bool {
     let subs: Vec<Subscription> = env
         .storage()
         .persistent()

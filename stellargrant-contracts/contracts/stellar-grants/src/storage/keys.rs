@@ -143,6 +143,32 @@ pub enum CollateralKey {
     Deposit(u64, Address),
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub enum ProvenanceKey {
+    Record(u32),
+    Counter,
+    Index(Address),
+    ByGrant(u64),
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum ReviewerRewardKey {
+    Pool(Address),
+    Participation(Address, u64),
+    RewardRecord(Address, Address),
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum MatchingKey {
+    Round(u32),
+    Contribution(u32, Address, u64),
+    Pool(u32),
+    Counter,
+}
+
 // ── Structured DataKey ────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -159,6 +185,9 @@ pub enum DataKey {
     Arbitration(ArbitrationKey),
     Bond(BondKey),
     Collateral(CollateralKey),
+    ConditionalRelease(ConditionalReleaseKey),
+    AutoApprove(AutoApproveKey),
+    GrantTimer(GrantTimerKey),
 
     // Streaming
     Stream(u32),
@@ -211,6 +240,15 @@ pub enum DataKey {
     // Notifications
     NotifSub(Address, u32, u32, u128),
     NotifSubList(u32, u32),
+
+    // Issue #609: Lockup
+    Lockup(u64, u32),
+
+    // Issue #619: Data export timestamps
+    GrantLastUpdated(u64),
+
+    // Issue #619: Data export state fingerprint
+    GlobalLastUpdated,
 
     // Migration guard
     V2KeysMigrated,

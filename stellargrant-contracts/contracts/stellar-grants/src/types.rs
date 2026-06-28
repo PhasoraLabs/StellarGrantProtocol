@@ -43,6 +43,36 @@ pub enum RegistryEntryType {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
+pub enum ContributionType {
+    GrantCreated = 0,
+    MilestoneDelivered = 1,
+    MilestoneReviewed = 2,
+    GrantFunded = 3,
+    DisputeResolved = 4,
+    BountyDelivered = 5,
+    ArbitrationProvided = 6,
+    ReviewerServiceProvided = 7,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProvenanceRecord {
+    pub id: u32,
+    pub contribution_type: ContributionType,
+    pub actor: Address,
+    pub grant_id: u64,
+    pub milestone_idx: Option<u32>,
+    pub amount: Option<i128>,
+    pub token: Option<Address>,
+    pub timestamp: u64,
+    pub ledger_sequence: u32,
+    pub co_contributors: Vec<Address>,
+    pub tags: Vec<String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum MilestoneState {
     Pending = 0,
     Submitted = 1,
@@ -67,6 +97,11 @@ pub struct Milestone {
     pub submission_timestamp: u64,
     /// Optional milestone deadline (ledger timestamp). Updated by approved extensions (#572).
     pub deadline: Option<u64>,
+    /// Snapshot of the reviewer count at submission time (#624).
+    /// Quorum calculations use this value instead of the live reviewer list
+    /// to prevent premature approval or impossible-to-reach quorum when
+    /// reviewers are added or removed mid-vote.
+    pub reviewer_count_snapshot: u32,
 }
 
 #[contracttype]
@@ -396,6 +431,42 @@ pub struct ProtocolConfig {
     pub referral_fee_bps: u32,
     /// Decay configuration for reputation scores (#575)
     pub decay_config: DecayConfig,
+    /// Share of protocol fee directed to reviewer reward pool, in basis points. Default 2000 = 20%.
+    pub reviewer_reward_pool_bps: u32,
+    /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
+    pub fast_bonus_bps: u32,
+}
+
+// ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewParticipation {
+    pub reviewer: Address,
+    pub grant_id: u64,
+    pub votes_cast: u32,
+    pub fast_votes: u32,
+    pub alignment_score: u32,
+    pub last_vote_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRewardRecord {
+    pub reviewer: Address,
+    pub token: Address,
+    pub pending_amount: i128,
+    pub total_earned: i128,
+    pub last_claimed_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRewardPool {
+    pub token: Address,
+    pub balance: i128,
+    pub total_deposited: i128,
+    pub total_paid_out: i128,
 }
 
 // ── Issue #517: Protocol Fee Collection ──────────────────────────────────────
@@ -827,6 +898,79 @@ pub struct BreakerState {
     pub tripped_at: Option<u64>,
     pub reason: Option<soroban_sdk::String>,
     pub auto_reset_ledger: Option<u32>,
+}
+
+// ── Issue #609: Token Lockup Periods ─────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum LockupStatus {
+    Active = 0,
+    Released = 1,
+    Revoked = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LockupRecord {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub holder: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub unlocks_at: u64,
+    pub unlocks_at_ledger: u32,
+    pub status: LockupStatus,
+    pub locked_at: u64,
+    pub released_at: Option<u64>,
+}
+
+// ── Issue #619: Structured Data Export ──────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrant {
+    pub id: u64,
+    pub owner: Address,
+    pub contributor: Option<Address>,
+    pub token: Address,
+    pub total_amount: i128,
+    pub paid_out: i128,
+    pub status: GrantStatus,
+    pub milestone_count: u32,
+    pub created_at: u64,
+    pub last_updated_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportMilestone {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub state: MilestoneState,
+    pub amount: i128,
+    pub submitted_at: Option<u64>,
+    pub approved_at: Option<u64>,
+    pub proof_url: Option<soroban_sdk::String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrantPage {
+    pub items: soroban_sdk::Vec<ExportGrant>,
+    pub total: u32,
+    pub offset: u32,
+    pub has_more: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportMilestonePage {
+    pub items: soroban_sdk::Vec<ExportMilestone>,
+    pub total: u32,
+    pub offset: u32,
+    pub has_more: bool,
 }
 
 // ── Delegation (#603) ─────────────────────────────────────────────────────────
@@ -1524,6 +1668,86 @@ pub struct ContributorPortfolio {
     pub member_since: u64,
 }
 
+// ── Issue #XXX: Quadratic Funding Matching Rounds ──────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingContribution {
+    pub contributor: Address,
+    pub grant_id: u64,
+    pub amount: i128,
+    pub contributed_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingAllocation {
+    pub grant_id: u64,
+    pub direct_contributions: i128,
+    pub match_amount: i128,
+    pub unique_contributors: u32,
+    pub qf_score: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchingRound {
+    pub id: u32,
+    pub token: Address,
+    pub matching_pool: i128,
+    pub start_ledger: u32,
+    pub end_ledger: u32,
+    pub eligible_grant_ids: Vec<u64>,
+    pub allocations: Vec<MatchingAllocation>,
+    pub finalized: bool,
+    pub distributed: bool,
+    pub created_by: Address,
+}
+
+// ── Issue #XXX: Multi-Grant Portfolio Management ──────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortfolioFilter {
+    pub owner: Option<Address>,
+    pub status: Option<GrantStatus>,
+    pub token: Option<Address>,
+    pub category_id: Option<u32>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortfolioStats {
+    pub owner: Address,
+    pub total_grants: u32,
+    pub active_grants: u32,
+    pub completed_grants: u32,
+    pub total_funded: i128,
+    pub total_paid_out: i128,
+    pub total_in_escrow: i128,
+    pub unique_contributors: u32,
+    pub unique_reviewers: u32,
+    pub avg_completion_rate_bps: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPortfolio {
+    pub owner: Address,
+    pub grant_ids: Vec<u64>,
+    pub stats: PortfolioStats,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchResult {
+    pub successful: u32,
+    pub failed: u32,
+    pub total: u32,
+}
+
 // ── Issue #570: NFT Certificate per Approved Milestone ───────────────────────
 
 #[contracttype]
@@ -1828,4 +2052,170 @@ pub struct WhitelistEntry {
     pub added_by: Address,
     pub added_at: u64,
     pub scope: WhitelistScope,
+}
+
+// ── Batch operation types ──────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchMilestoneVote {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub approve: bool,
+    pub reason: Option<String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchItemResult {
+    pub index: u32,
+    pub success: bool,
+    pub error_code: Option<u32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchResult {
+    pub total: u32,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub results: soroban_sdk::Vec<BatchItemResult>,
+}
+
+// ── Issue #622: Batch Read View Types ─────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrant {
+    pub id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub description: String,
+    pub token: Address,
+    pub status: GrantStatus,
+    pub total_amount: i128,
+    pub milestone_amount: i128,
+    pub total_milestones: u32,
+    pub milestones_paid_out: u32,
+    pub escrow_balance: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantDetailView {
+    pub grant: Grant,
+    pub milestones: soroban_sdk::Vec<Milestone>,
+    pub escrow_balance: i128,
+    pub funder_count: u32,
+    pub reviewer_count: u32,
+    pub current_milestone_idx: u32,
+    pub completion_pct: u32,
+    pub reputation_scores: soroban_sdk::Vec<(Address, u32)>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DashboardView {
+    pub active_grants: u32,
+    pub total_funded_usd: i128,
+    pub total_paid_out_usd: i128,
+    pub total_contributors: u32,
+    pub total_reviewers: u32,
+    pub recent_grant_ids: soroban_sdk::Vec<u64>,
+    pub protocol_metrics: ProtocolMetrics,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerView {
+    pub reviewer: Address,
+    pub profile: ReviewerProfile,
+    pub reputation: u32,
+    pub pending_votes: soroban_sdk::Vec<(u64, u32)>,
+    pub sla_breach_count: u32,
+    pub pending_rewards: i128,
+}
+
+// ── Issue #613: Conditional Release ───────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ConditionType {
+    LedgerSequenceAfter = 0,
+    TimestampAfter = 1,
+    OraclePriceAbove = 2,
+    OraclePriceBelow = 3,
+    CustomContractCall = 4,
+    AlwaysTrue = 5,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseCondition {
+    pub condition_type: ConditionType,
+    pub threshold: i128,
+    pub oracle_token: Option<Address>,
+    pub custom_contract: Option<Address>,
+    pub custom_fn_name: Option<soroban_sdk::Symbol>,
+    pub description: soroban_sdk::String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConditionResult {
+    pub condition_idx: u32,
+    pub met: bool,
+    pub current_value: i128,
+    pub threshold: i128,
+    pub checked_at: u64,
+}
+
+// ── Issue #612: Auto-Approve ─────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutoApproveConfig {
+    pub grant_id: u64,
+    pub enabled: bool,
+    pub grace_period_seconds: u64,
+    pub min_votes_required: u32,
+    pub set_by: Address,
+    pub set_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutoApproveRecord {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub triggered_by: Address,
+    pub triggered_at: u64,
+    pub votes_at_trigger: u32,
+}
+
+// ── Issue #618: Grant Timer ──────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TimerTriggerType {
+    AutoExpire = 0,
+    AutoActivate = 1,
+    AutoCancel = 2,
+    AutoReleaseLockup = 3,
+    CustomCallback = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimerRecord {
+    pub grant_id: u64,
+    pub trigger_type: TimerTriggerType,
+    pub fires_at: u64,
+    pub fires_at_ledger: Option<u32>,
+    pub fired: bool,
+    pub fired_at: Option<u64>,
+    pub triggered_by: Option<Address>,
 }

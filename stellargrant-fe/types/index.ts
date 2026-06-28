@@ -52,6 +52,7 @@ export interface Milestone {
   submitted_at: bigint | null;
   approved_at: bigint | null;
   paid_at: bigint | null;
+  deadline?: bigint | null; // Optional milestone deadline (ledger timestamp)
   token?: string; // Token address for this milestone's payout
   amount?: bigint; // Payout amount for this milestone
   votes?: MilestoneVote[]; // Reviewer votes cast on this milestone

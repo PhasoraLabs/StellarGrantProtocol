@@ -1,7 +1,5 @@
 use soroban_sdk::{testutils::Address as _, Bytes, Env, Vec};
-use stellar_grants::{
-    merkle, MerkleCommitment, MerkleProof, StellarGrantsContract, Storage,
-};
+use stellar_grants::{merkle, MerkleCommitment, MerkleProof, StellarGrantsContract, Storage};
 
 fn leaf_a(env: &Env) -> Bytes {
     Bytes::from_array(env, b"leaf-a")

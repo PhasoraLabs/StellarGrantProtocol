@@ -119,7 +119,13 @@ pub fn pledge(
     campaign.total_pledged = campaign.total_pledged.saturating_add(amount);
     Storage::set_crowdfund_campaign(env, &campaign);
 
-    Events::emit_crowdfund_pledged(env, campaign_id, backer.clone(), amount, campaign.total_pledged);
+    Events::emit_crowdfund_pledged(
+        env,
+        campaign_id,
+        backer.clone(),
+        amount,
+        campaign.total_pledged,
+    );
 
     let _ = new_amount;
     Ok(())
@@ -163,17 +169,11 @@ pub fn finalize(env: &Env, campaign_id: u64) -> Result<CrowdfundStatus, Contract
 
 /// Claim a refund after a campaign has Failed or been Cancelled.
 /// Each backer may only claim once.
-pub fn claim_refund(
-    env: &Env,
-    campaign_id: u64,
-    backer: &Address,
-) -> Result<(), ContractError> {
+pub fn claim_refund(env: &Env, campaign_id: u64, backer: &Address) -> Result<(), ContractError> {
     let campaign = Storage::get_crowdfund_campaign(env, campaign_id)
         .ok_or(ContractError::CrowdfundNotFound)?;
 
-    if campaign.status != CrowdfundStatus::Failed
-        && campaign.status != CrowdfundStatus::Cancelled
-    {
+    if campaign.status != CrowdfundStatus::Failed && campaign.status != CrowdfundStatus::Cancelled {
         return Err(ContractError::CrowdfundNotActive);
     }
 

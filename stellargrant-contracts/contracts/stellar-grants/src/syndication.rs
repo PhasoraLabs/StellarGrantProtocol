@@ -133,11 +133,7 @@ pub fn join_syndicate(
 }
 
 /// Close syndicate formation and activate the grant once target is met.
-pub fn close_syndicate(
-    env: &Env,
-    lead: &Address,
-    grant_id: u64,
-) -> Result<(), ContractError> {
+pub fn close_syndicate(env: &Env, lead: &Address, grant_id: u64) -> Result<(), ContractError> {
     let mut syndicate =
         Storage::get_syndicate_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     if syndicate.lead != *lead {
@@ -204,8 +200,8 @@ pub fn withdraw_syndicate(
         return Err(ContractError::InvalidState);
     }
 
-    let record =
-        Storage::get_syndicate_member(env, grant_id, member).ok_or(ContractError::NoRefundableAmount)?;
+    let record = Storage::get_syndicate_member(env, grant_id, member)
+        .ok_or(ContractError::NoRefundableAmount)?;
     let amount = escrow::refund(env, grant_id, member)?;
     Storage::remove_syndicate_member(env, grant_id, member);
 

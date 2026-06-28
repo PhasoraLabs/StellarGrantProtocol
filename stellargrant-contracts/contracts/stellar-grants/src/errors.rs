@@ -155,4 +155,17 @@ pub enum ContractError {
     AddressNotWhitelisted = 124,
     // Math (#528) — no specific errors, reuses ZeroAmount / InvalidInput
     // Funder report (#598) — no specific errors, read-only
+    // Batch read (#622)
+    BatchSizeExceeded = 125,
+    // Conditional release (#613)
+    MaxConditionsExceeded = 126,
+    ConditionCheckFailed = 127,
+    // Auto-approve (#612)
+    AutoApproveNotEnabled = 128,
+    AutoApproveGracePeriodNotPassed = 129,
+    AutoApproveInsufficientVotes = 130,
+    // Grant timer (#618)
+    TimerNotFound = 131,
+    TimerAlreadyFired = 132,
+    TimerNotEligible = 133,
 }

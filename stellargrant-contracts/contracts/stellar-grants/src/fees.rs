@@ -5,20 +5,11 @@ use crate::storage::Storage;
 use crate::types::ContractError;
 
 #[allow(dead_code)]
-fn basis_points_of(amount: i128, bps: u32) -> Result<i128, ContractError> {
-    amount
-        .checked_mul(bps as i128)
-        .ok_or(ContractError::InvalidInput)?
-        .checked_div(10_000)
-        .ok_or(ContractError::InvalidInput)
-}
-
-#[allow(dead_code)]
 pub fn compute_fee(gross: i128, fee_bps: u32) -> Result<i128, ContractError> {
     if fee_bps == 0 || gross <= 0 {
         return Ok(0);
     }
-    basis_points_of(gross, fee_bps)
+    crate::math::basis_points_of(gross, fee_bps)
 }
 
 #[allow(dead_code)]
@@ -36,7 +27,29 @@ pub fn deduct_and_transfer(
         return Ok(gross);
     }
 
-    token::Client::new(env, token).transfer(&env.current_contract_address(), treasury, &fee);
+    let config = crate::config::get_config(env);
+    let reviewer_reward_bps = config.reviewer_reward_pool_bps;
+
+    // Split fee: reviewer reward pool + treasury
+    let reviewer_reward_amount = basis_points_of(fee, reviewer_reward_bps)?;
+    let treasury_amount = fee
+        .checked_sub(reviewer_reward_amount)
+        .ok_or(ContractError::InvalidInput)?;
+
+    // Transfer treasury share to treasury
+    if treasury_amount > 0 {
+        token::Client::new(env, token).transfer(
+            &env.current_contract_address(),
+            treasury,
+            &treasury_amount,
+        );
+    }
+
+    // Fund reviewer reward pool
+    if reviewer_reward_amount > 0 {
+        crate::reviewer_reward::fund_pool(env, token, reviewer_reward_amount);
+    }
+
     Storage::add_fees_collected(env, token, fee);
 
     Events::emit_fee_collected(

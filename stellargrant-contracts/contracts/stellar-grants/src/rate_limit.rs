@@ -4,9 +4,9 @@ use crate::config;
 use crate::constants::{
     RATE_LIMIT_BOUNTY_CREATE_MAX, RATE_LIMIT_BOUNTY_CREATE_WINDOW,
     RATE_LIMIT_CONTRIBUTOR_REGISTER_MAX, RATE_LIMIT_CONTRIBUTOR_REGISTER_WINDOW,
-    RATE_LIMIT_DISPUTE_RAISE_MAX, RATE_LIMIT_DISPUTE_RAISE_WINDOW,
-    RATE_LIMIT_GRANT_CREATE_MAX, RATE_LIMIT_GRANT_CREATE_WINDOW,
-    RATE_LIMIT_MILESTONE_SUBMIT_MAX, RATE_LIMIT_MILESTONE_SUBMIT_WINDOW,
+    RATE_LIMIT_DISPUTE_RAISE_MAX, RATE_LIMIT_DISPUTE_RAISE_WINDOW, RATE_LIMIT_GRANT_CREATE_MAX,
+    RATE_LIMIT_GRANT_CREATE_WINDOW, RATE_LIMIT_MILESTONE_SUBMIT_MAX,
+    RATE_LIMIT_MILESTONE_SUBMIT_WINDOW,
 };
 use crate::errors::ContractError;
 use crate::storage::Storage;
@@ -19,10 +19,7 @@ fn is_admin(env: &Env, address: &Address) -> bool {
 fn effective_limit(env: &Env, action: &RateLimitAction) -> (u32, u64) {
     let (base_max, window) = limit_for(action);
     let multiplier = config::get_config(env).rate_limit_multiplier.max(1);
-    (
-        base_max.saturating_mul(multiplier),
-        window,
-    )
+    (base_max.saturating_mul(multiplier), window)
 }
 
 /// Check if `address` is within rate limit for `action`.
@@ -38,14 +35,15 @@ pub fn check_and_increment(
     let (max_per_window, window_duration) = effective_limit(env, &action);
     let now = env.ledger().timestamp();
 
-    let mut record = Storage::get_rate_limit_record(env, address, &action).unwrap_or(RateLimitRecord {
-        address: address.clone(),
-        action: action.clone(),
-        count: 0,
-        window_start: now,
-        window_duration,
-        max_per_window,
-    });
+    let mut record =
+        Storage::get_rate_limit_record(env, address, &action).unwrap_or(RateLimitRecord {
+            address: address.clone(),
+            action: action.clone(),
+            count: 0,
+            window_start: now,
+            window_duration,
+            max_per_window,
+        });
 
     if now.saturating_sub(record.window_start) > record.window_duration {
         record.count = 0;
@@ -100,16 +98,25 @@ pub fn reset_record(
 /// Return the configured limit for an action (from constants).
 pub fn limit_for(action: &RateLimitAction) -> (u32, u64) {
     match action {
-        RateLimitAction::GrantCreate => (RATE_LIMIT_GRANT_CREATE_MAX, RATE_LIMIT_GRANT_CREATE_WINDOW),
-        RateLimitAction::MilestoneSubmit => {
-            (RATE_LIMIT_MILESTONE_SUBMIT_MAX, RATE_LIMIT_MILESTONE_SUBMIT_WINDOW)
+        RateLimitAction::GrantCreate => {
+            (RATE_LIMIT_GRANT_CREATE_MAX, RATE_LIMIT_GRANT_CREATE_WINDOW)
         }
+        RateLimitAction::MilestoneSubmit => (
+            RATE_LIMIT_MILESTONE_SUBMIT_MAX,
+            RATE_LIMIT_MILESTONE_SUBMIT_WINDOW,
+        ),
         RateLimitAction::ContributorRegister => (
             RATE_LIMIT_CONTRIBUTOR_REGISTER_MAX,
             RATE_LIMIT_CONTRIBUTOR_REGISTER_WINDOW,
         ),
-        RateLimitAction::DisputeRaise => (RATE_LIMIT_DISPUTE_RAISE_MAX, RATE_LIMIT_DISPUTE_RAISE_WINDOW),
-        RateLimitAction::BountyCreate => (RATE_LIMIT_BOUNTY_CREATE_MAX, RATE_LIMIT_BOUNTY_CREATE_WINDOW),
+        RateLimitAction::DisputeRaise => (
+            RATE_LIMIT_DISPUTE_RAISE_MAX,
+            RATE_LIMIT_DISPUTE_RAISE_WINDOW,
+        ),
+        RateLimitAction::BountyCreate => (
+            RATE_LIMIT_BOUNTY_CREATE_MAX,
+            RATE_LIMIT_BOUNTY_CREATE_WINDOW,
+        ),
     }
 }
 

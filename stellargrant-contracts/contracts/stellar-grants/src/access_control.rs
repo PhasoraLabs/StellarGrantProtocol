@@ -1,8 +1,8 @@
-use soroban_sdk::{Address, Env, Vec};
-use crate::types::{Role, RoleAssignment};
 use crate::errors::ContractError;
-use crate::storage::Storage;
 use crate::events::Events;
+use crate::storage::Storage;
+use crate::types::{Role, RoleAssignment};
+use soroban_sdk::{Address, Env, Vec};
 
 /// Grant a role to an address. SuperAdmin only (or ProtocolAdmin for lesser roles).
 pub fn grant_role(
@@ -130,7 +130,11 @@ pub fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), Cont
 }
 
 /// Assert any of a list of roles (OR logic). Returns Ok if holder has at least one.
-pub fn require_any_role(env: &Env, address: &Address, roles: Vec<Role>) -> Result<(), ContractError> {
+pub fn require_any_role(
+    env: &Env,
+    address: &Address,
+    roles: Vec<Role>,
+) -> Result<(), ContractError> {
     for role in roles.iter() {
         if has_role(env, address, role) {
             return Ok(());

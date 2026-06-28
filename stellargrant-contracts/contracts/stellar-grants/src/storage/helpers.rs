@@ -1,6 +1,6 @@
 use super::keys::{
-    ArbitrationKey, BondKey, CollateralKey, CrowdfundKey, DataKey, EscrowKey, GrantKey,
-    InsuranceKey, MilestoneKey, UserKey, VotingKey,
+    ArbitrationKey, AutoApproveKey, BondKey, CollateralKey, ConditionalReleaseKey, CrowdfundKey,
+    DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
 };
 use crate::types::{
     AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState, ChecklistSubmission,
@@ -87,7 +87,10 @@ impl Storage {
     pub fn get_milestone(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Milestone> {
         env.storage()
             .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx)))
+            .get(&DataKey::Milestone(MilestoneKey::Data(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn get_milestone_v(env: &Env, grant_id: u64, milestone_idx: u32) -> Milestone {
@@ -138,9 +141,10 @@ impl Storage {
     }
 
     pub fn set_multisig_signers(env: &Env, grant_id: u64, signers: &Vec<Address>) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Voting(VotingKey::MultisigSigners(grant_id)), signers);
+        env.storage().persistent().set(
+            &DataKey::Voting(VotingKey::MultisigSigners(grant_id)),
+            signers,
+        );
     }
 
     pub fn has_release_approval(env: &Env, grant_id: u64, signer: &Address) -> bool {
@@ -343,9 +347,7 @@ impl Storage {
     }
 
     pub fn get_stream(env: &Env, stream_id: u32) -> Option<PaymentStream> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Stream(stream_id))
+        env.storage().persistent().get(&DataKey::Stream(stream_id))
     }
 
     pub fn set_stream(env: &Env, stream: &PaymentStream) {
@@ -391,7 +393,10 @@ impl Storage {
     pub fn get_qv_votes(env: &Env, grant_id: u64, milestone_idx: u32) -> Vec<QuadraticVoteRecord> {
         env.storage()
             .persistent()
-            .get(&DataKey::Voting(VotingKey::QvVotes(grant_id, milestone_idx)))
+            .get(&DataKey::Voting(VotingKey::QvVotes(
+                grant_id,
+                milestone_idx,
+            )))
             .unwrap_or_else(|| Vec::new(env))
     }
 
@@ -417,9 +422,10 @@ impl Storage {
     }
 
     pub fn set_insurance_pool(env: &Env, token: &Address, balance: i128) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Insurance(InsuranceKey::Pool(token.clone())), &balance);
+        env.storage().persistent().set(
+            &DataKey::Insurance(InsuranceKey::Pool(token.clone())),
+            &balance,
+        );
     }
 
     pub fn get_insurance_policy(env: &Env, grant_id: u64) -> Option<InsurancePolicy> {
@@ -479,9 +485,12 @@ impl Storage {
     // ── Issue #151: milestone reputation tracking ─────────────────────────────
 
     pub fn has_milestone_reputation_applied(env: &Env, grant_id: u64, milestone_idx: u32) -> bool {
-        env.storage().persistent().has(&DataKey::Milestone(
-            MilestoneKey::ReputationApplied(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .has(&DataKey::Milestone(MilestoneKey::ReputationApplied(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn mark_milestone_reputation_applied(env: &Env, grant_id: u64, milestone_idx: u32) {
@@ -508,9 +517,12 @@ impl Storage {
     }
 
     pub fn remove_dispute(env: &Env, grant_id: u64, milestone_idx: u32) {
-        env.storage().persistent().remove(&DataKey::Milestone(
-            MilestoneKey::Dispute(grant_id, milestone_idx),
-        ));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Milestone(MilestoneKey::Dispute(
+                grant_id,
+                milestone_idx,
+            )));
     }
 
     // ── Clawback mechanism ─────────────────────────────────────────────────────
@@ -606,9 +618,12 @@ impl Storage {
     }
 
     pub fn get_funder_ledger(env: &Env, grant_id: u64, funder: &Address) -> Option<FunderLedger> {
-        env.storage().persistent().get(&DataKey::Escrow(
-            EscrowKey::FunderContrib(grant_id, funder.clone()),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Escrow(EscrowKey::FunderContrib(
+                grant_id,
+                funder.clone(),
+            )))
     }
 
     pub fn set_funder_ledger(env: &Env, grant_id: u64, funder: &Address, ledger: &FunderLedger) {
@@ -706,9 +721,7 @@ impl Storage {
     }
 
     pub fn get_compliance_verifier(env: &Env) -> Option<Address> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::ComplianceVerifier)
+        env.storage().persistent().get(&DataKey::ComplianceVerifier)
     }
 
     pub fn set_compliance_verifier(env: &Env, verifier: &Address) {
@@ -724,7 +737,9 @@ impl Storage {
     }
 
     pub fn set_relay_config(env: &Env, config: &RelayConfig) {
-        env.storage().persistent().set(&DataKey::RelayConfig, config);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RelayConfig, config);
     }
 
     pub fn get_relay_allowance(env: &Env, address: &Address) -> Option<RelayAllowance> {
@@ -773,9 +788,12 @@ impl Storage {
         grant_id: u64,
         reviewer: &Address,
     ) -> Option<ReviewerRequest> {
-        env.storage().persistent().get(&DataKey::User(
-            UserKey::ReviewerRequest(grant_id, reviewer.clone()),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::User(UserKey::ReviewerRequest(
+                grant_id,
+                reviewer.clone(),
+            )))
     }
 
     pub fn set_reviewer_request(env: &Env, request: &ReviewerRequest) {
@@ -873,9 +891,12 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<Vec<AcceptanceCriteria>> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::Checklist(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::Checklist(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_milestone_checklist(
@@ -894,9 +915,12 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<ChecklistSubmission> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::Submission(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::Submission(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_checklist_submission(env: &Env, submission: &ChecklistSubmission) {
@@ -962,9 +986,12 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<MerkleCommitment> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::MerkleCommit(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::MerkleCommit(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_merkle_commitment(
@@ -1004,9 +1031,12 @@ impl Storage {
     // ── Issue #566: Invoice Billing ───────────────────────────────────────────
 
     pub fn get_invoice(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Invoice> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::Invoice(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::Invoice(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_invoice(env: &Env, grant_id: u64, milestone_idx: u32, invoice: &Invoice) {
@@ -1030,9 +1060,7 @@ impl Storage {
     }
 
     pub fn get_analytics_snapshot(env: &Env) -> Option<AnalyticsSnapshot> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::AnalyticsSnapshot)
+        env.storage().persistent().get(&DataKey::AnalyticsSnapshot)
     }
 
     pub fn set_analytics_snapshot(env: &Env, snapshot: &AnalyticsSnapshot) {
@@ -1044,9 +1072,7 @@ impl Storage {
     // ── Issue #596: Dynamic Params ────────────────────────────────────────────
 
     pub fn get_param(env: &Env, key: &Symbol) -> Option<ParamRecord> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Param(key.clone()))
+        env.storage().persistent().get(&DataKey::Param(key.clone()))
     }
 
     pub fn set_param(env: &Env, key: &Symbol, record: &ParamRecord) {
@@ -1161,7 +1187,10 @@ impl Storage {
     }
 
     pub fn set_crowdfund_pledge(env: &Env, pledge: &CrowdfundPledge) {
-        let key = DataKey::Crowdfund(CrowdfundKey::Pledge(pledge.campaign_id, pledge.backer.clone()));
+        let key = DataKey::Crowdfund(CrowdfundKey::Pledge(
+            pledge.campaign_id,
+            pledge.backer.clone(),
+        ));
         env.storage().persistent().set(&key, pledge);
         Self::bump(env, &key);
     }
@@ -1244,9 +1273,12 @@ impl Storage {
         grant_id: u64,
         member: &Address,
     ) -> Option<SyndicateMember> {
-        env.storage().persistent().get(&DataKey::Grant(
-            GrantKey::SyndicateMember(grant_id, member.clone()),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Grant(GrantKey::SyndicateMember(
+                grant_id,
+                member.clone(),
+            )))
     }
 
     pub fn set_syndicate_member(
@@ -1261,9 +1293,12 @@ impl Storage {
     }
 
     pub fn remove_syndicate_member(env: &Env, grant_id: u64, member: &Address) {
-        env.storage().persistent().remove(&DataKey::Grant(
-            GrantKey::SyndicateMember(grant_id, member.clone()),
-        ));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Grant(GrantKey::SyndicateMember(
+                grant_id,
+                member.clone(),
+            )));
     }
 
     pub fn get_syndicate_member_index(env: &Env, grant_id: u64) -> Vec<Address> {
@@ -1447,9 +1482,13 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<PublicReview> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::ReviewerRecord(reviewer.clone(), grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::ReviewerRecord(
+                reviewer.clone(),
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_public_reviewer_record(
@@ -1536,7 +1575,9 @@ impl Storage {
     pub fn get_nfts_by_owner(env: &Env, owner: &Address) -> Vec<u32> {
         env.storage()
             .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::NftsByOwner(owner.clone())))
+            .get(&DataKey::Milestone(MilestoneKey::NftsByOwner(
+                owner.clone(),
+            )))
             .unwrap_or_else(|| Vec::new(env))
     }
 
@@ -1615,9 +1656,12 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<ExtensionRequest> {
-        env.storage().persistent().get(&DataKey::Milestone(
-            MilestoneKey::Extension(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(MilestoneKey::Extension(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_extension_request(env: &Env, req: &ExtensionRequest) {
@@ -1627,15 +1671,20 @@ impl Storage {
     }
 
     pub fn remove_extension_request(env: &Env, grant_id: u64, milestone_idx: u32) {
-        env.storage().persistent().remove(&DataKey::Milestone(
-            MilestoneKey::Extension(grant_id, milestone_idx),
-        ));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Milestone(MilestoneKey::Extension(
+                grant_id,
+                milestone_idx,
+            )));
     }
 
     pub fn get_extension_history(env: &Env, grant_id: u64) -> Vec<ExtensionRequest> {
         env.storage()
             .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::ExtensionHistory(grant_id)))
+            .get(&DataKey::Milestone(MilestoneKey::ExtensionHistory(
+                grant_id,
+            )))
             .unwrap_or_else(|| Vec::new(env))
     }
 
@@ -1824,10 +1873,7 @@ impl Storage {
 
     // ── Issue #564: Collateral Escrow ─────────────────────────────────────────
 
-    pub fn get_collateral_requirement(
-        env: &Env,
-        grant_id: u64,
-    ) -> Option<CollateralRequirement> {
+    pub fn get_collateral_requirement(env: &Env, grant_id: u64) -> Option<CollateralRequirement> {
         let key = DataKey::Collateral(CollateralKey::Requirement(grant_id));
         let v = env.storage().persistent().get(&key);
         if v.is_some() {
@@ -1836,11 +1882,7 @@ impl Storage {
         v
     }
 
-    pub fn set_collateral_requirement(
-        env: &Env,
-        grant_id: u64,
-        req: &CollateralRequirement,
-    ) {
+    pub fn set_collateral_requirement(env: &Env, grant_id: u64, req: &CollateralRequirement) {
         let key = DataKey::Collateral(CollateralKey::Requirement(grant_id));
         env.storage().persistent().set(&key, req);
         Self::bump(env, &key);
@@ -1879,11 +1921,7 @@ impl Storage {
             .unwrap_or_else(|| Vec::new(env))
     }
 
-    pub fn set_whitelist_entries(
-        env: &Env,
-        scope: &WhitelistScope,
-        entries: &Vec<WhitelistEntry>,
-    ) {
+    pub fn set_whitelist_entries(env: &Env, scope: &WhitelistScope, entries: &Vec<WhitelistEntry>) {
         let key = DataKey::WhitelistEntries(scope.clone());
         env.storage().persistent().set(&key, entries);
         Self::bump(env, &key);
@@ -1951,11 +1989,7 @@ impl Storage {
             .get(&DataKey::Grant(GrantKey::Fork(grant_id)))
     }
 
-    pub fn set_fork_record(
-        env: &Env,
-        grant_id: u64,
-        record: &super::super::types::ForkRecord,
-    ) {
+    pub fn set_fork_record(env: &Env, grant_id: u64, record: &super::super::types::ForkRecord) {
         env.storage()
             .persistent()
             .set(&DataKey::Grant(GrantKey::Fork(grant_id)), record);
@@ -1972,5 +2006,83 @@ impl Storage {
         env.storage()
             .persistent()
             .set(&DataKey::Grant(GrantKey::ForkChildren(grant_id)), children);
+    }
+
+    // ── Issue #613: Conditional Release Conditions ────────────────────────
+
+    pub fn get_release_conditions(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<ReleaseCondition> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ConditionalRelease(
+                ConditionalReleaseKey::Conditions(grant_id, milestone_idx),
+            ))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_release_conditions(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        conditions: &Vec<ReleaseCondition>,
+    ) {
+        let key = DataKey::ConditionalRelease(ConditionalReleaseKey::Conditions(
+            grant_id,
+            milestone_idx,
+        ));
+        env.storage().persistent().set(&key, conditions);
+        Self::bump(env, &key);
+    }
+
+    // ── Issue #612: Auto-Approve Config ──────────────────────────────────
+
+    pub fn get_auto_approve_config(env: &Env, grant_id: u64) -> Option<AutoApproveConfig> {
+        let key = DataKey::AutoApprove(AutoApproveKey::Config(grant_id));
+        env.storage().persistent().get(&key)
+    }
+
+    pub fn set_auto_approve_config(env: &Env, grant_id: u64, config: &AutoApproveConfig) {
+        let key = DataKey::AutoApprove(AutoApproveKey::Config(grant_id));
+        env.storage().persistent().set(&key, config);
+        Self::bump(env, &key);
+    }
+
+    pub fn get_auto_approve_record(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<AutoApproveRecord> {
+        env.storage().persistent().get(&DataKey::AutoApprove(
+            AutoApproveKey::Record(grant_id, milestone_idx),
+        ))
+    }
+
+    pub fn set_auto_approve_record(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        record: &AutoApproveRecord,
+    ) {
+        let key = DataKey::AutoApprove(AutoApproveKey::Record(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, record);
+        Self::bump(env, &key);
+    }
+
+    // ── Issue #618: Grant Timers ─────────────────────────────────────────
+
+    pub fn get_grant_timers(env: &Env, grant_id: u64) -> Vec<TimerRecord> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GrantTimer(GrantTimerKey::Timers(grant_id)))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_grant_timers(env: &Env, grant_id: u64, timers: &Vec<TimerRecord>) {
+        let key = DataKey::GrantTimer(GrantTimerKey::Timers(grant_id));
+        env.storage().persistent().set(&key, timers);
+        Self::bump(env, &key);
     }
 }

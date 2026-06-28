@@ -31,11 +31,7 @@ pub fn set_requirement(
 }
 
 /// Contributor deposits required collateral to begin work.
-pub fn deposit(
-    env: &Env,
-    contributor: &Address,
-    grant_id: u64,
-) -> Result<(), ContractError> {
+pub fn deposit(env: &Env, contributor: &Address, grant_id: u64) -> Result<(), ContractError> {
     contributor.require_auth();
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
@@ -43,8 +39,8 @@ pub fn deposit(
         return Err(ContractError::Unauthorized);
     }
 
-    let req = Storage::get_collateral_requirement(env, grant_id)
-        .ok_or(ContractError::InvalidState)?;
+    let req =
+        Storage::get_collateral_requirement(env, grant_id).ok_or(ContractError::InvalidState)?;
 
     // Ensure not already deposited.
     if Storage::get_collateral_deposit(env, grant_id, contributor).is_some() {
@@ -53,11 +49,7 @@ pub fn deposit(
 
     // Transfer tokens from contributor to contract.
     let token_client = token::Client::new(env, &req.token);
-    token_client.transfer(
-        contributor,
-        &env.current_contract_address(),
-        &req.amount,
-    );
+    token_client.transfer(contributor, &env.current_contract_address(), &req.amount);
 
     let now = env.ledger().timestamp();
     let deposit_record = CollateralDeposit {
@@ -78,11 +70,7 @@ pub fn deposit(
 }
 
 /// Release collateral back to contributor on grant completion.
-pub fn release(
-    env: &Env,
-    grant_id: u64,
-    contributor: &Address,
-) -> Result<i128, ContractError> {
+pub fn release(env: &Env, grant_id: u64, contributor: &Address) -> Result<i128, ContractError> {
     let mut deposit = Storage::get_collateral_deposit(env, grant_id, contributor)
         .ok_or(ContractError::InvalidState)?;
 
@@ -97,11 +85,7 @@ pub fn release(
 
     if net_amount > 0 {
         let token_client = token::Client::new(env, &deposit.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            contributor,
-            &net_amount,
-        );
+        token_client.transfer(&env.current_contract_address(), contributor, &net_amount);
     }
 
     deposit.status = CollateralStatus::Released;
@@ -155,14 +139,20 @@ pub fn forfeit(
 
     if actual_forfeit > 0 {
         // Send forfeited amount to treasury, updating both token transfer and bookkeeping.
-        let treasury_addr = Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
+        let treasury_addr =
+            Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
         let token_client = token::Client::new(env, &deposit.token);
         token_client.transfer(
             &env.current_contract_address(),
             &treasury_addr,
             &actual_forfeit,
         );
-        treasury::deposit(env, &deposit.token, &env.current_contract_address(), actual_forfeit)?;
+        treasury::deposit(
+            env,
+            &deposit.token,
+            &env.current_contract_address(),
+            actual_forfeit,
+        )?;
     }
 
     deposit.forfeited_amount = deposit
@@ -179,13 +169,7 @@ pub fn forfeit(
 
     Storage::set_collateral_deposit(env, grant_id, contributor, &deposit);
 
-    Events::emit_collateral_forfeited(
-        env,
-        grant_id,
-        contributor.clone(),
-        actual_forfeit,
-        reason,
-    );
+    Events::emit_collateral_forfeited(env, grant_id, contributor.clone(), actual_forfeit, reason);
 
     Ok(actual_forfeit)
 }
@@ -206,7 +190,7 @@ pub fn require_deposited(
         .ok_or(ContractError::CollateralNotDeposited)?;
 
     if deposit.status != CollateralStatus::Deposited {
-        return Err(ContractError::BondNotPosted);
+        return Err(ContractError::CollateralNotDeposited);
     }
 
     // Verify that the deposited token and amount match the requirement.
@@ -223,19 +207,12 @@ pub fn require_deposited(
 }
 
 /// Return collateral deposit for a contributor.
-pub fn get_deposit(
-    env: &Env,
-    grant_id: u64,
-    contributor: &Address,
-) -> Option<CollateralDeposit> {
+pub fn get_deposit(env: &Env, grant_id: u64, contributor: &Address) -> Option<CollateralDeposit> {
     Storage::get_collateral_deposit(env, grant_id, contributor)
 }
 
 /// Return the collateral requirement for a grant.
-pub fn get_requirement(
-    env: &Env,
-    grant_id: u64,
-) -> Option<CollateralRequirement> {
+pub fn get_requirement(env: &Env, grant_id: u64) -> Option<CollateralRequirement> {
     Storage::get_collateral_requirement(env, grant_id)
 }
 
@@ -318,7 +295,7 @@ mod tests {
         // No deposit yet
         assert_eq!(
             require_deposited(&env, 1, &owner),
-            Err(ContractError::BondNotPosted)
+            Err(ContractError::CollateralNotDeposited)
         );
     }
 
