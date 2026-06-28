@@ -1135,6 +1135,36 @@ pub struct ParamRecord {
 
 // ── Issue #593: Role-Based Access Control (RBAC) Framework ────────────────────
 
+// ── Clawback Mechanism ───────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ClawbackStatus {
+    Pending = 0,
+    DisputedByContributor = 1,
+    Approved = 2,
+    Executed = 3,
+    Cancelled = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackRequest {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub target: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub reason: soroban_sdk::String,
+    pub initiated_by: Address,
+    pub initiated_at: u64,
+    pub dispute_window_ends: u64,
+    pub approvals: soroban_sdk::Vec<Address>,
+    pub required_approvals: u32,
+    pub status: ClawbackStatus,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]

@@ -133,3 +133,6 @@ pub const PARAM_MIN_GRANT_AMOUNT: &str = "min_grant_amount";
 pub const PARAM_PROTOCOL_FEE_BPS: &str = "protocol_fee_bps";
 pub const PARAM_MAX_REVIEWERS: &str = "max_reviewers";
 pub const PARAM_QUORUM_THRESHOLD_BPS: &str = "quorum_threshold_bps";
+
+// ── Clawback mechanism ────────────────────────────────────────────────────────
+pub const CLAWBACK_DISPUTE_WINDOW_SECONDS: u64 = 604_800; // 7 days

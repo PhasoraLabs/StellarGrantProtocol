@@ -56,6 +56,7 @@ pub enum MilestoneKey {
     ReviewerRecord(Address, u64, u32),
     License(u64, u32),
     Dispute(u64, u32),
+    Clawback(u64, u32),
 }
 
 #[contracttype]

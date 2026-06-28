@@ -4,7 +4,7 @@ use super::keys::{
 };
 use crate::types::{
     AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState, ChecklistSubmission,
-    ComplianceAttestation, ContractError, ContractVersion,
+    ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion,
     ContributorProfile, CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount,
     EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion,
     HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
@@ -510,6 +510,29 @@ impl Storage {
     pub fn remove_dispute(env: &Env, grant_id: u64, milestone_idx: u32) {
         env.storage().persistent().remove(&DataKey::Milestone(
             MilestoneKey::Dispute(grant_id, milestone_idx),
+        ));
+    }
+
+    // ── Clawback mechanism ─────────────────────────────────────────────────────
+
+    pub fn get_clawback(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<ClawbackRequest> {
+        let key = DataKey::Milestone(MilestoneKey::Clawback(grant_id, milestone_idx));
+        let c = env.storage().persistent().get(&key);
+        if c.is_some() {
+            Self::bump(env, &key);
+        }
+        c
+    }
+
+    pub fn set_clawback(env: &Env, grant_id: u64, milestone_idx: u32, clawback: &ClawbackRequest) {
+        let key = DataKey::Milestone(MilestoneKey::Clawback(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, clawback);
+        Self::bump(env, &key);
+    }
+
+    pub fn remove_clawback(env: &Env, grant_id: u64, milestone_idx: u32) {
+        env.storage().persistent().remove(&DataKey::Milestone(
+            MilestoneKey::Clawback(grant_id, milestone_idx),
         ));
     }
 

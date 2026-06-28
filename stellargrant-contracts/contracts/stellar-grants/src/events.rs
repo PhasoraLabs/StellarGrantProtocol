@@ -208,6 +208,59 @@ pub struct DisputeCancelled {
     pub timestamp: u64,
 }
 
+// ── Clawback events ───────────────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackInitiated {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub target: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub initiated_by: Address,
+    pub dispute_window_ends: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackApproved {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackDisputed {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub disputed_by: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackExecuted {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount_recovered: i128,
+    pub token: Address,
+    pub treasury: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackCancelled {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
 // ── Issue #515: Reputation event ──────────────────────────────────────────────
 
 #[contractevent]
@@ -641,6 +694,95 @@ impl Events {
         cancelled_by: Address,
     ) {
         let event = DisputeCancelled {
+            grant_id,
+            milestone_idx,
+            cancelled_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Clawback emit methods ─────────────────────────────────────────────────
+
+    pub fn emit_clawback_initiated(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        target: Address,
+        amount: i128,
+        token: Address,
+        initiated_by: Address,
+        dispute_window_ends: u64,
+    ) {
+        let event = ClawbackInitiated {
+            grant_id,
+            milestone_idx,
+            target,
+            amount,
+            token,
+            initiated_by,
+            dispute_window_ends,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_clawback_approved(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        approver: Address,
+    ) {
+        let event = ClawbackApproved {
+            grant_id,
+            milestone_idx,
+            approver,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_clawback_disputed(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        disputed_by: Address,
+    ) {
+        let event = ClawbackDisputed {
+            grant_id,
+            milestone_idx,
+            disputed_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_clawback_executed(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        amount_recovered: i128,
+        token: Address,
+        treasury: Address,
+    ) {
+        let event = ClawbackExecuted {
+            grant_id,
+            milestone_idx,
+            amount_recovered,
+            token,
+            treasury,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_clawback_cancelled(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        cancelled_by: Address,
+    ) {
+        let event = ClawbackCancelled {
             grant_id,
             milestone_idx,
             cancelled_by,

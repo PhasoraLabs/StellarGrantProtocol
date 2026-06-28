@@ -6,6 +6,7 @@ mod arbitration_pool;
 mod audit;
 mod checklist;
 mod circuit_breaker;
+mod clawback;
 mod collateral;
 mod crowdfund;
 mod compliance;
@@ -71,7 +72,7 @@ pub use events::Events;
 pub use storage::Storage;
 pub use types::{
     AcceptanceCriteria, AnalyticsSnapshot, AuditAction, AuditEntry, BreakerState, CategoryStats,
-    ChecklistSubmission, ComplianceAttestation, ComplianceLevel, ComplianceStatus, ContractVersion,
+    ChecklistSubmission, ClawbackRequest, ClawbackStatus, ComplianceAttestation, ComplianceLevel, ComplianceStatus, ContractVersion,
     ContributorPortfolio, CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus,
     CriterionStatus, DecayConfig, DecayType, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
     EscrowMode, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema, FeeRecord,
@@ -1472,6 +1473,67 @@ impl StellarGrantsContract {
 
     pub fn get_dispute_record(env: Env, grant_id: u64, milestone_idx: u32) -> Option<Dispute> {
         Storage::get_dispute(&env, grant_id, milestone_idx)
+    }
+
+    // ── Clawback Mechanism Entry Points ───────────────────────────────────────
+
+    pub fn clawback_initiate(
+        env: Env,
+        initiator: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        reason: String,
+    ) -> Result<(), ContractError> {
+        initiator.require_auth();
+        clawback::initiate(&env, &initiator, grant_id, milestone_idx, reason)
+    }
+
+    pub fn clawback_approve(
+        env: Env,
+        approver: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        approver.require_auth();
+        clawback::approve(&env, &approver, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_dispute(
+        env: Env,
+        contributor: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        contributor.require_auth();
+        clawback::dispute(&env, &contributor, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_execute(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<i128, ContractError> {
+        caller.require_auth();
+        clawback::execute(&env, &caller, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_cancel(
+        env: Env,
+        admin: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        clawback::cancel(&env, &admin, grant_id, milestone_idx)
+    }
+
+    pub fn get_clawback_request(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<ClawbackRequest> {
+        clawback::get_request(&env, grant_id, milestone_idx)
     }
 
     // ── Issue #516: Runtime Protocol Configuration Entry Points ──────────────
