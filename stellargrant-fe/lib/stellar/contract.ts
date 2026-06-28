@@ -12,10 +12,12 @@ import {
   BASE_FEE,
   nativeToScVal,
   xdr,
+  Asset,
 } from "@stellar/stellar-sdk";
 import { rpcClient, horizonClient, networkPassphraseConfig } from "./client";
 import { decodeScVal } from "./decode";
 import { CONTRACT_ID } from "@/lib/constants";
+import { Logger, type ILogger } from "@/lib/logger";
 
 // Dummy read-only account used for view simulations (no funds needed).
 const DUMMY_ACCOUNT = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
@@ -53,14 +55,18 @@ const VIEW_TTL_MS = 30_000; // 30 seconds
 export class ContractClient {
   private _contractId: string;
   private _networkPassphrase: string;
+  private _logger: ILogger;
 
   constructor(config?: {
     contractId?: string;
     rpcUrl?: string;
     networkPassphrase?: string;
+    /** Provide a custom ILogger or leave unset to use the default SDK logger */
+    logger?: ILogger;
   }) {
     this._contractId = config?.contractId || CONTRACT_ID;
     this._networkPassphrase = config?.networkPassphrase || networkPassphraseConfig;
+    this._logger = config?.logger ?? new Logger({ prefix: "[ContractClient]" });
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────
@@ -68,11 +74,17 @@ export class ContractClient {
   /**
    * Simulate a read-only contract view call and decode the return value.
    * Results are cached for VIEW_TTL_MS to reduce redundant RPC calls.
+   * In debug mode the raw XDR and simulation result are logged.
    */
   private async simulateView<T>(method: string, args: xdr.ScVal[]): Promise<T> {
     const cacheKey = `${method}:${JSON.stringify(args.map((a) => a.toXDR("base64")))}`;
     const cached = VIEW_CACHE.get<T>(cacheKey);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      this._logger.debug("simulateView cache hit", { method });
+      return cached;
+    }
+
+    this._logger.debug("simulateView start", { method, args: args.map((a) => a.toXDR("base64")) });
 
     const account = await horizonClient.loadAccount(DUMMY_ACCOUNT);
     const tx = new TransactionBuilder(account, {
@@ -83,9 +95,14 @@ export class ContractClient {
       .setTimeout(30)
       .build();
 
+    const txXdr = tx.toEnvelope().toXDR("base64");
+    this._logger.debug("simulateView tx XDR", { method, xdr: txXdr });
+
     const result = await rpcClient.simulateTransaction(tx);
+    this._logger.debug("simulateView RPC response", { method, result: JSON.stringify(result) });
 
     if ("error" in result) {
+      this._logger.error("simulateView error", { method, error: result.error });
       throw new Error(`Contract simulation error (${method}): ${result.error}`);
     }
 
@@ -94,6 +111,7 @@ export class ContractClient {
     }
 
     const decoded = decodeScVal<T>(result.result.retval);
+    this._logger.debug("simulateView decoded result", { method, decoded: String(decoded) });
     VIEW_CACHE.set(cacheKey, decoded, VIEW_TTL_MS);
     return decoded;
   }
@@ -107,6 +125,8 @@ export class ContractClient {
     method: string,
     args: xdr.ScVal[]
   ): Promise<string> {
+    this._logger.debug("buildWriteXdr start", { method, caller: callerAddress });
+
     const account = await horizonClient.loadAccount(callerAddress);
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -115,7 +135,10 @@ export class ContractClient {
       .addOperation(new Contract(this._contractId).call(method, ...args))
       .setTimeout(30)
       .build();
-    return tx.toEnvelope().toXDR("base64");
+
+    const xdrStr = tx.toEnvelope().toXDR("base64");
+    this._logger.debug("buildWriteXdr XDR ready", { method, xdr: xdrStr });
+    return xdrStr;
   }
 
   // ── Read-only methods ────────────────────────────────────────────────────
@@ -152,6 +175,145 @@ export class ContractClient {
   /** Get the total number of grants ever created. */
   async grantCount(): Promise<bigint> {
     return this.simulateView<bigint>("grant_count", []);
+  }
+
+  // ── Allowance management (Issue #493) ────────────────────────────────────
+
+  /**
+   * Check the current SAC token allowance that `owner` has granted to `spender`.
+   * Returns 0n for native XLM since allowances are not applicable.
+   */
+  async getAllowance(params: {
+    tokenAddress: string;
+    owner: string;
+    spender: string;
+  }): Promise<bigint> {
+    if (isNativeXlmAddress(params.tokenAddress)) {
+      this._logger.debug("getAllowance: native XLM — allowances not required");
+      return 0n;
+    }
+
+    this._logger.debug("getAllowance", { token: params.tokenAddress, owner: params.owner, spender: params.spender });
+
+    // SAC tokens expose an `allowance` view function
+    const account = await horizonClient.loadAccount(DUMMY_ACCOUNT);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this._networkPassphrase,
+    })
+      .addOperation(
+        new Contract(params.tokenAddress).call(
+          "allowance",
+          nativeToScVal(params.owner, { type: "address" }),
+          nativeToScVal(params.spender, { type: "address" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const txXdr = tx.toEnvelope().toXDR("base64");
+    this._logger.debug("getAllowance tx XDR", { xdr: txXdr });
+
+    const result = await rpcClient.simulateTransaction(tx);
+    this._logger.debug("getAllowance RPC response", { result: JSON.stringify(result) });
+
+    if ("error" in result) {
+      this._logger.warn("getAllowance simulation error", { error: result.error });
+      return 0n;
+    }
+
+    if (!result.result) return 0n;
+
+    const decoded = decodeScVal<bigint>(result.result.retval);
+    this._logger.debug("getAllowance decoded", { allowance: String(decoded) });
+    return decoded ?? 0n;
+  }
+
+  /**
+   * Build the unsigned XDR to set (or increase) a SAC token allowance.
+   * Approval expires ~1 day from the current ledger.
+   * No-op for native XLM — returns null since no allowance is needed.
+   */
+  async setAllowance(params: {
+    tokenAddress: string;
+    amount: bigint;
+    owner: string;
+    spender: string;
+  }): Promise<string | null> {
+    if (isNativeXlmAddress(params.tokenAddress)) {
+      this._logger.debug("setAllowance: native XLM — skipping (not required)");
+      return null;
+    }
+    if (!params.tokenAddress) throw new Error("tokenAddress is required");
+    if (!params.owner) throw new Error("owner is required");
+    if (!params.spender) throw new Error("spender is required");
+    if (params.amount <= 0n) throw new Error("amount must be greater than zero");
+
+    this._logger.debug("setAllowance", { token: params.tokenAddress, amount: String(params.amount) });
+
+    const account = await horizonClient.loadAccount(params.owner);
+    const ledger = await rpcClient.getLatestLedger();
+    const expirationLedger = ledger.sequence + Math.ceil(86400 / 5);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this._networkPassphrase,
+    })
+      .addOperation(
+        new Contract(params.tokenAddress).call(
+          "approve",
+          nativeToScVal(params.owner, { type: "address" }),
+          nativeToScVal(params.spender, { type: "address" }),
+          nativeToScVal(params.amount, { type: "i128" }),
+          nativeToScVal(expirationLedger, { type: "u32" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const xdrStr = tx.toEnvelope().toXDR("base64");
+    this._logger.debug("setAllowance XDR ready", { xdr: xdrStr });
+    return xdrStr;
+  }
+
+  /**
+   * Check the current allowance and, if insufficient, build the XDR to set it.
+   * For native XLM this always returns null (no allowance step needed).
+   *
+   * @returns The approve XDR string if an allowance transaction is required,
+   *          or null if the existing allowance is already sufficient.
+   */
+  async ensureAllowance(params: {
+    tokenAddress: string;
+    requiredAmount: bigint;
+    owner: string;
+    spender: string;
+  }): Promise<string | null> {
+    if (isNativeXlmAddress(params.tokenAddress)) {
+      this._logger.debug("ensureAllowance: native XLM — no allowance needed");
+      return null;
+    }
+
+    const current = await this.getAllowance({
+      tokenAddress: params.tokenAddress,
+      owner: params.owner,
+      spender: params.spender,
+    });
+
+    this._logger.debug("ensureAllowance check", {
+      current: String(current),
+      required: String(params.requiredAmount),
+      sufficient: current >= params.requiredAmount,
+    });
+
+    if (current >= params.requiredAmount) return null;
+
+    return this.setAllowance({
+      tokenAddress: params.tokenAddress,
+      amount: params.requiredAmount,
+      owner: params.owner,
+      spender: params.spender,
+    });
   }
 
   // ── Write methods (return unsigned XDR) ──────────────────────────────────
@@ -346,3 +508,33 @@ export class ContractClient {
 
 // Export singleton instance
 export const contractClient = new ContractClient();
+
+// ── Native XLM helpers (shared by allowance + xlm-native modules) ─────────
+
+/** The "native" sentinel used throughout the codebase for native XLM. */
+export const NATIVE_SENTINEL = "native";
+
+/**
+ * Derive the SAC contract ID for native XLM on a given network.
+ * Uses `Asset.native().contractId(networkPassphrase)`.
+ */
+export function getNativeXlmContractId(networkPassphrase?: string): string {
+  const passphrase = networkPassphrase ?? networkPassphraseConfig;
+  return Asset.native().contractId(passphrase);
+}
+
+/**
+ * Return true when `tokenAddress` refers to native XLM — either via
+ * the "native" sentinel string or via the computed XLM SAC contract ID.
+ */
+export function isNativeXlmAddress(tokenAddress: string, networkPassphrase?: string): boolean {
+  if (!tokenAddress) return false;
+  const lower = tokenAddress.toLowerCase();
+  if (lower === NATIVE_SENTINEL) return true;
+  try {
+    const sacId = getNativeXlmContractId(networkPassphrase);
+    return tokenAddress === sacId;
+  } catch {
+    return false;
+  }
+}
