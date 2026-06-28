@@ -435,6 +435,27 @@ pub struct ProtocolConfig {
     pub reviewer_reward_pool_bps: u32,
     /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
     pub fast_bonus_bps: u32,
+    /// Number of required approvals for high value grant release. Default is 2.
+    pub multisig_escrow_threshold: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseApproval {
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseRequest {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub recipient: Address,
+    pub approvals: Vec<EscrowReleaseApproval>,
+    pub expires_at: u64,
+    pub executed: bool,
 }
 
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────

@@ -252,6 +252,8 @@ pub enum DataKey {
     // Per-grant pause
     GrantPaused(u64),
 
+    EscrowReleaseRequest(u64, u32),
+
     // Migration guard
     V2KeysMigrated,
 }

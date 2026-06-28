@@ -16,6 +16,7 @@ mod dispute;
 mod emergency;
 mod errors;
 mod escrow;
+mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
@@ -607,7 +608,12 @@ impl StellarGrantsContract {
                 }
             }
             if owner_amount > 0 {
-                escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                let config: ProtocolConfig = env.storage().persistent().get(&storage::keys::DataKey::Config).unwrap();
+                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                    crate::escrow_multisig::create_request(env, grant_id, 0, owner_amount, grant.owner.clone())?;
+                } else {
+                    escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                }
             }
         }
         if remaining_balance > 0 {
