@@ -257,6 +257,10 @@ pub enum DataKey {
     BridgeRelayer(Address),
     CrossChainProof(u64, u32),
 
+    MilestoneTemplate(u64),
+    TemplatesByOwner(Address),
+    TemplateCounter,
+
     // Migration guard
     V2KeysMigrated,
 }

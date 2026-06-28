@@ -43,6 +43,7 @@ mod migration;
 mod milestone_deps;
 mod milestone_extension;
 mod milestone_nft;
+mod milestone_template;
 mod multi_grant;
 mod multisig;
 mod notification;
@@ -1294,6 +1295,29 @@ impl StellarGrantsContract {
     /// Get all allocations for a round after computation.
     pub fn get_matching_allocations(env: Env, round_id: u32) -> Vec<MatchingAllocation> {
         matching::get_allocations(&env, round_id)
+    }
+
+    // ── Milestone Templates ────────────────────────────────────────────────────
+    
+    pub fn save_template(
+        env: Env,
+        owner: Address,
+        name: String,
+        description: String,
+        category: crate::types::TemplateCategory,
+        default_amount_pct: u32,
+        is_public: bool,
+    ) -> Result<u64, ContractError> {
+        milestone_template::save_template(&env, owner, name, description, category, default_amount_pct, is_public)
+    }
+    
+    pub fn create_milestones_from_template(
+        env: Env,
+        caller: Address,
+        template_ids: Vec<u64>,
+        total_amount: i128,
+    ) -> Result<Vec<(String, i128)>, ContractError> {
+        milestone_template::create_from_templates(&env, caller, template_ids, total_amount)
     }
 
     // ── KYC Integration (#43) ───────────────────────────────────────

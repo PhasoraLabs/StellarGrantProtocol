@@ -487,6 +487,30 @@ pub struct CrossChainProof {
     pub verified_at: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TemplateCategory {
+    General = 0,
+    Engineering = 1,
+    Design = 2,
+    Marketing = 3,
+    Research = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MilestoneTemplate {
+    pub id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub description: String,
+    pub category: TemplateCategory,
+    pub default_amount_pct: u32,
+    pub is_public: bool,
+    pub use_count: u32,
+}
+
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
 
 #[contracttype]
