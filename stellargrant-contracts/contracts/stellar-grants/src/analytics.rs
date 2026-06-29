@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::storage::Storage;
 use crate::types::{AnalyticsSnapshot, CategoryStats, RollingWindow};
 use soroban_sdk::{Env, Symbol, Vec};
@@ -133,7 +134,8 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
                 .get(window.window_size.saturating_sub(7))
                 .unwrap();
             if tvl_7days_ago > 0 {
-                (((current_tvl - tvl_7days_ago) * constants::BASIS_POINTS_SCALE as i128) / tvl_7days_ago) as i32
+                ((current_tvl - tvl_7days_ago) * constants::BASIS_POINTS_SCALE as i128)
+                    / tvl_7days_ago
             } else {
                 0
             }
@@ -145,8 +147,8 @@ pub fn build_snapshot(env: &Env) -> AnalyticsSnapshot {
     };
 
     let snapshot = AnalyticsSnapshot {
-        avg_milestone_completion_ledgers: milestone_avg as u32,
-        avg_reviewer_turnaround_ledgers: reviewer_avg as u32,
+        avg_milestone_comp_ledgers: milestone_avg as u32,
+        avg_reviewer_turn_ledgers: reviewer_avg as u32,
         overall_success_rate_bps,
         top_category_id,
         tvl_7day_growth_bps,
@@ -164,8 +166,10 @@ pub fn get_snapshot(env: &Env) -> Option<AnalyticsSnapshot> {
     // Check staleness
     let current_ledger = env.ledger().sequence();
     let snapshot_ledger = env.ledger().sequence(); // Simplified - in real impl track ledger
-    
-    if current_ledger.saturating_sub(snapshot_ledger) >= constants::ANALYTICS_SNAPSHOT_STALENESS_LEDGERS {
+
+    if current_ledger.saturating_sub(snapshot_ledger)
+        >= constants::ANALYTICS_SNAPSHOT_STALENESS_LEDGERS
+    {
         // Stale, rebuild
         return Some(build_snapshot(env));
     }

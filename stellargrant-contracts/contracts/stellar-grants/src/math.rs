@@ -32,7 +32,8 @@ pub fn basis_points_of(amount: i128, basis_points: u32) -> Result<i128, Contract
         .checked_mul(bps_i)
         .ok_or(ContractError::InvalidInput)?
         / 10_000;
-    whole.checked_add(remainder)
+    whole
+        .checked_add(remainder)
         .ok_or(ContractError::InvalidInput)
 }
 

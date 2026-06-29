@@ -31,7 +31,7 @@ pub fn deduct_and_transfer(
     let reviewer_reward_bps = config.reviewer_reward_pool_bps;
 
     // Split fee: reviewer reward pool + treasury
-    let reviewer_reward_amount = basis_points_of(fee, reviewer_reward_bps)?;
+    let reviewer_reward_amount = crate::math::basis_points_of(fee, reviewer_reward_bps)?;
     let treasury_amount = fee
         .checked_sub(reviewer_reward_amount)
         .ok_or(ContractError::InvalidInput)?;

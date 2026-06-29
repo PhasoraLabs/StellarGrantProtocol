@@ -11,11 +11,15 @@ use soroban_sdk::{
     testutils::{Address as TestAddress, Ledger as _},
     Address, Env, String, Vec,
 };
-use stellar_grants::{
-    ContractError, GrantStatus, MilestoneState, StellarGrantsContractClient,
-};
+use stellar_grants::{ContractError, GrantStatus, MilestoneState, StellarGrantsContractClient};
 
-fn setup() -> (Env, StellarGrantsContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    StellarGrantsContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
 

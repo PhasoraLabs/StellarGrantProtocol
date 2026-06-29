@@ -195,11 +195,7 @@ pub fn last_global_update(env: &Env) -> u64 {
 
 pub fn state_fingerprint(env: &Env) -> soroban_sdk::BytesN<32> {
     let counter_key = DataKey::Grant(GrantKey::Counter);
-    let total_grants: u64 = env
-        .storage()
-        .persistent()
-        .get(&counter_key)
-        .unwrap_or(0u64);
+    let total_grants: u64 = env.storage().persistent().get(&counter_key).unwrap_or(0u64);
 
     let last_update = last_global_update(env);
 
@@ -211,14 +207,12 @@ pub fn state_fingerprint(env: &Env) -> soroban_sdk::BytesN<32> {
 }
 
 pub fn set_last_updated(env: &Env, grant_id: u64, timestamp: u64) {
-    env.storage().persistent().set(
-        &DataKey::GrantLastUpdated(grant_id),
-        &timestamp,
-    );
-    env.storage().persistent().set(
-        &DataKey::GlobalLastUpdated,
-        &timestamp,
-    );
+    env.storage()
+        .persistent()
+        .set(&DataKey::GrantLastUpdated(grant_id), &timestamp);
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalLastUpdated, &timestamp);
 }
 
 fn get_last_updated(env: &Env, grant_id: u64) -> u64 {

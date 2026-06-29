@@ -3,8 +3,7 @@
 /// Tracks the deadline by which a reviewer must cast their vote.
 /// If the deadline passes without a vote the reviewer is marked as
 /// SLA-breached and loses reward accrual for that milestone.
-
-use soroban_sdk::{contracttype, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
 
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
 const PERSISTENT_TTL_EXTEND_TO: u32 = 1_000_000;

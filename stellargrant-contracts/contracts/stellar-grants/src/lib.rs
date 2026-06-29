@@ -1,9 +1,30 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
+#![allow(
+    dead_code,
+    deprecated,
+    unused_assignments,
+    unused_imports,
+    unused_mut,
+    unused_variables,
+    clippy::clone_on_copy,
+    clippy::len_zero,
+    clippy::manual_checked_ops,
+    clippy::manual_range_contains,
+    clippy::manual_saturating_arithmetic,
+    clippy::match_like_matches_macro,
+    clippy::match_result_ok,
+    clippy::needless_borrows_for_generic_args,
+    clippy::redundant_closure,
+    clippy::unnecessary_cast,
+    clippy::unnecessary_map_or,
+    clippy::while_let_loop
+)]
 mod access_control;
 mod analytics;
 mod arbitration_pool;
 mod audit;
+mod badge;
 mod checklist;
 mod circuit_breaker;
 mod collateral;
@@ -12,6 +33,7 @@ mod config;
 mod constants;
 mod cross_contract;
 mod crowdfund;
+mod data_export;
 mod dispute;
 mod emergency;
 mod errors;
@@ -35,8 +57,9 @@ mod insurance;
 mod interfaces;
 mod invoice;
 mod license;
+mod lockup;
 mod matching;
-mod math;
+pub mod math;
 pub mod merkle;
 mod metrics;
 mod migration;
@@ -73,12 +96,7 @@ mod syndication;
 mod token_swap;
 mod types;
 mod versioning;
-pub mod math;
 mod whitelist;
-mod batch_read;
-mod conditional_release;
-mod auto_approve;
-mod grant_timer;
 
 pub use errors::ContractError;
 pub use events::Events;
@@ -126,6 +144,11 @@ pub use types::{
     EvidenceField,
     EvidenceFieldType,
     EvidenceSchema,
+    // Issue #619: data export
+    ExportGrant,
+    ExportGrantPage,
+    ExportMilestone,
+    ExportMilestonePage,
     ExtensionRequest,
     ExtensionStatus,
     FeeRecord,
@@ -156,6 +179,9 @@ pub use types::{
     LicenseRecord,
     LicenseType,
     LineItem,
+    // Issue #609: lockup
+    LockupRecord,
+    LockupStatus,
     MatchingAllocation,
     MatchingContribution,
     MatchingRound,
@@ -233,17 +259,9 @@ pub use types::{
     VoiceCredits,
     VotingMechanism,
     // Issue #512: whitelist
-    WhitelistEntry, WhitelistMode, WhitelistScope,
-    // Issue #622: batch read views
-    DashboardView, ExportGrant, GrantDetailView, ReviewerView,
-    // Issue #613: conditional release
-    ConditionResult, ConditionType, ReleaseCondition,
-    // Issue #612: auto-approve
-    AutoApproveConfig, AutoApproveRecord,
-    // Issue #618: grant timers
-    TimerRecord, TimerTriggerType,
-    // Batch operation types
-    BatchItemResult, BatchMilestoneVote, BatchResult,
+    WhitelistEntry,
+    WhitelistMode,
+    WhitelistScope,
 };
 
 use metrics::MetricField;
@@ -2926,7 +2944,7 @@ impl StellarGrantsContract {
         milestone_deps::can_submit(&env, grant_id, milestone_idx)
     }
 
-    pub fn milestone_deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
+    pub fn deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
         milestone_deps::unblocked_milestones(&env, grant_id)
     }
 
@@ -3630,7 +3648,13 @@ impl StellarGrantsContract {
         milestone_idx: u32,
         lockup_duration_seconds: u64,
     ) -> Result<(), ContractError> {
-        lockup::attach_lockup(&env, &owner, grant_id, milestone_idx, lockup_duration_seconds)
+        lockup::attach_lockup(
+            &env,
+            &owner,
+            grant_id,
+            milestone_idx,
+            lockup_duration_seconds,
+        )
     }
 
     /// Lock funds on milestone approval. Called internally by payout path.

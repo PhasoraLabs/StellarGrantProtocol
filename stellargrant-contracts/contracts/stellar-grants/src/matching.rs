@@ -36,6 +36,7 @@ pub fn create_round(
     duration_ledgers: u32,
     eligible_grant_ids: Vec<u64>,
 ) -> Result<u32, ContractError> {
+    crate::reentrancy::protect(env)?;
     if matching_pool <= 0 {
         return Err(ContractError::InvalidInput);
     }
@@ -86,7 +87,14 @@ pub fn create_round(
     );
 
     // Transfer matching pool from admin to contract
-    token::Client::new(env, token).transfer(admin, &env.current_contract_address(), &matching_pool);
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, token).transfer(
+            admin,
+            &env.current_contract_address(),
+            &matching_pool,
+        );
+        Ok(())
+    })?;
 
     Ok(round_id)
 }
@@ -99,6 +107,7 @@ pub fn contribute(
     grant_id: u64,
     amount: i128,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     if amount <= 0 {
         return Err(ContractError::InvalidInput);
     }
@@ -162,11 +171,14 @@ pub fn contribute(
     );
 
     // Transfer from contributor to contract escrow
-    token::Client::new(env, &round.token).transfer(
-        contributor,
-        &env.current_contract_address(),
-        &amount,
-    );
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, &round.token).transfer(
+            contributor,
+            &env.current_contract_address(),
+            &amount,
+        );
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -250,6 +262,7 @@ pub fn compute_allocations(
 
 /// Distribute match amounts to each eligible grant's escrow.
 pub fn distribute(env: &Env, round_id: u32) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     let round_key = DataKey::Matching(MatchingKey::Round(round_id));
     let mut round: MatchingRound = env
         .storage()
@@ -347,6 +360,7 @@ fn compute_grant_qf_score(env: &Env, round_id: u32, grant_id: u64) -> (i128, i12
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_isqrt_zero() {
@@ -429,7 +443,7 @@ mod tests {
     #[test]
     fn test_matching_contribution_structure() {
         let env = soroban_sdk::Env::default();
-        let contributor = Address::random(&env);
+        let contributor = Address::generate(&env);
 
         let contribution = MatchingContribution {
             contributor: contributor.clone(),
@@ -446,8 +460,8 @@ mod tests {
     #[test]
     fn test_matching_round_structure() {
         let env = soroban_sdk::Env::default();
-        let admin = Address::random(&env);
-        let token = Address::random(&env);
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
         let grant_ids = Vec::from_array(&env, [1u64, 2u64, 3u64]);
 
         let round = MatchingRound {
