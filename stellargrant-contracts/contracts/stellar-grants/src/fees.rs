@@ -29,10 +29,13 @@ pub fn deduct_and_transfer(
 
     let config = crate::config::get_config(env);
     let reviewer_reward_bps = config.reviewer_reward_pool_bps;
+    let revenue_share_bps = config.revenue_share_pool_bps;
 
     // Split fee: reviewer reward pool + treasury
-    let reviewer_reward_amount = basis_points_of(fee, reviewer_reward_bps)?;
+    let reviewer_reward_amount = crate::math::basis_points_of(fee, reviewer_reward_bps)?;
     let treasury_amount = fee
+        .checked_sub(revenue_share_amount)
+        .ok_or(ContractError::InvalidInput)?
         .checked_sub(reviewer_reward_amount)
         .ok_or(ContractError::InvalidInput)?;
 
@@ -48,6 +51,10 @@ pub fn deduct_and_transfer(
     // Fund reviewer reward pool
     if reviewer_reward_amount > 0 {
         crate::reviewer_reward::fund_pool(env, token, reviewer_reward_amount);
+    }
+
+    if revenue_share_amount > 0 {
+        crate::revenue_share::deposit_revenue(env, token, revenue_share_amount);
     }
 
     Storage::add_fees_collected(env, token, fee);

@@ -1,8 +1,8 @@
 use soroban_sdk::{Address, Env, Vec};
 
+use crate::constants;
 use crate::storage::{DataKey, GrantKey};
 use crate::types::GrantStatus;
-use crate::constants;
 
 fn push_to_index(env: &Env, key: &DataKey, grant_id: u64) {
     let mut list: Vec<u64> = env

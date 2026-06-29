@@ -565,6 +565,36 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    // ── Issue #632: Contributor Verification ────────────────────────────────
+
+    pub fn get_verifier_contract(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::VerifierContract)
+    }
+
+    pub fn set_verifier_contract(env: &Env, verifier: &Address) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::VerifierContract, verifier);
+    }
+
+    pub fn get_verification_attestation(
+        env: &Env,
+        address: &Address,
+    ) -> Option<VerificationAttestation> {
+        let key = DataKey::VerificationAttestation(address.clone());
+        let attestation = env.storage().persistent().get(&key);
+        if attestation.is_some() {
+            Self::bump(env, &key);
+        }
+        attestation
+    }
+
+    pub fn set_verification_attestation(env: &Env, attestation: &VerificationAttestation) {
+        let key = DataKey::VerificationAttestation(attestation.subject.clone());
+        env.storage().persistent().set(&key, attestation);
+        Self::bump(env, &key);
+    }
+
     // ── Issue #517: cumulative fees per token ─────────────────────────────────
 
     pub fn get_fees_collected(env: &Env, token: &Address) -> i128 {

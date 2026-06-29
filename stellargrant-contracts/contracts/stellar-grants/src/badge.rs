@@ -73,9 +73,10 @@ fn write_award(
         grant_id,
         milestone_idx,
     };
-    env.storage()
-        .persistent()
-        .set(&BadgeKey::Badge(contributor.clone(), badge_type.clone()), &record);
+    env.storage().persistent().set(
+        &BadgeKey::Badge(contributor.clone(), badge_type.clone()),
+        &record,
+    );
 
     let mut badges = get_badges_raw(env, contributor);
     badges.push_back(record.clone());
@@ -88,9 +89,10 @@ fn write_award(
         .persistent()
         .get(&BadgeKey::BadgeAwardCount(badge_type.clone()))
         .unwrap_or(0);
-    env.storage()
-        .persistent()
-        .set(&BadgeKey::BadgeAwardCount(badge_type.clone()), &count.saturating_add(1));
+    env.storage().persistent().set(
+        &BadgeKey::BadgeAwardCount(badge_type.clone()),
+        &count.saturating_add(1),
+    );
 
     let mut registry: Vec<BadgeRecord> = env
         .storage()
@@ -98,7 +100,9 @@ fn write_award(
         .get(&BadgeKey::BadgeRegistry)
         .unwrap_or_else(|| Vec::new(env));
     registry.push_back(record.clone());
-    env.storage().persistent().set(&BadgeKey::BadgeRegistry, &registry);
+    env.storage()
+        .persistent()
+        .set(&BadgeKey::BadgeRegistry, &registry);
 
     BadgeAwarded {
         contributor: contributor.clone(),
@@ -137,15 +141,69 @@ pub fn has_badge(env: &Env, contributor: &Address, badge_type: BadgeType) -> boo
 
 pub fn get_criteria(badge_type: BadgeType) -> BadgeCriteria {
     match badge_type {
-        BadgeType::FirstMilestone => BadgeCriteria { badge_type, required_milestones: Some(1), required_reputation: None, required_grants: None, one_time: true },
-        BadgeType::TenMilestones => BadgeCriteria { badge_type, required_milestones: Some(10), required_reputation: None, required_grants: None, one_time: true },
-        BadgeType::FiftyMilestones => BadgeCriteria { badge_type, required_milestones: Some(50), required_reputation: None, required_grants: None, one_time: true },
-        BadgeType::BronzeContributor => BadgeCriteria { badge_type, required_milestones: None, required_reputation: Some(100), required_grants: None, one_time: true },
-        BadgeType::SilverContributor => BadgeCriteria { badge_type, required_milestones: None, required_reputation: Some(400), required_grants: None, one_time: true },
-        BadgeType::GoldContributor => BadgeCriteria { badge_type, required_milestones: None, required_reputation: Some(700), required_grants: None, one_time: true },
-        BadgeType::PlatinumContributor => BadgeCriteria { badge_type, required_milestones: None, required_reputation: Some(900), required_grants: None, one_time: true },
-        BadgeType::EarlyAdopter => BadgeCriteria { badge_type, required_milestones: None, required_reputation: None, required_grants: Some(1), one_time: true },
-        _ => BadgeCriteria { badge_type, required_milestones: None, required_reputation: None, required_grants: None, one_time: true },
+        BadgeType::FirstMilestone => BadgeCriteria {
+            badge_type,
+            required_milestones: Some(1),
+            required_reputation: None,
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::TenMilestones => BadgeCriteria {
+            badge_type,
+            required_milestones: Some(10),
+            required_reputation: None,
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::FiftyMilestones => BadgeCriteria {
+            badge_type,
+            required_milestones: Some(50),
+            required_reputation: None,
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::BronzeContributor => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: Some(100),
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::SilverContributor => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: Some(400),
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::GoldContributor => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: Some(700),
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::PlatinumContributor => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: Some(900),
+            required_grants: None,
+            one_time: true,
+        },
+        BadgeType::EarlyAdopter => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: None,
+            required_grants: Some(1),
+            one_time: true,
+        },
+        _ => BadgeCriteria {
+            badge_type,
+            required_milestones: None,
+            required_reputation: None,
+            required_grants: None,
+            one_time: true,
+        },
     }
 }
 

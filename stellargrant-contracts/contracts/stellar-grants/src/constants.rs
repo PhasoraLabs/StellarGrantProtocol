@@ -102,6 +102,9 @@ pub const DEFAULT_DAO_QUORUM_VOTES: u64 = 3;
 pub const MAX_DAO_TITLE_LEN: u32 = 128;
 pub const MAX_DAO_DESCRIPTION_LEN: u32 = 2_048;
 
+// ── Revenue Share (#631) ────────────────────────────────────────────────────
+pub const EPOCH_DURATION_SECONDS: u64 = 604_800;
+
 // ── Bounty-Mode Grants (#533) ───────────────────────────────────────────────
 pub const MAX_BOUNTY_SUBMISSIONS: u32 = 50;
 

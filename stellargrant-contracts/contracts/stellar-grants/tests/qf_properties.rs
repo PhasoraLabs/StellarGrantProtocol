@@ -34,10 +34,7 @@ fn qf_score(contributions: &[u128]) -> u128 {
 /// Compute allocation for a project given its contributions and the total
 /// matching pool. Allocation is proportional to the project's QF score
 /// relative to the total QF score across all projects.
-fn compute_allocations(
-    project_scores: &[u128],
-    pool_size: u128,
-) -> Vec<u128> {
+fn compute_allocations(project_scores: &[u128], pool_size: u128) -> Vec<u128> {
     let total_score: u128 = project_scores.iter().sum();
     if total_score == 0 {
         return project_scores.iter().map(|_| 0u128).collect();

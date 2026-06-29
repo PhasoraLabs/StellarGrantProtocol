@@ -109,11 +109,12 @@ pub fn can_relay(env: &Env, sender: &Address, action: &RelayableAction) -> bool 
 
         let current_time = env.ledger().timestamp();
 
-        let daily_relays_used = if current_time > allowance.window_start + constants::SECONDS_PER_DAY {
-            0
-        } else {
-            allowance.daily_relays_used
-        };
+        let daily_relays_used =
+            if current_time > allowance.window_start + constants::SECONDS_PER_DAY {
+                0
+            } else {
+                allowance.daily_relays_used
+            };
 
         if daily_relays_used >= config.max_relays_per_address_per_day {
             return false;

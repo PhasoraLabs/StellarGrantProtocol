@@ -236,6 +236,8 @@ pub enum DataKey {
     ReferralCode(Bytes),
     WhitelistEntries(WhitelistScope),
     WhitelistMode(WhitelistScope),
+    VerifierContract,
+    VerificationAttestation(Address),
 
     // Notifications
     NotifSub(Address, u32, u32, u128),
@@ -249,6 +251,18 @@ pub enum DataKey {
 
     // Issue #619: Data export state fingerprint
     GlobalLastUpdated,
+
+    // Per-grant pause
+    GrantPaused(u64),
+
+    EscrowReleaseRequest(u64, u32),
+
+    BridgeRelayer(Address),
+    CrossChainProof(u64, u32),
+
+    MilestoneTemplate(u64),
+    TemplatesByOwner(Address),
+    TemplateCounter,
 
     // Migration guard
     V2KeysMigrated,

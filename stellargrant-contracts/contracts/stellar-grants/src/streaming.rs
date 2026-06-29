@@ -60,6 +60,7 @@ pub fn create_stream(
     rate_per_ledger: i128,
     duration_ledgers: u32,
 ) -> Result<u32, ContractError> {
+    crate::reentrancy::protect(env)?;
     sender.require_auth();
 
     if rate_per_ledger <= 0 {
@@ -79,7 +80,10 @@ pub fn create_stream(
         .ok_or(ContractError::InvalidInput)?;
 
     let token_client = token::Client::new(env, token);
-    token_client.transfer(sender, env.current_contract_address(), &deposited);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(sender, env.current_contract_address(), &deposited);
+        Ok(())
+    })?;
 
     let stream_id = Storage::next_stream_id(env);
     let stream = PaymentStream {
@@ -120,6 +124,7 @@ pub fn withdraw_stream(
     recipient: &Address,
     stream_id: u32,
 ) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     recipient.require_auth();
 
     let mut stream = Storage::get_stream(env, stream_id).ok_or(ContractError::StreamNotFound)?;
@@ -149,7 +154,10 @@ pub fn withdraw_stream(
     Storage::set_stream(env, &stream);
 
     let token_client = token::Client::new(env, &stream.token);
-    token_client.transfer(&env.current_contract_address(), recipient, &claimable);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(&env.current_contract_address(), recipient, &claimable);
+        Ok(())
+    })?;
 
     StreamWithdrawn {
         stream_id,
@@ -184,6 +192,7 @@ pub fn cancel_stream(
     sender: &Address,
     stream_id: u32,
 ) -> Result<(i128, i128), ContractError> {
+    crate::reentrancy::protect(env)?;
     sender.require_auth();
 
     let mut stream = Storage::get_stream(env, stream_id).ok_or(ContractError::StreamNotFound)?;
@@ -207,16 +216,19 @@ pub fn cancel_stream(
 
     let token_client = token::Client::new(env, &stream.token);
 
-    if recipient_payout > 0 {
-        token_client.transfer(
-            &env.current_contract_address(),
-            &stream.recipient,
-            &recipient_payout,
-        );
-    }
-    if sender_refund > 0 {
-        token_client.transfer(&env.current_contract_address(), sender, &sender_refund);
-    }
+    crate::reentrancy::protect_external_call(env, || {
+        if recipient_payout > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &stream.recipient,
+                &recipient_payout,
+            );
+        }
+        if sender_refund > 0 {
+            token_client.transfer(&env.current_contract_address(), sender, &sender_refund);
+        }
+        Ok(())
+    })?;
 
     StreamCancelled {
         stream_id,

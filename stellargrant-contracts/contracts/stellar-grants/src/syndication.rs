@@ -44,7 +44,7 @@ pub fn form_syndicate(
         member_count: 0,
         min_commitment,
         max_members,
-        formation_deadline: env.ledger().sequence().saturating_add(deadline_ledgers),
+        formation_deadline: (env.ledger().sequence().saturating_add(deadline_ledgers)) as u64,
     };
 
     Storage::set_syndicate_grant(env, grant_id, &syndicate);
@@ -72,7 +72,7 @@ pub fn join_syndicate(
     if syndicate.status != SyndicateStatus::Forming {
         return Err(ContractError::InvalidState);
     }
-    if env.ledger().sequence() > syndicate.formation_deadline {
+    if (env.ledger().sequence() as u64) > syndicate.formation_deadline {
         return Err(ContractError::DeadlinePassed);
     }
     if amount < syndicate.min_commitment {
@@ -196,7 +196,7 @@ pub fn withdraw_syndicate(
     if syndicate.status != SyndicateStatus::Forming {
         return Err(ContractError::InvalidState);
     }
-    if env.ledger().sequence() <= syndicate.formation_deadline {
+    if (env.ledger().sequence() as u64) <= syndicate.formation_deadline {
         return Err(ContractError::InvalidState);
     }
 

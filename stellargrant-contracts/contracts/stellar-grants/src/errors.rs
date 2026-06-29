@@ -15,6 +15,7 @@ pub enum ContractError {
     AlreadyVoted = 8,
     MilestoneNotFound = 9,
     InvalidState = 10,
+    Reentrancy = 25,
     NoRefundableAmount = 11,
     GrantAlreadyReleased = 12,
     NotMultisigSigner = 13,
@@ -153,6 +154,8 @@ pub enum ContractError {
     CollateralNotDeposited = 123,
     // Whitelist (#512)
     AddressNotWhitelisted = 124,
+    // KYC verification (#632)
+    KycRequired = 131,
     // Math (#528) — no specific errors, reuses ZeroAmount / InvalidInput
     // Funder report (#598) — no specific errors, read-only
     // Batch read (#622)

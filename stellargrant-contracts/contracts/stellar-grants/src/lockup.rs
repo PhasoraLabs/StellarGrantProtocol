@@ -134,8 +134,7 @@ pub fn release(
 pub fn is_unlocked(env: &Env, grant_id: u64, milestone_idx: u32) -> bool {
     match get_lockup(env, grant_id, milestone_idx) {
         Some(record) => {
-            record.status == LockupStatus::Active
-                && env.ledger().timestamp() >= record.unlocks_at
+            record.status == LockupStatus::Active && env.ledger().timestamp() >= record.unlocks_at
         }
         None => false,
     }

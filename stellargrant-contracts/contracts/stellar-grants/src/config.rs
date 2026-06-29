@@ -26,6 +26,7 @@ pub fn default_config() -> ProtocolConfig {
         },
         reviewer_reward_pool_bps: 2000,
         fast_bonus_bps: 500,
+        kyc_payout_threshold: i128::MAX,
     }
 }
 
@@ -41,6 +42,16 @@ pub fn validate_config(config: &ProtocolConfig) -> Result<(), ContractError> {
         return Err(ContractError::InvalidInput);
     }
     if config.referral_fee_bps > 10_000 {
+        return Err(ContractError::InvalidInput);
+    }
+    if config.reviewer_reward_pool_bps > 10_000 || config.revenue_share_pool_bps > 10_000 {
+        return Err(ContractError::InvalidInput);
+    }
+    if config
+        .reviewer_reward_pool_bps
+        .saturating_add(config.revenue_share_pool_bps)
+        > 10_000
+    {
         return Err(ContractError::InvalidInput);
     }
     if config.max_reviewers < 1 {

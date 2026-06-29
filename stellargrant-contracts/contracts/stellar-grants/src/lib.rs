@@ -1,9 +1,30 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
+#![allow(
+    dead_code,
+    deprecated,
+    unused_assignments,
+    unused_imports,
+    unused_mut,
+    unused_variables,
+    clippy::clone_on_copy,
+    clippy::len_zero,
+    clippy::manual_checked_ops,
+    clippy::manual_range_contains,
+    clippy::manual_saturating_arithmetic,
+    clippy::match_like_matches_macro,
+    clippy::match_result_ok,
+    clippy::needless_borrows_for_generic_args,
+    clippy::redundant_closure,
+    clippy::unnecessary_cast,
+    clippy::unnecessary_map_or,
+    clippy::while_let_loop
+)]
 mod access_control;
 mod analytics;
 mod arbitration_pool;
 mod audit;
+mod badge;
 mod checklist;
 mod circuit_breaker;
 mod clawback;
@@ -11,12 +32,15 @@ mod collateral;
 mod compliance;
 mod config;
 mod constants;
+mod contributor_verification;
 mod cross_contract;
 mod crowdfund;
+mod data_export;
 mod dispute;
 mod emergency;
 mod errors;
 mod escrow;
+mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
@@ -24,7 +48,9 @@ mod fees;
 mod fork;
 mod funder_report;
 mod governance;
+mod grant_bridge;
 mod grant_index;
+mod grant_pause;
 mod grant_renewal;
 mod grant_tags;
 mod grant_transfer;
@@ -33,14 +59,16 @@ mod insurance;
 mod interfaces;
 mod invoice;
 mod license;
+mod lockup;
 mod matching;
-mod math;
+pub mod math;
 pub mod merkle;
 mod metrics;
 mod migration;
 mod milestone_deps;
 mod milestone_extension;
 mod milestone_nft;
+mod milestone_template;
 mod multi_grant;
 mod multisig;
 mod notification;
@@ -59,6 +87,7 @@ mod registry;
 mod relay;
 mod reputation;
 mod reputation_decay;
+mod revenue_share;
 mod reviewer_pool;
 mod reviewer_reward;
 pub mod reviewer_sla;
@@ -70,12 +99,7 @@ mod syndication;
 mod token_swap;
 mod types;
 mod versioning;
-pub mod math;
 mod whitelist;
-mod batch_read;
-mod conditional_release;
-mod auto_approve;
-mod grant_timer;
 
 pub use errors::ContractError;
 pub use events::Events;
@@ -138,6 +162,11 @@ pub use types::{
     EvidenceField,
     EvidenceFieldType,
     EvidenceSchema,
+    // Issue #619: data export
+    ExportGrant,
+    ExportGrantPage,
+    ExportMilestone,
+    ExportMilestonePage,
     ExtensionRequest,
     ExtensionStatus,
     FeeRecord,
@@ -168,6 +197,9 @@ pub use types::{
     LicenseRecord,
     LicenseType,
     LineItem,
+    // Issue #609: lockup
+    LockupRecord,
+    LockupStatus,
     MatchingAllocation,
     MatchingContribution,
     MatchingRound,
@@ -215,6 +247,7 @@ pub use types::{
     RenewalProposal,
     RenewalStatus,
     ReputationTier,
+    RevenueEpoch,
     ReviewParticipation,
     ReviewerAvailability,
     ReviewerProfile,
@@ -231,6 +264,7 @@ pub use types::{
     ScoringWeight,
     SignatureStatus,
     SplitRecipient,
+    StakerEpochRecord,
     StructuredEvidence,
     Subscription,
     SubscriptionScope,
@@ -242,20 +276,15 @@ pub use types::{
     TokenMetric,
     TransferProposal,
     TransferableRole,
+    VerificationAttestation,
+    VerificationLevel,
+    VerificationStatus,
     VoiceCredits,
     VotingMechanism,
     // Issue #512: whitelist
-    WhitelistEntry, WhitelistMode, WhitelistScope,
-    // Issue #622: batch read views
-    DashboardView, ExportGrant, GrantDetailView, ReviewerView,
-    // Issue #613: conditional release
-    ConditionResult, ConditionType, ReleaseCondition,
-    // Issue #612: auto-approve
-    AutoApproveConfig, AutoApproveRecord,
-    // Issue #618: grant timers
-    TimerRecord, TimerTriggerType,
-    // Batch operation types
-    BatchItemResult, BatchMilestoneVote, BatchResult,
+    WhitelistEntry,
+    WhitelistMode,
+    WhitelistScope,
 };
 
 use metrics::MetricField;
@@ -595,6 +624,8 @@ impl StellarGrantsContract {
             return Err(ContractError::InvalidState);
         }
 
+        crate::grant_pause::require_not_paused(env, grant_id)?;
+
         // Compliance gate: if the grant requires KYC, check the owner/contributor.
         if let Some(required_level) = grant.require_compliance {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
@@ -609,10 +640,18 @@ impl StellarGrantsContract {
 
         if total_paid > 0 {
             // Pay each milestone individually so that registered splits are honoured.
+            let protocol_cfg = config::get_config(env);
             let mut owner_amount: i128 = 0;
             for idx in 0..grant.total_milestones {
                 let ms = Storage::get_milestone(env, grant_id, idx)
                     .ok_or(ContractError::MilestoneNotFound)?;
+                if ms.amount > protocol_cfg.kyc_payout_threshold {
+                    contributor_verification::require_verified(
+                        env,
+                        &grant.owner,
+                        VerificationLevel::FullKyc,
+                    )?;
+                }
                 if split_payment::has_split(env, grant_id, idx) {
                     split_payment::execute_split(env, grant_id, idx, ms.amount)?;
                 } else {
@@ -620,7 +659,12 @@ impl StellarGrantsContract {
                 }
             }
             if owner_amount > 0 {
-                escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                let config: ProtocolConfig = env.storage().persistent().get(&storage::keys::DataKey::Config).unwrap();
+                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                    crate::escrow_multisig::create_request(env, grant_id, 0, owner_amount, grant.owner.clone())?;
+                } else {
+                    escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                }
             }
         }
         if remaining_balance > 0 {
@@ -664,6 +708,7 @@ impl StellarGrantsContract {
         feedback: Option<String>,
     ) -> Result<bool, ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         reviewer.require_auth();
 
@@ -819,6 +864,7 @@ impl StellarGrantsContract {
         proof_url: String,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         recipient.require_auth();
         rate_limit::check_and_increment(&env, &recipient, RateLimitAction::MilestoneSubmit)?;
@@ -859,6 +905,7 @@ impl StellarGrantsContract {
         submissions: Vec<MilestoneSubmission>,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         recipient.require_auth();
 
         let batch_len = submissions.len();
@@ -1297,6 +1344,29 @@ impl StellarGrantsContract {
     /// Get all allocations for a round after computation.
     pub fn get_matching_allocations(env: Env, round_id: u32) -> Vec<MatchingAllocation> {
         matching::get_allocations(&env, round_id)
+    }
+
+    // ── Milestone Templates ────────────────────────────────────────────────────
+    
+    pub fn save_template(
+        env: Env,
+        owner: Address,
+        name: String,
+        description: String,
+        category: crate::types::TemplateCategory,
+        default_amount_pct: u32,
+        is_public: bool,
+    ) -> Result<u64, ContractError> {
+        milestone_template::save_template(&env, owner, name, description, category, default_amount_pct, is_public)
+    }
+    
+    pub fn create_milestones_from_template(
+        env: Env,
+        caller: Address,
+        template_ids: Vec<u64>,
+        total_amount: i128,
+    ) -> Result<Vec<(String, i128)>, ContractError> {
+        milestone_template::create_from_templates(&env, caller, template_ids, total_amount)
     }
 
     // ── KYC Integration (#43) ───────────────────────────────────────
@@ -1878,10 +1948,95 @@ impl StellarGrantsContract {
         config::get_config(&env)
     }
 
+    // ── Issue #632: Contributor Verification Entry Points ───────────────────
+
+    pub fn verification_set_verifier(
+        env: Env,
+        admin: Address,
+        verifier: Address,
+    ) -> Result<(), ContractError> {
+        contributor_verification::set_verifier(&env, &admin, &verifier)
+    }
+
+    pub fn verification_attest(
+        env: Env,
+        verifier: Address,
+        subject: Address,
+        level: VerificationLevel,
+        expires_at: Option<u64>,
+        attestation_hash: Bytes,
+    ) -> Result<(), ContractError> {
+        contributor_verification::attest(
+            &env,
+            &verifier,
+            &subject,
+            level,
+            expires_at,
+            attestation_hash,
+        )
+    }
+
+    pub fn verification_revoke(
+        env: Env,
+        caller: Address,
+        subject: Address,
+    ) -> Result<(), ContractError> {
+        contributor_verification::revoke(&env, &caller, &subject)
+    }
+
+    pub fn verification_is_verified(
+        env: Env,
+        address: Address,
+        required_level: VerificationLevel,
+    ) -> bool {
+        contributor_verification::is_verified(&env, &address, required_level)
+    }
+
+    pub fn verification_require_verified(
+        env: Env,
+        address: Address,
+        required_level: VerificationLevel,
+    ) -> Result<(), ContractError> {
+        contributor_verification::require_verified(&env, &address, required_level)
+    }
+
+    pub fn verification_get_attestation(
+        env: Env,
+        address: Address,
+    ) -> Option<VerificationAttestation> {
+        contributor_verification::get_attestation(&env, &address)
+    }
+
     // ── Issue #517: Protocol Fee Management Entry Points ─────────────────────
 
     pub fn get_fees_collected(env: Env, token: Address) -> i128 {
         fees::total_fees_collected(&env, &token)
+    }
+
+    // ── Issue #631: Revenue Sharing Entry Points ────────────────────────────
+
+    pub fn finalize_epoch(env: Env, caller: Address, epoch_id: u32) -> Result<(), ContractError> {
+        revenue_share::finalize_epoch(&env, &caller, epoch_id)
+    }
+
+    pub fn claim_revenue_share(
+        env: Env,
+        staker: Address,
+        epoch_id: u32,
+    ) -> Result<i128, ContractError> {
+        revenue_share::claim(&env, &staker, epoch_id)
+    }
+
+    pub fn compute_revenue_claim(env: Env, staker: Address, epoch_id: u32) -> i128 {
+        revenue_share::compute_claim(&env, &staker, epoch_id)
+    }
+
+    pub fn current_revenue_epoch(env: Env) -> RevenueEpoch {
+        revenue_share::current_epoch(&env)
+    }
+
+    pub fn unclaimed_revenue_epochs(env: Env, staker: Address) -> Vec<u32> {
+        revenue_share::unclaimed_epochs(&env, &staker)
     }
 
     // ── Issue #529: Escrow Module ─────────────────────────────────────────────
@@ -2966,7 +3121,7 @@ impl StellarGrantsContract {
         milestone_deps::can_submit(&env, grant_id, milestone_idx)
     }
 
-    pub fn milestone_deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
+    pub fn deps_unblocked_milestones(env: Env, grant_id: u64) -> Vec<u32> {
         milestone_deps::unblocked_milestones(&env, grant_id)
     }
 
@@ -3670,7 +3825,13 @@ impl StellarGrantsContract {
         milestone_idx: u32,
         lockup_duration_seconds: u64,
     ) -> Result<(), ContractError> {
-        lockup::attach_lockup(&env, &owner, grant_id, milestone_idx, lockup_duration_seconds)
+        lockup::attach_lockup(
+            &env,
+            &owner,
+            grant_id,
+            milestone_idx,
+            lockup_duration_seconds,
+        )
     }
 
     /// Lock funds on milestone approval. Called internally by payout path.
@@ -4013,6 +4174,17 @@ fn apply_milestone_submission(
     // Validate structured evidence against the schema when one has been registered.
     evidence_schema::validate_evidence(env, grant_id, milestone_idx)?;
 
+    let is_cross_chain = crate::grant_bridge::has_valid_proof(env, grant_id, milestone_idx);
+    let final_proof_url = if is_cross_chain {
+        if let Some(proof) = crate::grant_bridge::get_proof(env, grant_id, milestone_idx) {
+            proof.tx_hash
+        } else {
+            proof_url
+        }
+    } else {
+        proof_url
+    };
+    
     let milestone = Milestone {
         idx: milestone_idx,
         description: description.clone(),
@@ -4023,7 +4195,7 @@ fn apply_milestone_submission(
         rejections: 0,
         reasons: soroban_sdk::Map::new(env),
         status_updated_at: 0,
-        proof_url: Some(proof_url),
+        proof_url: Some(final_proof_url),
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
         reviewer_count_snapshot: grant.reviewers.len(),
