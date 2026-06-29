@@ -1,5 +1,11 @@
 export { getRpcClient, rpcClient, networkPassphraseConfig, getHorizonClient, horizonClient } from "./client";
-export { ContractClient, contractClient } from "./contract";
+export {
+  ContractClient,
+  contractClient,
+  isNativeXlmAddress,
+  getNativeXlmContractId,
+  NATIVE_SENTINEL,
+} from "./contract";
 export { decodeScVal } from "./decode";
 export { fetchContractEvents, decodeEvent } from "./events";
 export type { ContractEvent } from "./events";
@@ -88,3 +94,17 @@ export {
   getErrorMessage,
 } from "../errors";
 export type { ErrorCodeValue } from "../errors";
+
+// Native XLM funding support (Issue #504)
+export {
+  getNativeXlmSacId,
+  isNativeXlm,
+  resolveTokenAddress,
+  computeRequiredBalance,
+  getWalletXlmBalance,
+  checkXlmSufficiency,
+  buildNativeXlmFundXdr,
+  STELLAR_BASE_RESERVE_STROOPS,
+  TX_FEE_BUFFER_STROOPS,
+} from "./xlm-native";
+export type { XlmFundingRequirement, NativeXlmFundParams } from "./xlm-native";
