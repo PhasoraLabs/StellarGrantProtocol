@@ -435,6 +435,80 @@ pub struct ProtocolConfig {
     pub reviewer_reward_pool_bps: u32,
     /// Bonus in basis points for fast votes (within 1/3 of review window). Default 500 = 5%.
     pub fast_bonus_bps: u32,
+    /// Number of required approvals for high value grant release. Default is 2.
+    pub multisig_escrow_threshold: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseApproval {
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowReleaseRequest {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub recipient: Address,
+    pub approvals: Vec<EscrowReleaseApproval>,
+    pub expires_at: u64,
+    pub executed: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ChainId {
+    Ethereum = 1,
+    Polygon = 137,
+    Arbitrum = 42161,
+    Optimism = 10,
+    Base = 8453,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BridgeRelayer {
+    pub address: Address,
+    pub is_active: bool,
+    pub registered_at: u64,
+    pub authorized_chains: Vec<ChainId>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossChainProof {
+    pub chain_id: ChainId,
+    pub tx_hash: String,
+    pub relayer: Address,
+    pub verified_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TemplateCategory {
+    General = 0,
+    Engineering = 1,
+    Design = 2,
+    Marketing = 3,
+    Research = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MilestoneTemplate {
+    pub id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub description: String,
+    pub category: TemplateCategory,
+    pub default_amount_pct: u32,
+    pub is_public: bool,
+    pub use_count: u32,
 }
 
 // ── Issue #XXX: Reviewer Reward System ───────────────────────────────────────
@@ -2022,4 +2096,181 @@ pub struct WhitelistEntry {
     pub added_by: Address,
     pub added_at: u64,
     pub scope: WhitelistScope,
+}
+
+// ── Batch operation types ──────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchMilestoneVote {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub approve: bool,
+    pub reason: Option<String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchItemResult {
+    pub index: u32,
+    pub success: bool,
+    pub error_code: Option<u32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchResult {
+    pub total: u32,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub results: soroban_sdk::Vec<BatchItemResult>,
+}
+
+// ── Issue #622: Batch Read View Types ─────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportGrant {
+    pub id: u64,
+    pub owner: Address,
+    pub title: String,
+    pub description: String,
+    pub token: Address,
+    pub status: GrantStatus,
+    pub total_amount: i128,
+    pub milestone_amount: i128,
+    pub total_milestones: u32,
+    pub milestones_paid_out: u32,
+    pub escrow_balance: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantDetailView {
+    pub grant: Grant,
+    pub milestones: soroban_sdk::Vec<Milestone>,
+    pub escrow_balance: i128,
+    pub funder_count: u32,
+    pub reviewer_count: u32,
+    pub current_milestone_idx: u32,
+    pub completion_pct: u32,
+    pub reputation_scores: soroban_sdk::Vec<(Address, u32)>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DashboardView {
+    pub active_grants: u32,
+    pub total_funded_usd: i128,
+    pub total_paid_out_usd: i128,
+    pub total_contributors: u32,
+    pub total_reviewers: u32,
+    pub recent_grant_ids: soroban_sdk::Vec<u64>,
+    pub protocol_metrics: ProtocolMetrics,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerView {
+    pub reviewer: Address,
+    pub profile: ReviewerProfile,
+    pub reputation: u32,
+    pub pending_votes: soroban_sdk::Vec<(u64, u32)>,
+    pub sla_breach_count: u32,
+    pub pending_rewards: i128,
+}
+
+// ── Issue #613: Conditional Release ───────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ConditionType {
+    LedgerSequenceAfter = 0,
+    TimestampAfter = 1,
+    OraclePriceAbove = 2,
+    OraclePriceBelow = 3,
+    CustomContractCall = 4,
+    AlwaysTrue = 5,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseCondition {
+    pub condition_type: ConditionType,
+    pub threshold: i128,
+    pub oracle_token: Option<Address>,
+    pub custom_contract: Option<Address>,
+    pub custom_fn_name: Option<soroban_sdk::Symbol>,
+    pub description: soroban_sdk::String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConditionResult {
+    pub condition_idx: u32,
+    pub met: bool,
+    pub current_value: i128,
+    pub threshold: i128,
+    pub checked_at: u64,
+}
+
+// ── Issue #612: Auto-Approve ─────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutoApproveConfig {
+    pub grant_id: u64,
+    pub enabled: bool,
+    pub grace_period_seconds: u64,
+    pub min_votes_required: u32,
+    pub set_by: Address,
+    pub set_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutoApproveRecord {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub triggered_by: Address,
+    pub triggered_at: u64,
+    pub votes_at_trigger: u32,
+}
+
+// ── Issue #618: Grant Timer ──────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TimerTriggerType {
+    AutoExpire = 0,
+    AutoActivate = 1,
+    AutoCancel = 2,
+    AutoReleaseLockup = 3,
+    CustomCallback = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimerRecord {
+    pub grant_id: u64,
+    pub trigger_type: TimerTriggerType,
+    pub fires_at: u64,
+    pub fires_at_ledger: Option<u32>,
+    pub fired: bool,
+    pub fired_at: Option<u64>,
+    pub triggered_by: Option<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPauseRecord {
+    pub grant_id: u64,
+    pub paused_by: Address,
+    pub paused_at: u64,
+    pub reason: String,
+    pub auto_unpause_at: Option<u64>,
+    pub unpause_history: Vec<(Address, u64)>,
 }

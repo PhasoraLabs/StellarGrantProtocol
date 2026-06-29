@@ -1,19 +1,20 @@
 use super::keys::{
-    ArbitrationKey, BondKey, CollateralKey, CrowdfundKey, DataKey, EscrowKey, GrantKey,
-    InsuranceKey, MilestoneKey, UserKey, VotingKey,
+    ArbitrationKey, AutoApproveKey, BondKey, CollateralKey, ConditionalReleaseKey, CrowdfundKey,
+    DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
 };
 use crate::types::{
-    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState,
-    ChecklistSubmission, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
-    CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount, EscrowState,
-    EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord, MerkleCommitment,
-    MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal, OracleConfig,
-    ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig, ProtocolMetrics,
-    ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction, RateLimitRecord,
-    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile, ReviewerRequest,
-    Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence, SyndicateGrant,
-    SyndicateMember, TokenMetric, TransferProposal, VoiceCredits, VotingMechanism,
+    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, AutoApproveConfig,
+    AutoApproveRecord, BreakerState, ChecklistSubmission, ComplianceAttestation, ContractError,
+    ContractVersion, ContributorProfile, CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute,
+    EscrowAccount, EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag,
+    GrantVersion, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice,
+    LicenseRecord, MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft,
+    MultisigProposal, OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream,
+    ProtocolConfig, ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord,
+    RateLimitAction, RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition,
+    RenewalProposal, ReviewerProfile, ReviewerRequest, Role, RoleAssignment, RollingWindow,
+    ScoringRubric, StructuredEvidence, SyndicateGrant, SyndicateMember, TimerRecord, TokenMetric,
+    TransferProposal, VoiceCredits, VotingMechanism,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -1985,27 +1986,81 @@ impl Storage {
             .set(&DataKey::Grant(GrantKey::ForkChildren(grant_id)), children);
     }
 
-    // ── Multi-Grant Portfolio Management ──────────────────────────────────────
+    // ── Issue #613: Conditional Release Conditions ────────────────────────
 
-    pub fn push_owner_grant_id(env: &Env, owner: &Address, grant_id: u64) {
-        let key = DataKey::Grant(GrantKey::OwnerIndex(owner.clone()));
-        let mut ids: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| Vec::new(env));
-        if !ids.contains(grant_id) {
-            ids.push_back(grant_id);
-            env.storage().persistent().set(&key, &ids);
-            Self::bump(env, &key);
-        }
-    }
-
-    pub fn get_owner_grant_ids(env: &Env, owner: &Address) -> Vec<u64> {
-        let key = DataKey::Grant(GrantKey::OwnerIndex(owner.clone()));
+    pub fn get_release_conditions(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<ReleaseCondition> {
         env.storage()
             .persistent()
-            .get(&key)
+            .get(&DataKey::ConditionalRelease(
+                ConditionalReleaseKey::Conditions(grant_id, milestone_idx),
+            ))
             .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_release_conditions(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        conditions: &Vec<ReleaseCondition>,
+    ) {
+        let key = DataKey::ConditionalRelease(ConditionalReleaseKey::Conditions(
+            grant_id,
+            milestone_idx,
+        ));
+        env.storage().persistent().set(&key, conditions);
+        Self::bump(env, &key);
+    }
+
+    // ── Issue #612: Auto-Approve Config ──────────────────────────────────
+
+    pub fn get_auto_approve_config(env: &Env, grant_id: u64) -> Option<AutoApproveConfig> {
+        let key = DataKey::AutoApprove(AutoApproveKey::Config(grant_id));
+        env.storage().persistent().get(&key)
+    }
+
+    pub fn set_auto_approve_config(env: &Env, grant_id: u64, config: &AutoApproveConfig) {
+        let key = DataKey::AutoApprove(AutoApproveKey::Config(grant_id));
+        env.storage().persistent().set(&key, config);
+        Self::bump(env, &key);
+    }
+
+    pub fn get_auto_approve_record(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<AutoApproveRecord> {
+        env.storage().persistent().get(&DataKey::AutoApprove(
+            AutoApproveKey::Record(grant_id, milestone_idx),
+        ))
+    }
+
+    pub fn set_auto_approve_record(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        record: &AutoApproveRecord,
+    ) {
+        let key = DataKey::AutoApprove(AutoApproveKey::Record(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, record);
+        Self::bump(env, &key);
+    }
+
+    // ── Issue #618: Grant Timers ─────────────────────────────────────────
+
+    pub fn get_grant_timers(env: &Env, grant_id: u64) -> Vec<TimerRecord> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GrantTimer(GrantTimerKey::Timers(grant_id)))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_grant_timers(env: &Env, grant_id: u64, timers: &Vec<TimerRecord>) {
+        let key = DataKey::GrantTimer(GrantTimerKey::Timers(grant_id));
+        env.storage().persistent().set(&key, timers);
+        Self::bump(env, &key);
     }
 }
