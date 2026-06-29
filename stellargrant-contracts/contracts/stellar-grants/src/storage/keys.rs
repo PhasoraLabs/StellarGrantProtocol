@@ -184,9 +184,9 @@ pub enum DataKey {
     Arbitration(ArbitrationKey),
     Bond(BondKey),
     Collateral(CollateralKey),
-    Provenance(ProvenanceKey),
-    ReviewerReward(ReviewerRewardKey),
-    Matching(MatchingKey),
+    ConditionalRelease(ConditionalReleaseKey),
+    AutoApprove(AutoApproveKey),
+    GrantTimer(GrantTimerKey),
 
     // Streaming
     Stream(u32),
@@ -250,6 +250,18 @@ pub enum DataKey {
 
     // Issue #619: Data export state fingerprint
     GlobalLastUpdated,
+
+    // Per-grant pause
+    GrantPaused(u64),
+
+    EscrowReleaseRequest(u64, u32),
+
+    BridgeRelayer(Address),
+    CrossChainProof(u64, u32),
+
+    MilestoneTemplate(u64),
+    TemplatesByOwner(Address),
+    TemplateCounter,
 
     // Migration guard
     V2KeysMigrated,

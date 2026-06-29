@@ -4,6 +4,6 @@ pub mod keys;
 pub use helpers::Storage;
 pub(crate) use keys::LegacyDataKey;
 pub use keys::{
-    ArbitrationKey, BondKey, CollateralKey, CrowdfundKey, DataKey, EscrowKey, GrantKey,
-    InsuranceKey, MilestoneKey, UserKey, VotingKey,
+    ArbitrationKey, AutoApproveKey, BondKey, CollateralKey, ConditionalReleaseKey, CrowdfundKey,
+    DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
 };

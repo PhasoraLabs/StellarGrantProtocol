@@ -76,6 +76,7 @@ pub fn swap(
     route: SwapRoute,
     amount_in: i128,
 ) -> Result<SwapResult, ContractError> {
+    crate::reentrancy::protect(env)?;
     caller.require_auth();
 
     let config = get_dex_config(env)?;
@@ -89,7 +90,10 @@ pub fn swap(
     let expected_out = quote(env, &route, amount_in)?;
 
     let from_token_client = token::Client::new(env, &route.from_token);
-    from_token_client.transfer(caller, env.current_contract_address(), &amount_in);
+    crate::reentrancy::protect_external_call(env, || {
+        from_token_client.transfer(caller, env.current_contract_address(), &amount_in);
+        Ok(())
+    })?;
 
     let actual_out = expected_out;
     let slippage_bps = if expected_out > 0 {
@@ -133,6 +137,7 @@ pub fn swap_and_fund(
     input_token: &Address,
     input_amount: i128,
 ) -> Result<SwapResult, ContractError> {
+    crate::reentrancy::protect(env)?;
     funder.require_auth();
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
@@ -186,6 +191,7 @@ pub fn swap_and_pay(
     preferred_token: &Address,
     amount: i128,
 ) -> Result<SwapResult, ContractError> {
+    crate::reentrancy::protect(env)?;
     if grant_token == preferred_token {
         crate::escrow::release(env, grant_id, recipient, amount)?;
         let result = SwapResult {
@@ -215,11 +221,14 @@ pub fn swap_and_pay(
 
     let swap_result = swap(env, &env.current_contract_address(), route, amount)?;
     let token_client = token::Client::new(env, preferred_token);
-    token_client.transfer(
-        &env.current_contract_address(),
-        recipient,
-        &swap_result.amount_out,
-    );
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(
+            &env.current_contract_address(),
+            recipient,
+            &swap_result.amount_out,
+        );
+        Ok(())
+    })?;
 
     SwapAndPayExecuted {
         grant_id,
