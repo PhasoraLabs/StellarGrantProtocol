@@ -99,6 +99,7 @@ mod syndication;
 mod token_swap;
 mod types;
 mod versioning;
+mod waitlist;
 mod whitelist;
 
 pub use errors::ContractError;
@@ -285,6 +286,9 @@ pub use types::{
     WhitelistEntry,
     WhitelistMode,
     WhitelistScope,
+    // Waitlist module
+    WaitlistConfig,
+    WaitlistEntry,
 };
 
 use metrics::MetricField;
@@ -3992,6 +3996,44 @@ impl StellarGrantsContract {
     /// Return all entries in a whitelist scope.
     pub fn whitelist_get_entries(env: Env, scope: WhitelistScope) -> Vec<WhitelistEntry> {
         whitelist::get_entries(&env, &scope)
+    }
+
+    // ── Waitlist Module ───────────────────────────────────────────────────────
+
+    /// Configure the waitlist for a grant. Owner only.
+    pub fn configure_waitlist(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        config: WaitlistConfig,
+    ) -> Result<(), ContractError> {
+        waitlist::configure(&env, &owner, grant_id, config)
+    }
+
+    /// Join the waitlist for a grant. Returns the position (1-indexed).
+    pub fn join_waitlist(env: Env, applicant: Address, grant_id: u64) -> Result<u32, ContractError> {
+        waitlist::join(&env, &applicant, grant_id)
+    }
+
+    /// Leave the waitlist voluntarily.
+    pub fn leave_waitlist(env: Env, applicant: Address, grant_id: u64) -> Result<(), ContractError> {
+        waitlist::leave(&env, &applicant, grant_id)
+    }
+
+    /// Promote the top-ranked entry. Called when a slot opens.
+    /// Returns the promoted address if successful, None if waitlist is empty.
+    pub fn promote_from_waitlist(env: Env, grant_id: u64) -> Option<Address> {
+        waitlist::promote_next(&env, grant_id)
+    }
+
+    /// Return all entries, sorted by reputation (or FIFO).
+    pub fn get_waitlist(env: Env, grant_id: u64) -> Vec<WaitlistEntry> {
+        waitlist::get_waitlist(&env, grant_id)
+    }
+
+    /// Return an applicant's current position (1-indexed).
+    pub fn waitlist_position(env: Env, applicant: Address, grant_id: u64) -> Option<u32> {
+        waitlist::position_of(&env, &applicant, grant_id)
     }
 
     // ── Issue #622: Batched Multi-Key Storage Reads ──────────────────────

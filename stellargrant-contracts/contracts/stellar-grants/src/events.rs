@@ -1590,6 +1590,51 @@ impl Events {
         };
         event.publish(env);
     }
+
+    // ── Waitlist events ───────────────────────────────────────────────────────
+
+    pub fn emit_waitlist_joined(
+        env: &Env,
+        grant_id: u64,
+        applicant: Address,
+        position: u32,
+    ) {
+        let event = WaitlistJoined {
+            grant_id,
+            applicant,
+            position,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_waitlist_promoted(
+        env: &Env,
+        grant_id: u64,
+        applicant: Address,
+        position: u32,
+    ) {
+        let event = WaitlistPromoted {
+            grant_id,
+            applicant,
+            position,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_waitlist_left(
+        env: &Env,
+        grant_id: u64,
+        applicant: Address,
+    ) {
+        let event = WaitlistLeft {
+            grant_id,
+            applicant,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
 }
 
 // ── Issue #587: Grant Forked event ──────────────────────────────────────────
@@ -1599,5 +1644,33 @@ impl Events {
 pub struct GrantForked {
     pub original_grant_id: u64,
     pub forked_grant_id: u64,
+    pub timestamp: u64,
+}
+
+// ── Waitlist events ─────────────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistJoined {
+    pub grant_id: u64,
+    pub applicant: Address,
+    pub position: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistPromoted {
+    pub grant_id: u64,
+    pub applicant: Address,
+    pub position: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistLeft {
+    pub grant_id: u64,
+    pub applicant: Address,
     pub timestamp: u64,
 }
