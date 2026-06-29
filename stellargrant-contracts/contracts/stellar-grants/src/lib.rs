@@ -85,6 +85,7 @@ mod registry;
 mod relay;
 mod reputation;
 mod reputation_decay;
+mod revenue_share;
 mod reviewer_pool;
 mod reviewer_reward;
 pub mod reviewer_sla;
@@ -229,6 +230,7 @@ pub use types::{
     RenewalProposal,
     RenewalStatus,
     ReputationTier,
+    RevenueEpoch,
     ReviewParticipation,
     ReviewerAvailability,
     ReviewerProfile,
@@ -245,6 +247,7 @@ pub use types::{
     ScoringWeight,
     SignatureStatus,
     SplitRecipient,
+    StakerEpochRecord,
     StructuredEvidence,
     Subscription,
     SubscriptionScope,
@@ -1860,6 +1863,32 @@ impl StellarGrantsContract {
 
     pub fn get_fees_collected(env: Env, token: Address) -> i128 {
         fees::total_fees_collected(&env, &token)
+    }
+
+    // ── Issue #631: Revenue Sharing Entry Points ────────────────────────────
+
+    pub fn finalize_epoch(env: Env, caller: Address, epoch_id: u32) -> Result<(), ContractError> {
+        revenue_share::finalize_epoch(&env, &caller, epoch_id)
+    }
+
+    pub fn claim_revenue_share(
+        env: Env,
+        staker: Address,
+        epoch_id: u32,
+    ) -> Result<i128, ContractError> {
+        revenue_share::claim(&env, &staker, epoch_id)
+    }
+
+    pub fn compute_revenue_claim(env: Env, staker: Address, epoch_id: u32) -> i128 {
+        revenue_share::compute_claim(&env, &staker, epoch_id)
+    }
+
+    pub fn current_revenue_epoch(env: Env) -> RevenueEpoch {
+        revenue_share::current_epoch(&env)
+    }
+
+    pub fn unclaimed_revenue_epochs(env: Env, staker: Address) -> Vec<u32> {
+        revenue_share::unclaimed_epochs(&env, &staker)
     }
 
     // ── Issue #529: Escrow Module ─────────────────────────────────────────────

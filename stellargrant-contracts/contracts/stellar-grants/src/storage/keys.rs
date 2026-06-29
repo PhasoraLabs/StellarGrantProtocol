@@ -235,6 +235,8 @@ pub enum DataKey {
     ReferralCode(Bytes),
     WhitelistEntries(WhitelistScope),
     WhitelistMode(WhitelistScope),
+    RevenueEpoch(u32),
+    StakerEpochRecord(Address, u32),
 
     // Notifications
     NotifSub(Address, u32, u32, u128),

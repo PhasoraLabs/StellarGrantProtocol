@@ -146,18 +146,15 @@ pub fn forfeit(
     };
 
     if actual_forfeit > 0 {
-        // Send forfeited amount to treasury, updating both token transfer and bookkeeping.
+        // Send forfeited amount to treasury.
         let treasury_addr =
             Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
         let token_client = token::Client::new(env, &deposit.token);
-        crate::reentrancy::protect_external_call(env, || {
-            token_client.transfer(
-                &env.current_contract_address(),
-                &treasury_addr,
-                &actual_forfeit,
-            );
-            Ok(())
-        })?;
+        token_client.transfer(
+            &env.current_contract_address(),
+            &treasury_addr,
+            &actual_forfeit,
+        );
     }
 
     deposit.forfeited_amount = deposit
