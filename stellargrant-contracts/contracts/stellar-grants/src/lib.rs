@@ -39,6 +39,7 @@ mod dispute;
 mod emergency;
 mod errors;
 mod escrow;
+mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
@@ -46,7 +47,9 @@ mod fees;
 mod fork;
 mod funder_report;
 mod governance;
+mod grant_bridge;
 mod grant_index;
+mod grant_pause;
 mod grant_renewal;
 mod grant_tags;
 mod grant_transfer;
@@ -64,6 +67,7 @@ mod migration;
 mod milestone_deps;
 mod milestone_extension;
 mod milestone_nft;
+mod milestone_template;
 mod multi_grant;
 mod multisig;
 mod notification;
@@ -82,6 +86,7 @@ mod registry;
 mod relay;
 mod reputation;
 mod reputation_decay;
+mod revenue_share;
 mod reviewer_pool;
 mod reviewer_reward;
 pub mod reviewer_sla;
@@ -226,6 +231,7 @@ pub use types::{
     RenewalProposal,
     RenewalStatus,
     ReputationTier,
+    RevenueEpoch,
     ReviewParticipation,
     ReviewerAvailability,
     ReviewerProfile,
@@ -242,6 +248,7 @@ pub use types::{
     ScoringWeight,
     SignatureStatus,
     SplitRecipient,
+    StakerEpochRecord,
     StructuredEvidence,
     Subscription,
     SubscriptionScope,
@@ -601,6 +608,8 @@ impl StellarGrantsContract {
             return Err(ContractError::InvalidState);
         }
 
+        crate::grant_pause::require_not_paused(env, grant_id)?;
+
         // Compliance gate: if the grant requires KYC, check the owner/contributor.
         if let Some(required_level) = grant.require_compliance {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
@@ -634,7 +643,12 @@ impl StellarGrantsContract {
                 }
             }
             if owner_amount > 0 {
-                escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                let config: ProtocolConfig = env.storage().persistent().get(&storage::keys::DataKey::Config).unwrap();
+                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                    crate::escrow_multisig::create_request(env, grant_id, 0, owner_amount, grant.owner.clone())?;
+                } else {
+                    escrow::release(env, grant_id, &grant.owner, owner_amount)?;
+                }
             }
         }
         if remaining_balance > 0 {
@@ -678,6 +692,7 @@ impl StellarGrantsContract {
         feedback: Option<String>,
     ) -> Result<bool, ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         reviewer.require_auth();
 
@@ -833,6 +848,7 @@ impl StellarGrantsContract {
         proof_url: String,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         recipient.require_auth();
         rate_limit::check_and_increment(&env, &recipient, RateLimitAction::MilestoneSubmit)?;
@@ -873,6 +889,7 @@ impl StellarGrantsContract {
         submissions: Vec<MilestoneSubmission>,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
+        crate::grant_pause::require_not_paused(&env, grant_id)?;
         recipient.require_auth();
 
         let batch_len = submissions.len();
@@ -1311,6 +1328,29 @@ impl StellarGrantsContract {
     /// Get all allocations for a round after computation.
     pub fn get_matching_allocations(env: Env, round_id: u32) -> Vec<MatchingAllocation> {
         matching::get_allocations(&env, round_id)
+    }
+
+    // ── Milestone Templates ────────────────────────────────────────────────────
+    
+    pub fn save_template(
+        env: Env,
+        owner: Address,
+        name: String,
+        description: String,
+        category: crate::types::TemplateCategory,
+        default_amount_pct: u32,
+        is_public: bool,
+    ) -> Result<u64, ContractError> {
+        milestone_template::save_template(&env, owner, name, description, category, default_amount_pct, is_public)
+    }
+    
+    pub fn create_milestones_from_template(
+        env: Env,
+        caller: Address,
+        template_ids: Vec<u64>,
+        total_amount: i128,
+    ) -> Result<Vec<(String, i128)>, ContractError> {
+        milestone_template::create_from_templates(&env, caller, template_ids, total_amount)
     }
 
     // ── KYC Integration (#43) ───────────────────────────────────────
@@ -1894,6 +1934,32 @@ impl StellarGrantsContract {
 
     pub fn get_fees_collected(env: Env, token: Address) -> i128 {
         fees::total_fees_collected(&env, &token)
+    }
+
+    // ── Issue #631: Revenue Sharing Entry Points ────────────────────────────
+
+    pub fn finalize_epoch(env: Env, caller: Address, epoch_id: u32) -> Result<(), ContractError> {
+        revenue_share::finalize_epoch(&env, &caller, epoch_id)
+    }
+
+    pub fn claim_revenue_share(
+        env: Env,
+        staker: Address,
+        epoch_id: u32,
+    ) -> Result<i128, ContractError> {
+        revenue_share::claim(&env, &staker, epoch_id)
+    }
+
+    pub fn compute_revenue_claim(env: Env, staker: Address, epoch_id: u32) -> i128 {
+        revenue_share::compute_claim(&env, &staker, epoch_id)
+    }
+
+    pub fn current_revenue_epoch(env: Env) -> RevenueEpoch {
+        revenue_share::current_epoch(&env)
+    }
+
+    pub fn unclaimed_revenue_epochs(env: Env, staker: Address) -> Vec<u32> {
+        revenue_share::unclaimed_epochs(&env, &staker)
     }
 
     // ── Issue #529: Escrow Module ─────────────────────────────────────────────
@@ -3850,6 +3916,151 @@ impl StellarGrantsContract {
     pub fn whitelist_get_entries(env: Env, scope: WhitelistScope) -> Vec<WhitelistEntry> {
         whitelist::get_entries(&env, &scope)
     }
+
+    // ── Issue #622: Batched Multi-Key Storage Reads ──────────────────────
+
+    /// Return all data needed for the grant detail page. Single RPC call.
+    pub fn batch_grant_detail(env: Env, grant_id: u64) -> Result<GrantDetailView, ContractError> {
+        batch_read::grant_detail(&env, grant_id)
+    }
+
+    /// Return all data needed for the protocol dashboard. Single RPC call.
+    pub fn batch_dashboard(env: Env) -> DashboardView {
+        batch_read::dashboard(&env)
+    }
+
+    /// Return all data needed for a reviewer's personal dashboard.
+    pub fn batch_reviewer_dashboard(env: Env, reviewer: Address) -> ReviewerView {
+        batch_read::reviewer_dashboard(&env, &reviewer)
+    }
+
+    /// Return detail views for multiple grants at once (max 10).
+    pub fn batch_multi_grant_detail(
+        env: Env,
+        grant_ids: Vec<u64>,
+    ) -> Result<Vec<GrantDetailView>, ContractError> {
+        batch_read::multi_grant_detail(&env, grant_ids)
+    }
+
+    /// Return minimal grant cards for a list of grant IDs (cheaper than full detail).
+    pub fn batch_grant_cards(env: Env, grant_ids: Vec<u64>) -> Vec<ExportGrant> {
+        batch_read::grant_cards(&env, grant_ids)
+    }
+
+    // ── Issue #613: Condition-Based Milestone Fund Release ───────────────
+
+    /// Attach release conditions to a milestone. Owner only, before submission.
+    pub fn conditional_attach_conditions(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        conditions: Vec<ReleaseCondition>,
+    ) -> Result<(), ContractError> {
+        conditional_release::attach_conditions(&env, &owner, grant_id, milestone_idx, conditions)
+    }
+
+    /// Check all conditions for a milestone. Returns detailed results per condition.
+    pub fn conditional_check_conditions(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<ConditionResult> {
+        conditional_release::check_conditions(&env, grant_id, milestone_idx)
+    }
+
+    /// Return true only if every condition is met.
+    pub fn conditional_all_met(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
+        conditional_release::all_conditions_met(&env, grant_id, milestone_idx)
+    }
+
+    /// Return the conditions attached to a milestone.
+    pub fn conditional_get_conditions(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<ReleaseCondition> {
+        conditional_release::get_conditions(&env, grant_id, milestone_idx)
+    }
+
+    // ── Issue #612: Automatic Milestone Approval After Reviewer Timeout ──
+
+    /// Configure auto-approve for a grant. Owner only.
+    pub fn auto_approve_set_config(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        config: AutoApproveConfig,
+    ) -> Result<(), ContractError> {
+        auto_approve::set_config(&env, &owner, grant_id, config)
+    }
+
+    /// Attempt auto-approve for a milestone. Anyone may call; enforces all conditions.
+    pub fn auto_approve_try(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<bool, ContractError> {
+        auto_approve::try_auto_approve(&env, &caller, grant_id, milestone_idx)
+    }
+
+    /// Return whether auto-approve conditions are currently met for a milestone.
+    pub fn auto_approve_can(env: Env, grant_id: u64, milestone_idx: u32) -> bool {
+        auto_approve::can_auto_approve(&env, grant_id, milestone_idx)
+    }
+
+    /// Return the auto-approve config for a grant.
+    pub fn auto_approve_get_config(env: Env, grant_id: u64) -> Option<AutoApproveConfig> {
+        auto_approve::get_config(&env, grant_id)
+    }
+
+    /// Return the auto-approve record if it was triggered.
+    pub fn auto_approve_get_record(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<AutoApproveRecord> {
+        auto_approve::get_record(&env, grant_id, milestone_idx)
+    }
+
+    // ── Issue #618: Automatic Lifecycle Transitions Based on Ledger Time ─
+
+    /// Register a new timer for a grant. Owner or protocol (for defaults).
+    pub fn timer_register(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        trigger_type: TimerTriggerType,
+        fires_at: u64,
+    ) -> Result<(), ContractError> {
+        grant_timer::register_timer(&env, &caller, grant_id, trigger_type, fires_at)
+    }
+
+    /// Attempt to fire all eligible timers for a grant. Anyone can call.
+    pub fn timer_trigger(env: Env, caller: Address, grant_id: u64) -> u32 {
+        grant_timer::trigger_timers(&env, &caller, grant_id)
+    }
+
+    /// Return all timers for a grant.
+    pub fn timer_get_timers(env: Env, grant_id: u64) -> Vec<TimerRecord> {
+        grant_timer::get_timers(&env, grant_id)
+    }
+
+    /// Return only unfired, eligible (past fires_at) timers.
+    pub fn timer_pending(env: Env, grant_id: u64) -> Vec<TimerRecord> {
+        grant_timer::pending_timers(&env, grant_id)
+    }
+
+    /// Cancel a timer (owner or admin only).
+    pub fn timer_cancel(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        trigger_type: TimerTriggerType,
+    ) -> Result<(), ContractError> {
+        grant_timer::cancel_timer(&env, &caller, grant_id, trigger_type)
+    }
 }
 
 /// Issue #574: if a grant requires a performance bond, block milestone work until
@@ -3886,6 +4097,17 @@ fn apply_milestone_submission(
     // Validate structured evidence against the schema when one has been registered.
     evidence_schema::validate_evidence(env, grant_id, milestone_idx)?;
 
+    let is_cross_chain = crate::grant_bridge::has_valid_proof(env, grant_id, milestone_idx);
+    let final_proof_url = if is_cross_chain {
+        if let Some(proof) = crate::grant_bridge::get_proof(env, grant_id, milestone_idx) {
+            proof.tx_hash
+        } else {
+            proof_url
+        }
+    } else {
+        proof_url
+    };
+    
     let milestone = Milestone {
         idx: milestone_idx,
         description: description.clone(),
@@ -3896,7 +4118,7 @@ fn apply_milestone_submission(
         rejections: 0,
         reasons: soroban_sdk::Map::new(env),
         status_updated_at: 0,
-        proof_url: Some(proof_url),
+        proof_url: Some(final_proof_url),
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
         reviewer_count_snapshot: grant.reviewers.len(),

@@ -51,13 +51,17 @@ pub fn deposit(
     funder: &Address,
     amount: i128,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     if amount <= 0 {
         return Err(ContractError::ZeroAmount);
     }
 
     let mut account = load_account(env, grant_id)?;
     let token_client = token::Client::new(env, &account.token);
-    token_client.transfer(funder, env.current_contract_address(), &amount);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(funder, env.current_contract_address(), &amount);
+        Ok(())
+    })?;
 
     account.balance = account
         .balance
@@ -127,6 +131,7 @@ pub fn release(
     recipient: &Address,
     amount: i128,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     if amount <= 0 {
         return Err(ContractError::ZeroAmount);
     }
@@ -138,9 +143,6 @@ pub fn release(
     if account.balance < amount {
         return Err(ContractError::InvalidInput);
     }
-
-    let token_client = token::Client::new(env, &account.token);
-    token_client.transfer(&env.current_contract_address(), recipient, &amount);
 
     account.balance -= amount;
     account.total_released = account
@@ -154,11 +156,18 @@ pub fn release(
         Storage::set_grant(env, grant_id, &grant);
     }
 
+    let token_client = token::Client::new(env, &account.token);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(&env.current_contract_address(), recipient, &amount);
+        Ok(())
+    })?;
+
     Ok(())
 }
 
 /// Refund remaining contribution from escrow back to a specific funder.
 pub fn refund(env: &Env, grant_id: u64, funder: &Address) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     let mut ledger = Storage::get_funder_ledger(env, grant_id, funder)
         .ok_or(ContractError::NoRefundableAmount)?;
 
@@ -172,9 +181,6 @@ pub fn refund(env: &Env, grant_id: u64, funder: &Address) -> Result<i128, Contra
     if actual_refund <= 0 {
         return Err(ContractError::NoRefundableAmount);
     }
-
-    let token_client = token::Client::new(env, &account.token);
-    token_client.transfer(&env.current_contract_address(), funder, &actual_refund);
 
     account.balance -= actual_refund;
     Storage::set_escrow_account(env, grant_id, &account);
@@ -190,11 +196,18 @@ pub fn refund(env: &Env, grant_id: u64, funder: &Address) -> Result<i128, Contra
         Storage::set_grant(env, grant_id, &grant);
     }
 
+    let token_client = token::Client::new(env, &account.token);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(&env.current_contract_address(), funder, &actual_refund);
+        Ok(())
+    })?;
+
     Ok(actual_refund)
 }
 
 /// Refund all remaining escrow balance proportionally to all funders.
 pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     let mut account = load_account(env, grant_id)?;
     let total_balance = account.balance;
     if total_balance == 0 {
@@ -238,7 +251,10 @@ pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
         };
 
         if refund_amount > 0 {
-            token_client.transfer(&env.current_contract_address(), &addr, &refund_amount);
+            crate::reentrancy::protect_external_call(env, || {
+                token_client.transfer(&env.current_contract_address(), &addr, &refund_amount);
+                Ok(())
+            })?;
             distributed += refund_amount;
 
             if let Some(mut ledger) = ledger_opt {

@@ -44,6 +44,16 @@ pub fn validate_config(config: &ProtocolConfig) -> Result<(), ContractError> {
     if config.referral_fee_bps > 10_000 {
         return Err(ContractError::InvalidInput);
     }
+    if config.reviewer_reward_pool_bps > 10_000 || config.revenue_share_pool_bps > 10_000 {
+        return Err(ContractError::InvalidInput);
+    }
+    if config
+        .reviewer_reward_pool_bps
+        .saturating_add(config.revenue_share_pool_bps)
+        > 10_000
+    {
+        return Err(ContractError::InvalidInput);
+    }
     if config.max_reviewers < 1 {
         return Err(ContractError::InvalidInput);
     }
