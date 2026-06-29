@@ -154,6 +154,8 @@ pub enum ContractError {
     CollateralNotDeposited = 123,
     // Whitelist (#512)
     AddressNotWhitelisted = 124,
+    // KYC verification (#632)
+    KycRequired = 131,
     // Math (#528) — no specific errors, reuses ZeroAmount / InvalidInput
     // Funder report (#598) — no specific errors, read-only
     // Batch read (#622)

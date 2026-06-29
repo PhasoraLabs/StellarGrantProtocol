@@ -11,10 +11,10 @@ use crate::types::{
     MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal, OracleConfig,
     ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig, ProtocolMetrics,
     ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction, RateLimitRecord,
-    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, RevenueEpoch, ReviewerProfile,
-    ReviewerRequest, Role, RoleAssignment, RollingWindow, ScoringRubric, StakerEpochRecord,
-    StructuredEvidence, SyndicateGrant, SyndicateMember, TokenMetric, TransferProposal,
-    VoiceCredits, VotingMechanism,
+    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile, ReviewerRequest,
+    Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence, SyndicateGrant,
+    SyndicateMember, TokenMetric, TransferProposal, VerificationAttestation, VoiceCredits,
+    VotingMechanism,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -543,39 +543,33 @@ impl Storage {
         Self::bump(env, &key);
     }
 
-    // ── Issue #631: Revenue Sharing ─────────────────────────────────────────
+    // ── Issue #632: Contributor Verification ────────────────────────────────
 
-    pub fn get_revenue_epoch(env: &Env, epoch_id: u32) -> Option<RevenueEpoch> {
-        let key = DataKey::RevenueEpoch(epoch_id);
-        let epoch = env.storage().persistent().get(&key);
-        if epoch.is_some() {
-            Self::bump(env, &key);
-        }
-        epoch
+    pub fn get_verifier_contract(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::VerifierContract)
     }
 
-    pub fn set_revenue_epoch(env: &Env, epoch: &RevenueEpoch) {
-        let key = DataKey::RevenueEpoch(epoch.id);
-        env.storage().persistent().set(&key, epoch);
-        Self::bump(env, &key);
+    pub fn set_verifier_contract(env: &Env, verifier: &Address) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::VerifierContract, verifier);
     }
 
-    pub fn get_staker_epoch_record(
+    pub fn get_verification_attestation(
         env: &Env,
-        staker: &Address,
-        epoch_id: u32,
-    ) -> Option<StakerEpochRecord> {
-        let key = DataKey::StakerEpochRecord(staker.clone(), epoch_id);
-        let record = env.storage().persistent().get(&key);
-        if record.is_some() {
+        address: &Address,
+    ) -> Option<VerificationAttestation> {
+        let key = DataKey::VerificationAttestation(address.clone());
+        let attestation = env.storage().persistent().get(&key);
+        if attestation.is_some() {
             Self::bump(env, &key);
         }
-        record
+        attestation
     }
 
-    pub fn set_staker_epoch_record(env: &Env, record: &StakerEpochRecord) {
-        let key = DataKey::StakerEpochRecord(record.staker.clone(), record.epoch_id);
-        env.storage().persistent().set(&key, record);
+    pub fn set_verification_attestation(env: &Env, attestation: &VerificationAttestation) {
+        let key = DataKey::VerificationAttestation(attestation.subject.clone());
+        env.storage().persistent().set(&key, attestation);
         Self::bump(env, &key);
     }
 

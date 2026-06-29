@@ -31,6 +31,7 @@ mod collateral;
 mod compliance;
 mod config;
 mod constants;
+mod contributor_verification;
 mod cross_contract;
 mod crowdfund;
 mod data_export;
@@ -259,6 +260,9 @@ pub use types::{
     TokenMetric,
     TransferProposal,
     TransferableRole,
+    VerificationAttestation,
+    VerificationLevel,
+    VerificationStatus,
     VoiceCredits,
     VotingMechanism,
     // Issue #512: whitelist
@@ -620,10 +624,18 @@ impl StellarGrantsContract {
 
         if total_paid > 0 {
             // Pay each milestone individually so that registered splits are honoured.
+            let protocol_cfg = config::get_config(env);
             let mut owner_amount: i128 = 0;
             for idx in 0..grant.total_milestones {
                 let ms = Storage::get_milestone(env, grant_id, idx)
                     .ok_or(ContractError::MilestoneNotFound)?;
+                if ms.amount > protocol_cfg.kyc_payout_threshold {
+                    contributor_verification::require_verified(
+                        env,
+                        &grant.owner,
+                        VerificationLevel::FullKyc,
+                    )?;
+                }
                 if split_payment::has_split(env, grant_id, idx) {
                     split_payment::execute_split(env, grant_id, idx, ms.amount)?;
                 } else {
@@ -1857,6 +1869,65 @@ impl StellarGrantsContract {
 
     pub fn get_protocol_config(env: Env) -> ProtocolConfig {
         config::get_config(&env)
+    }
+
+    // ── Issue #632: Contributor Verification Entry Points ───────────────────
+
+    pub fn verification_set_verifier(
+        env: Env,
+        admin: Address,
+        verifier: Address,
+    ) -> Result<(), ContractError> {
+        contributor_verification::set_verifier(&env, &admin, &verifier)
+    }
+
+    pub fn verification_attest(
+        env: Env,
+        verifier: Address,
+        subject: Address,
+        level: VerificationLevel,
+        expires_at: Option<u64>,
+        attestation_hash: Bytes,
+    ) -> Result<(), ContractError> {
+        contributor_verification::attest(
+            &env,
+            &verifier,
+            &subject,
+            level,
+            expires_at,
+            attestation_hash,
+        )
+    }
+
+    pub fn verification_revoke(
+        env: Env,
+        caller: Address,
+        subject: Address,
+    ) -> Result<(), ContractError> {
+        contributor_verification::revoke(&env, &caller, &subject)
+    }
+
+    pub fn verification_is_verified(
+        env: Env,
+        address: Address,
+        required_level: VerificationLevel,
+    ) -> bool {
+        contributor_verification::is_verified(&env, &address, required_level)
+    }
+
+    pub fn verification_require_verified(
+        env: Env,
+        address: Address,
+        required_level: VerificationLevel,
+    ) -> Result<(), ContractError> {
+        contributor_verification::require_verified(&env, &address, required_level)
+    }
+
+    pub fn verification_get_attestation(
+        env: Env,
+        address: Address,
+    ) -> Option<VerificationAttestation> {
+        contributor_verification::get_attestation(&env, &address)
     }
 
     // ── Issue #517: Protocol Fee Management Entry Points ─────────────────────

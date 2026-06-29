@@ -31,8 +31,7 @@ pub fn deduct_and_transfer(
     let reviewer_reward_bps = config.reviewer_reward_pool_bps;
     let revenue_share_bps = config.revenue_share_pool_bps;
 
-    // Split fee: revenue share pool + reviewer reward pool + treasury
-    let revenue_share_amount = crate::math::basis_points_of(fee, revenue_share_bps)?;
+    // Split fee: reviewer reward pool + treasury
     let reviewer_reward_amount = crate::math::basis_points_of(fee, reviewer_reward_bps)?;
     let treasury_amount = fee
         .checked_sub(revenue_share_amount)
