@@ -31,6 +31,8 @@ import {
 } from "./types";
 import { meetsThreshold, PendingXdrStore } from "./utils/transactions";
 import { combineSignatures } from "./utils/transactions";
+import { retryWithBackoff } from "./utils/retry";
+import type { RetryConfig } from "./types";
 import { uploadMetadataToIPFS, fetchMetadataFromIPFS } from "./ipfs";
 import { BatchBuilder, BatchCall, BatchOperationError, BatchSendOptions } from "./batch/BatchBuilder";
 
@@ -62,6 +64,7 @@ export class StellarGrantsSDK {
   private readonly contract: Contract;
   private readonly server: any;
   private readonly config: StellarGrantsSDKConfig;
+  private readonly retryConfig: RetryConfig | undefined;
   private _horizonServer: Horizon.Server | null = null;
   private eventPollHandle: ReturnType<typeof setTimeout> | null = null;
   private eventHeartbeatHandle: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +81,7 @@ export class StellarGrantsSDK {
       signer: config.wallet ?? config.signer,
     };
     this.contract = new Contract(config.contractId);
+    this.retryConfig = config.retryConfig;
     const serverUrl = config.proxyUrl ?? config.rpcUrl!;
     this.server = new rpc.Server(serverUrl, {
       allowHttp: serverUrl.startsWith("http://"),
@@ -86,6 +90,17 @@ export class StellarGrantsSDK {
     if (config.horizonUrl) {
       this._horizonServer = new Horizon.Server(config.horizonUrl);
     }
+  }
+
+  /**
+   * Wraps a server call with the configured exponential-backoff retry strategy
+   * (Issue #502). All `this.server.*` invocations go through this helper so
+   * transient failures (rate-limits, timeouts, network blips) are automatically
+   * retried without callers needing to handle the logic themselves.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private serverCall(fn: () => Promise<any>): Promise<any> {
+    return retryWithBackoff(fn, this.retryConfig);
   }
 
   private get horizonServer(): Horizon.Server {
@@ -427,7 +442,7 @@ export class StellarGrantsSDK {
   }
 
   async getAccountSigners(accountId: string): Promise<any> {
-    return this.server.getAccount(accountId);
+    return this.serverCall(() => this.server.getAccount(accountId));
   }
 
   subscribeToEvents(
@@ -722,7 +737,8 @@ export class StellarGrantsSDK {
 
 
   async estimateFees(method: string, args: xdr.ScVal[], options?: { horizonUrl?: string; feePriority?: "low" | "medium" | "high"; simulatedFee?: string }): Promise<any> {
-    const simulation = await this.server.simulateTransaction(await this.buildTx(method, args, options));
+    const _txForEstimate = await this.buildTx(method, args, options);
+    const simulation = await this.serverCall(() => this.server.simulateTransaction(_txForEstimate));
     if (simulation?.error) {
       throw new StellarGrantsError(String(simulation.error));
     }
@@ -1108,7 +1124,7 @@ export class StellarGrantsSDK {
   private async invokeRead(method: string, args: xdr.ScVal[]): Promise<unknown> {
     try {
       const tx = await this.buildTx(method, args);
-      const simulation = await this.server.simulateTransaction(tx);
+      const simulation = await this.serverCall(() => this.server.simulateTransaction(tx));
       this.ensureSimulationSuccess(simulation);
       return this.parseSimulationResult(simulation);
     } catch (error) {
@@ -1123,7 +1139,7 @@ export class StellarGrantsSDK {
   ): Promise<unknown> {
     try {
       const tx = await this.buildTx(method, args, options);
-      const simulation = await this.server.simulateTransaction(tx);
+      const simulation = await this.serverCall(() => this.server.simulateTransaction(tx));
       this.ensureSimulationSuccess(simulation);
 
       const minResourceFee = BigInt(simulation?.minResourceFee ?? "0");
@@ -1140,7 +1156,7 @@ export class StellarGrantsSDK {
         ? await this.buildTx(method, args, { ...options, simulatedFee: desiredFee })
         : tx;
 
-      const prepared = await this.server.prepareTransaction(txForSending);
+      const prepared = await this.serverCall(() => this.server.prepareTransaction(txForSending));
 
       if (options?.returnUnsignedXdr) {
         const id =
@@ -1161,7 +1177,7 @@ export class StellarGrantsSDK {
       );
       const signedTx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase);
 
-      const sent = await this.server.sendTransaction(signedTx);
+      const sent = await this.serverCall(() => this.server.sendTransaction(signedTx));
       if (sent.status === "ERROR") {
         throw new StellarGrantsError(`Send failed: ${sent.errorResult ?? "unknown error"}`);
       }
@@ -1196,7 +1212,7 @@ export class StellarGrantsSDK {
   async simulateFootprint(method: string, args: xdr.ScVal[]): Promise<any> {
     try {
       const tx = await this.buildTx(method, args);
-      const simulation = await this.server.simulateTransaction(tx);
+      const simulation = await this.serverCall(() => this.server.simulateTransaction(tx));
       this.ensureSimulationSuccess(simulation);
       return simulation?.transactionData ?? simulation?.footprint ?? null;
     } catch (error) {
@@ -1233,7 +1249,7 @@ export class StellarGrantsSDK {
     }
 
     const source = await signer.getPublicKey();
-    const account = await this.server.getAccount(source);
+    const account = await this.serverCall(() => this.server.getAccount(source));
     const fee = options?.fee ?? options?.simulatedFee ?? this.config.defaultFee ?? "100";
 
     let builder = new TransactionBuilder(account, {
@@ -1272,7 +1288,7 @@ export class StellarGrantsSDK {
   async __simulateBatch(calls: BatchCall[], options?: Omit<BatchSendOptions, "waitForConfirmation" | "returnUnsignedXdr">): Promise<any> {
     try {
       const tx = await this.__buildBatchTx(calls, options);
-      const simulation = await this.server.simulateTransaction(tx);
+      const simulation = await this.serverCall(() => this.server.simulateTransaction(tx));
       this.ensureSimulationSuccess(simulation);
 
       // Best-effort: if the RPC returns per-op results, surface the failing index.
@@ -1301,7 +1317,7 @@ export class StellarGrantsSDK {
   async __sendBatch(calls: BatchCall[], options?: BatchSendOptions): Promise<any> {
     try {
       const tx = await this.__buildBatchTx(calls, options);
-      const simulation = await this.server.simulateTransaction(tx);
+      const simulation = await this.serverCall(() => this.server.simulateTransaction(tx));
       this.ensureSimulationSuccess(simulation);
 
       const minResourceFee = BigInt(simulation?.minResourceFee ?? "0");
@@ -1316,7 +1332,7 @@ export class StellarGrantsSDK {
         ? await this.__buildBatchTx(calls, { ...options, simulatedFee: desiredFee })
         : tx;
 
-      const prepared = await this.server.prepareTransaction(txForSending);
+      const prepared = await this.serverCall(() => this.server.prepareTransaction(txForSending));
 
       if (options?.returnUnsignedXdr) {
         const id =
@@ -1336,7 +1352,7 @@ export class StellarGrantsSDK {
         this.config.networkPassphrase,
       );
       const signedTx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase);
-      const sent = await this.server.sendTransaction(signedTx);
+      const sent = await this.serverCall(() => this.server.sendTransaction(signedTx));
       if (sent.status === "ERROR") {
         throw new StellarGrantsError(`Send failed: ${sent.errorResult ?? "unknown error"}`);
       }
@@ -1364,7 +1380,7 @@ export class StellarGrantsSDK {
     }
 
     const source = await signer.getPublicKey();
-    const account = await this.server.getAccount(source);
+    const account = await this.serverCall(() => this.server.getAccount(source));
     const fee = options?.fee ?? options?.simulatedFee ?? this.config.defaultFee ?? "100";
 
     let builder = new TransactionBuilder(account, {
