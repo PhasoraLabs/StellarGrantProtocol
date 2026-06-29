@@ -3,18 +3,17 @@ use super::keys::{
     DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
 };
 use crate::types::{
-    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState,
-    ChecklistSubmission, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
-    CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount, EscrowState,
-    EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord, MerkleCommitment,
-    MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal, OracleConfig,
-    ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig, ProtocolMetrics,
-    ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction, RateLimitRecord,
-    RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile, ReviewerRequest,
-    Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence, SyndicateGrant,
-    SyndicateMember, TokenMetric, TransferProposal, VerificationAttestation, VoiceCredits,
-    VotingMechanism,
+    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState, ChecklistSubmission,
+    ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion,
+    ContributorProfile, CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount,
+    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion,
+    HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
+    MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal,
+    OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig,
+    ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction,
+    RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile,
+    ReviewerRequest, Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence,
+    SyndicateGrant, SyndicateMember, TokenMetric, TransferProposal, VoiceCredits, VotingMechanism,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -524,6 +523,29 @@ impl Storage {
                 grant_id,
                 milestone_idx,
             )));
+    }
+
+    // ── Clawback mechanism ─────────────────────────────────────────────────────
+
+    pub fn get_clawback(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<ClawbackRequest> {
+        let key = DataKey::Milestone(MilestoneKey::Clawback(grant_id, milestone_idx));
+        let c = env.storage().persistent().get(&key);
+        if c.is_some() {
+            Self::bump(env, &key);
+        }
+        c
+    }
+
+    pub fn set_clawback(env: &Env, grant_id: u64, milestone_idx: u32, clawback: &ClawbackRequest) {
+        let key = DataKey::Milestone(MilestoneKey::Clawback(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, clawback);
+        Self::bump(env, &key);
+    }
+
+    pub fn remove_clawback(env: &Env, grant_id: u64, milestone_idx: u32) {
+        env.storage().persistent().remove(&DataKey::Milestone(
+            MilestoneKey::Clawback(grant_id, milestone_idx),
+        ));
     }
 
     // ── Issue #516: ProtocolConfig ────────────────────────────────────────────
