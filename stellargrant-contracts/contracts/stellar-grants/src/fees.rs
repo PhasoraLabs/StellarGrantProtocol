@@ -4,6 +4,7 @@ use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::ContractError;
 
+/// Compute protocol fee from gross amount. Used in tests for fee calculation validation.
 #[allow(dead_code)]
 pub fn compute_fee(gross: i128, fee_bps: u32) -> Result<i128, ContractError> {
     if fee_bps == 0 || gross <= 0 {
@@ -12,87 +13,8 @@ pub fn compute_fee(gross: i128, fee_bps: u32) -> Result<i128, ContractError> {
     crate::math::basis_points_of(gross, fee_bps)
 }
 
-#[allow(dead_code)]
-pub fn deduct_and_transfer(
-    env: &Env,
-    gross: i128,
-    token: &Address,
-    treasury: &Address,
-    grant_id: u64,
-    milestone_idx: u32,
-    fee_bps: u32,
-) -> Result<i128, ContractError> {
-    let fee = compute_fee(gross, fee_bps)?;
-    if fee <= 0 {
-        return Ok(gross);
-    }
-
-    let config = crate::config::get_config(env);
-    let reviewer_reward_bps = config.reviewer_reward_pool_bps;
-    let revenue_share_bps = config.revenue_share_pool_bps;
-
-    // Split fee: reviewer reward pool + treasury
-    let reviewer_reward_amount = crate::math::basis_points_of(fee, reviewer_reward_bps)?;
-    let treasury_amount = fee
-        .checked_sub(revenue_share_amount)
-        .ok_or(ContractError::InvalidInput)?
-        .checked_sub(reviewer_reward_amount)
-        .ok_or(ContractError::InvalidInput)?;
-
-    // Transfer treasury share to treasury
-    if treasury_amount > 0 {
-        token::Client::new(env, token).transfer(
-            &env.current_contract_address(),
-            treasury,
-            &treasury_amount,
-        );
-    }
-
-    // Fund reviewer reward pool
-    if reviewer_reward_amount > 0 {
-        crate::reviewer_reward::fund_pool(env, token, reviewer_reward_amount);
-    }
-
-    if revenue_share_amount > 0 {
-        crate::revenue_share::deposit_revenue(env, token, revenue_share_amount);
-    }
-
-    Storage::add_fees_collected(env, token, fee);
-
-    Events::emit_fee_collected(
-        env,
-        grant_id,
-        milestone_idx,
-        fee,
-        token.clone(),
-        treasury.clone(),
-    );
-
-    // Issue #569: if the grant owner was referred, accrue a share of this fee to
-    // their referrer's pending rewards. No-op when no referral record exists.
-    if let Some(grant) = Storage::get_grant(env, grant_id) {
-        crate::referral::trigger_reward(env, &grant.owner, token, fee)?;
-    }
-
-    gross.checked_sub(fee).ok_or(ContractError::InvalidInput)
-}
-
 pub fn total_fees_collected(env: &Env, token: &Address) -> i128 {
     Storage::get_fees_collected(env, token)
-}
-
-#[allow(dead_code)]
-pub fn set_treasury(env: &Env, admin: &Address, treasury: &Address) -> Result<(), ContractError> {
-    if Storage::get_global_admin(env) != Some(admin.clone()) {
-        return Err(ContractError::Unauthorized);
-    }
-    Storage::set_treasury(env, treasury);
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub fn get_treasury(env: &Env) -> Result<Address, ContractError> {
-    Storage::get_treasury(env).ok_or(ContractError::InvalidInput)
 }
 
 #[cfg(test)]

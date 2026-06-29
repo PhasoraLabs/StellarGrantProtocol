@@ -365,10 +365,6 @@ pub struct HookCallResult {
     pub error_code: Option<u32>,
 }
 
-/// Opaque byte payload passed to hook callbacks.
-#[allow(dead_code)]
-pub type HookPayload = Bytes;
-
 // ── Issue #514: Dispute Resolution Module ────────────────────────────────────
 
 #[contracttype]
