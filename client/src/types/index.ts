@@ -58,6 +58,20 @@ export type StellarGrantsSDKConfig = {
    */
   wallet?: WalletAdapter;
   defaultFee?: string;
+  /**
+   * Retry configuration for RPC calls (Issue #502).
+   * Controls exponential back-off behaviour when the Soroban RPC returns
+   * rate-limit (429) or transient timeout errors.
+   *
+   * @example
+   * ```ts
+   * const sdk = new StellarGrantsSDK({
+   *   retryConfig: { maxAttempts: 5, initialDelayMs: 500 },
+   *   ...
+   * });
+   * ```
+   */
+  retryConfig?: RetryConfig;
 };
 
 export type GrantCreateInput = {
