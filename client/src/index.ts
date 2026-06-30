@@ -6,7 +6,12 @@ export { TransactionFailedError } from "./errors/TransactionFailedError";
 export { ContractErrorCode, ErrorMessages } from "./errors/errorCodes";
 export type {
   GrantCreateInput,
+  GrantData,
+  GrantFundData,
   GrantFundInput,
+  GrantStatus,
+  MilestoneData,
+  MilestoneState,
   MilestoneSubmitInput,
   MilestoneVoteInput,
   StellarGrantsSDKConfig,

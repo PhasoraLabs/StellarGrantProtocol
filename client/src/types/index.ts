@@ -1,3 +1,49 @@
+// ─── Contract data types (#498) ───────────────────────────────────────────
+
+export type GrantStatus = "Active" | "Cancelled" | "Completed";
+export type MilestoneState = "Pending" | "Submitted" | "Approved" | "Rejected" | "Paid";
+
+export interface GrantFundData {
+  funder: string;
+  amount: bigint;
+}
+
+/** Decoded shape returned by the `grant_get` contract method. */
+export interface GrantData {
+  id: bigint;
+  owner: string;
+  title: string;
+  description: string;
+  token: string;
+  status: GrantStatus;
+  total_amount: bigint;
+  milestone_amount: bigint;
+  reviewers: string[];
+  total_milestones: number;
+  milestones_paid_out: number;
+  escrow_balance: bigint;
+  funders: GrantFundData[];
+  reason: string | null;
+  timestamp: bigint;
+}
+
+/** Decoded shape returned by the `milestone_get` contract method. */
+export interface MilestoneData {
+  idx: number;
+  description: string;
+  amount: bigint;
+  state: MilestoneState;
+  votes: Record<string, boolean>;
+  approvals: number;
+  rejections: number;
+  reasons: Record<string, string>;
+  status_updated_at: bigint;
+  proof_url: string | null;
+  submission_timestamp: bigint;
+}
+
+// ─── Signer / wallet ──────────────────────────────────────────────────────
+
 export type StellarGrantsSigner = {
   getPublicKey(): Promise<string>;
   signTransaction(txXdr: string, networkPassphrase: string): Promise<string>;
@@ -83,17 +129,6 @@ export type GrantCreateInput = {
   milestoneCount: number;
 };
 
-/**
- * Minimal shape used by Vue composables.
- * The contract return type is currently `unknown` at the SDK boundary, so
- * downstream apps can narrow this to their own domain model.
- */
-export type GrantData = Record<string, unknown> & {
-  id?: number;
-  title?: string;
-  description?: string;
-  status?: string;
-};
 
 export type GrantFundInput = {
   grantId: number;
