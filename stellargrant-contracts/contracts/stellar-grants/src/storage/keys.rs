@@ -145,6 +145,13 @@ pub enum CollateralKey {
 
 #[contracttype]
 #[derive(Clone)]
+pub enum WaitlistKey {
+    Config(u64),
+    Entries(u64),
+}
+
+#[contracttype]
+#[derive(Clone)]
 pub enum ProvenanceKey {
     Record(u32),
     Counter,
@@ -185,6 +192,7 @@ pub enum DataKey {
     Arbitration(ArbitrationKey),
     Bond(BondKey),
     Collateral(CollateralKey),
+    Waitlist(WaitlistKey),
     ConditionalRelease(ConditionalReleaseKey),
     AutoApprove(AutoApproveKey),
     GrantTimer(GrantTimerKey),

@@ -365,10 +365,6 @@ pub struct HookCallResult {
     pub error_code: Option<u32>,
 }
 
-/// Opaque byte payload passed to hook callbacks.
-#[allow(dead_code)]
-pub type HookPayload = Bytes;
-
 // ── Issue #514: Dispute Resolution Module ────────────────────────────────────
 
 #[contracttype]
@@ -1179,6 +1175,30 @@ pub struct GrantTemplate {
     pub multisig_required: bool,
     pub sequential_milestones: bool,
     pub insurance_opt_in: bool,
+}
+
+// ── Waitlist Module ─────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistEntry {
+    pub applicant: Address,
+    pub grant_id: u64,
+    pub joined_at: u64,
+    pub reputation_snapshot: u32,
+    pub position: u32,
+    pub promoted: bool,
+    pub promoted_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistConfig {
+    pub grant_id: u64,
+    pub max_slots: u32,
+    pub max_waitlist_size: u32,
+    pub rank_by_reputation: bool,
+    pub auto_promote: bool,
 }
 
 // ── Issue #544: Rate limiting ─────────────────────────────────────────────────

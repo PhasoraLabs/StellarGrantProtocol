@@ -8,7 +8,6 @@ use crate::types::{ProtocolMetrics, TokenMetric};
 
 /// Internal enum for selecting which counter to increment.
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub enum MetricField {
     GrantsCreated,
     GrantsActive,

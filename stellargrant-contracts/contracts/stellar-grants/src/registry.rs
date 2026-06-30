@@ -104,32 +104,6 @@ pub fn contributor_count(env: &Env) -> u32 {
     Storage::get_contributor_index(env).len()
 }
 
-/// Deactivate a contributor entry (soft-delete). Admin only.
-#[allow(dead_code)]
-pub fn deactivate(env: &Env, admin: &Address, address: &Address) -> Result<(), ContractError> {
-    require_global_admin(env, admin)?;
-
-    let index = Storage::get_contributor_index(env);
-    let mut new_index: Vec<RegistryEntry> = Vec::new(env);
-    let mut found = false;
-
-    for mut entry in index.iter() {
-        if entry.address == *address {
-            entry.is_active = false;
-            found = true;
-        }
-        new_index.push_back(entry);
-    }
-
-    if !found {
-        return Err(ContractError::InvalidInput);
-    }
-
-    Storage::set_contributor_index(env, &new_index);
-
-    Ok(())
-}
-
 fn require_global_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
     let admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
     if admin != *caller {

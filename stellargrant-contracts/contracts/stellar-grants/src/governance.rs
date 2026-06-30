@@ -6,7 +6,6 @@ use crate::quadratic;
 use crate::storage::Storage;
 use crate::types::{ContractError, Grant, Milestone, MilestoneState, VotingMechanism};
 
-#[allow(dead_code)]
 pub struct VoteResult {
     pub approved: bool,
     pub quorum_reached: bool,

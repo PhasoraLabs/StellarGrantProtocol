@@ -171,4 +171,8 @@ pub enum ContractError {
     TimerNotFound = 131,
     TimerAlreadyFired = 132,
     TimerNotEligible = 133,
+    // Waitlist module
+    WaitlistFull = 134,
+    AlreadyOnWaitlist = 135,
+    NotOnWaitlist = 136,
 }

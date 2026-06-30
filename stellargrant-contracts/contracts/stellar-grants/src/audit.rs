@@ -43,7 +43,6 @@ pub fn get_recent(env: &Env, grant_id: u64, n: u32) -> Vec<AuditEntry> {
 }
 
 /// Return the count of audit entries for a grant.
-#[allow(dead_code)]
 pub fn log_length(env: &Env, grant_id: u64) -> u32 {
     Storage::get_audit_log(env, grant_id).len()
 }

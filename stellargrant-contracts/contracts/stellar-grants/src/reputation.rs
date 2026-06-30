@@ -82,32 +82,6 @@ pub fn record_completion(
     Ok(new_score)
 }
 
-#[allow(dead_code)]
-pub fn record_rejection(
-    env: &Env,
-    grant_id: u64,
-    milestone_idx: u32,
-    profile: &mut ContributorProfile,
-) -> Result<u32, ContractError> {
-    profile.milestones_rejected = profile.milestones_rejected.saturating_add(1);
-
-    let new_score = calculate_effective_score(env, profile);
-    profile.reputation_score = new_score as u64;
-
-    Storage::set_contributor(env, profile.contributor.clone(), profile);
-    reputation_decay::record_activity(env, &profile.contributor);
-    Events::emit_reputation_updated(
-        env,
-        grant_id,
-        milestone_idx,
-        profile.contributor.clone(),
-        profile.reputation_score,
-        profile.total_earned,
-    );
-    Ok(new_score)
-}
-
-#[allow(dead_code)]
 pub fn tier_from_score(score: u32) -> ReputationTier {
     match score {
         0..=99 => ReputationTier::Unranked,

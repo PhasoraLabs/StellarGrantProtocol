@@ -1,6 +1,6 @@
 use super::keys::{
-    ArbitrationKey, AutoApproveKey, BondKey, CollateralKey, ConditionalReleaseKey, CrowdfundKey,
-    DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
+    ArbitrationKey, BondKey, CollateralKey, CrowdfundKey, DataKey, EscrowKey, GrantKey,
+    InsuranceKey, MilestoneKey, UserKey, VotingKey, WaitlistKey,
 };
 use crate::types::{
     AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState, ChecklistSubmission,
@@ -14,6 +14,7 @@ use crate::types::{
     RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, RenewalProposal, ReviewerProfile,
     ReviewerRequest, Role, RoleAssignment, RollingWindow, ScoringRubric, StructuredEvidence,
     SyndicateGrant, SyndicateMember, TokenMetric, TransferProposal, VoiceCredits, VotingMechanism,
+    WaitlistConfig, WaitlistEntry,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -2113,6 +2114,33 @@ impl Storage {
     pub fn set_grant_timers(env: &Env, grant_id: u64, timers: &Vec<TimerRecord>) {
         let key = DataKey::GrantTimer(GrantTimerKey::Timers(grant_id));
         env.storage().persistent().set(&key, timers);
+        Self::bump(env, &key);
+    }
+
+    // ── Waitlist Module ───────────────────────────────────────────────────────
+
+    pub fn get_waitlist_config(env: &Env, grant_id: u64) -> Option<WaitlistConfig> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Waitlist(WaitlistKey::Config(grant_id)))
+    }
+
+    pub fn set_waitlist_config(env: &Env, grant_id: u64, config: &WaitlistConfig) {
+        let key = DataKey::Waitlist(WaitlistKey::Config(grant_id));
+        env.storage().persistent().set(&key, config);
+        Self::bump(env, &key);
+    }
+
+    pub fn get_waitlist_entries(env: &Env, grant_id: u64) -> Vec<WaitlistEntry> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Waitlist(WaitlistKey::Entries(grant_id)))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_waitlist_entries(env: &Env, grant_id: u64, entries: &Vec<WaitlistEntry>) {
+        let key = DataKey::Waitlist(WaitlistKey::Entries(grant_id));
+        env.storage().persistent().set(&key, entries);
         Self::bump(env, &key);
     }
 }
