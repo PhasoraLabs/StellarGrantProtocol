@@ -43,6 +43,11 @@
   "devDependencies": {
     "@next/bundle-analyzer": "^16.0.0",
     "@playwright/test": "^1.60.0",
+    "@storybook/addon-essentials": "^8.6.18",
+    "@storybook/addon-interactions": "^8.6.18",
+    "@storybook/blocks": "^8.6.14",
+    "@storybook/nextjs": "^8.6.18",
+    "@storybook/react": "^8.6.18",
     "@tailwindcss/postcss": "^4",
     "cross-env": "^7.0.3",
     "@tanstack/react-query-devtools": "^5.100.14",
@@ -65,15 +70,14 @@
     "eslint-config-next": "16.1.6",
     "express": "^5.2.1",
     "jsdom": "^29.1.1",
-    "storybook": "^8.6.0",
-    "@storybook/nextjs": "^8.6.0",
-    "@storybook/addon-essentials": "^8.6.0",
-    "@storybook/addon-interactions": "^8.6.0",
-    "@storybook/blocks": "^8.6.0",
-    "@storybook/react": "^8.6.0",
+    "storybook": "^8.6.18",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
     "typescript": "^5",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "webpack": "5.101.2"
+  },
+  "overrides": {
+    "webpack": "5.101.2"
   }
 }
