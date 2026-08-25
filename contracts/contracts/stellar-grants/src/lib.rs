@@ -49,7 +49,7 @@ mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
-mod fees;
+pub mod fees;
 mod fork;
 mod funder_report;
 mod governance;

@@ -81,12 +81,26 @@ pub fn calculate_refund(
                         .unwrap_or(0)
                 }
             }
-            RefundPolicyType::TimeWeighted => time_weighted_refund(
-                gross,
-                start,
-                start.saturating_add((grant.total_milestones as u64).saturating_mul(10_000)),
-                now,
-            ),
+            RefundPolicyType::TimeWeighted => {
+                // Derive an end time from the grant's real timeline: use the latest
+                // milestone deadline if present, otherwise fall back to a sensible
+                // default duration from grant start.
+                let mut max_deadline: Option<u64> = None;
+                for i in 0..grant.total_milestones {
+                    if let Some(ms) = Storage::get_milestone(env, grant_id, i) {
+                        if let Some(d) = ms.deadline {
+                            max_deadline = Some(match max_deadline {
+                                Some(prev) => prev.max(d),
+                                None => d,
+                            });
+                        }
+                    }
+                }
+                let end_time = max_deadline.unwrap_or_else(|| {
+                    start.saturating_add(crate::constants::DEFAULT_TIME_WEIGHTED_DURATION_SECONDS)
+                });
+                time_weighted_refund(gross, start, end_time, now)
+            }
             RefundPolicyType::PenaltyOnCancel => gross.saturating_sub(
                 gross
                     .saturating_mul(policy.penalty_bps as i128)
@@ -182,4 +196,91 @@ pub fn time_weighted_refund(
         .saturating_mul(end_time.saturating_sub(current_time) as i128)
         .checked_div(end_time.saturating_sub(start_time) as i128)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Env, String, Vec};
+
+    #[test]
+    fn time_weighted_uses_milestone_deadlines() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        let grant_id = 7u64;
+        let start = 1_000u64;
+
+        // create grant with 3 milestones and an escrow balance
+        let grant = crate::types::Grant {
+            id: grant_id,
+            owner: owner.clone(),
+            title: String::from_str(&env, "G"),
+            description: String::from_str(&env, "D"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 1_000,
+            funders: Vec::new(&env),
+            reason: None,
+            timestamp: start,
+            require_compliance: None,
+        };
+        Storage::set_grant(&env, grant_id, &grant);
+
+        // set milestone deadlines spaced by a week
+        for i in 0..3u32 {
+            let ms = crate::types::Milestone {
+                idx: i,
+                description: String::from_str(&env, "m"),
+                amount: 0,
+                state: crate::types::MilestoneState::Pending,
+                votes: soroban_sdk::Map::new(&env),
+                approvals: 0,
+                rejections: 0,
+                reasons: soroban_sdk::Map::new(&env),
+                status_updated_at: 0,
+                proof_url: None,
+                submission_timestamp: 0,
+                deadline: Some(
+                    start.saturating_add(crate::constants::SECONDS_PER_WEEK * (i as u64 + 1)),
+                ),
+                reviewer_count_snapshot: 0,
+            };
+            Storage::set_milestone(&env, grant_id, i, &ms);
+        }
+
+        // set a TimeWeighted policy directly into storage
+        let policy = RefundPolicy {
+            grant_id,
+            policy_type: RefundPolicyType::TimeWeighted,
+            penalty_bps: 0,
+            grace_period_ledgers: 0,
+            min_refund_pct_bps: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&RefundKey::Policy(grant_id), &policy);
+
+        // advance ledger to one week after start (should still be before latest deadline)
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp: start + crate::constants::SECONDS_PER_WEEK,
+            protocol_version: 21,
+            sequence_number: 1,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+
+        let calc = calculate_refund(&env, grant_id, &owner).unwrap();
+        // Because the latest milestone deadline is in the future, funder_refund should be > 0
+        assert!(calc.funder_refund > 0);
+    }
 }

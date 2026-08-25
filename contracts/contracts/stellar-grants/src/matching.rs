@@ -394,7 +394,7 @@ fn compute_grant_qf_score(env: &Env, round_id: u32, grant_id: u64) -> (i128, i12
                 contributor.clone(),
                 grant_id,
             ));
-            if let Some(contribution) = env.storage().persistent().get(&contrib_key) {
+            if let Some(contribution) = get_contribution(env, round_id, &contributor, grant_id) {
                 total_direct = total_direct.saturating_add(contribution.amount);
                 let sqrt_amount = isqrt(contribution.amount);
                 sqrt_sum = sqrt_sum.saturating_add(sqrt_amount);

@@ -1,0 +1,749 @@
+{
+  "generators": {
+    "address": 4,
+    "nonce": 0,
+    "mux_id": 0
+  },
+  "auth": [
+    [],
+    []
+  ],
+  "ledger": {
+    "protocol_version": 25,
+    "sequence_number": 0,
+    "timestamp": 0,
+    "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "base_reserve": 0,
+    "min_persistent_entry_ttl": 4096,
+    "min_temp_entry_ttl": 16,
+    "max_entry_ttl": 6312000,
+    "ledger_entries": [
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "Amendment"
+                      },
+                      {
+                        "u64": "1"
+                      },
+                      {
+                        "u32": 2
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "changed_fields"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "string": "title"
+                        },
+                        {
+                          "string": "description"
+                        },
+                        {
+                          "string": "total_amount"
+                        },
+                        {
+                          "string": "total_milestones"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "grant_id"
+                    },
+                    "val": {
+                      "u64": "1"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "new_values"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "string": "New title"
+                        },
+                        {
+                          "string": "New description"
+                        },
+                        {
+                          "string": "9999"
+                        },
+                        {
+                          "string": "3"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "previous_values"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "string": "Original title"
+                        },
+                        {
+                          "string": "Original description"
+                        },
+                        {
+                          "string": "1234"
+                        },
+                        {
+                          "string": "2"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "proposed_at"
+                    },
+                    "val": {
+                      "u64": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "proposed_by"
+                    },
+                    "val": {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "rationale"
+                    },
+                    "val": {
+                      "string": "full rewrite"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "resolved_at"
+                    },
+                    "val": {
+                      "u64": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "reviewer_votes"
+                    },
+                    "val": {
+                      "map": [
+                        {
+                          "key": {
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                          },
+                          "val": {
+                            "bool": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "status"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "version"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "AmendmentHistory"
+                      },
+                      {
+                        "u64": "1"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "vec": [
+                  {
+                    "u32": 2
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "CurrentVersion"
+                      },
+                      {
+                        "u64": "1"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "u32": 2
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "Data"
+                      },
+                      {
+                        "u64": "1"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "description"
+                    },
+                    "val": {
+                      "string": "New description"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "escrow_balance"
+                    },
+                    "val": {
+                      "i128": "1234"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "funders"
+                    },
+                    "val": {
+                      "vec": []
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "id"
+                    },
+                    "val": {
+                      "u64": "1"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "milestone_amount"
+                    },
+                    "val": {
+                      "i128": "617"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "milestones_paid_out"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "owner"
+                    },
+                    "val": {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "reason"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "require_compliance"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "reviewers"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "status"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "timestamp"
+                    },
+                    "val": {
+                      "u64": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "title"
+                    },
+                    "val": {
+                      "string": "New title"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "token"
+                    },
+                    "val": {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_amount"
+                    },
+                    "val": {
+                      "i128": "9999"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_milestones"
+                    },
+                    "val": {
+                      "u32": 3
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "SpecVersion"
+                      },
+                      {
+                        "u64": "1"
+                      },
+                      {
+                        "u32": 1
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "amendment_id"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "created_at"
+                    },
+                    "val": {
+                      "u64": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "description"
+                    },
+                    "val": {
+                      "string": "Original description"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "grant_id"
+                    },
+                    "val": {
+                      "u64": "1"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "title"
+                    },
+                    "val": {
+                      "string": "Original title"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_amount"
+                    },
+                    "val": {
+                      "i128": "1234"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_milestones"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "version"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Grant"
+                  },
+                  {
+                    "vec": [
+                      {
+                        "symbol": "SpecVersion"
+                      },
+                      {
+                        "u64": "1"
+                      },
+                      {
+                        "u32": 2
+                      }
+                    ]
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "amendment_id"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "created_at"
+                    },
+                    "val": {
+                      "u64": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "description"
+                    },
+                    "val": {
+                      "string": "New description"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "grant_id"
+                    },
+                    "val": {
+                      "u64": "1"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "title"
+                    },
+                    "val": {
+                      "string": "New title"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_amount"
+                    },
+                    "val": {
+                      "i128": "9999"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_milestones"
+                    },
+                    "val": {
+                      "u32": 3
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "version"
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1000000
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": "ledger_key_contract_instance",
+              "durability": "persistent",
+              "val": {
+                "contract_instance": {
+                  "executable": {
+                    "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  "storage": null
+                }
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_code": {
+              "ext": "v0",
+              "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "code": ""
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      }
+    ]
+  },
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "amendment_proposed"
+              },
+              {
+                "u64": "1"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u32": 2
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "amendment_approved"
+              },
+              {
+                "u64": "1"
+              }
+            ],
+            "data": {
+              "u32": 2
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "amendment_applied"
+              },
+              {
+                "u64": "1"
+              }
+            ],
+            "data": {
+              "u32": 2
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
+}

@@ -17,8 +17,8 @@ use crate::types::{
     RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition, RenewalProposal,
     RevenueEpoch, ReviewerProfile, ReviewerRequest, Role, RoleAssignment, RollingWindow,
     ScoringRubric, StakerEpochRecord, StructuredEvidence, SyndicateGrant, SyndicateMember,
-    TimerRecord, TokenMetric, TransferProposal, VerificationAttestation, VoiceCredits,
-    VotingMechanism, WaitlistConfig, WaitlistEntry,
+    TimerRecord, TokenMetric, TransferProposal, TransferableRole, VerificationAttestation,
+    VoiceCredits, VotingMechanism, WaitlistConfig, WaitlistEntry,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,

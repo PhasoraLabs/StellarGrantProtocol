@@ -32,7 +32,7 @@ pub fn export_grants(
     let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
     let mut filtered = soroban_sdk::Vec::new(env);
     for i in 0..scan_limit {
-        if i >= all_ids.len() {
+        if i >= all_ids.len() as usize {
             break;
         }
         let gid = all_ids.get(i as u32).unwrap();
@@ -138,7 +138,7 @@ pub fn export_milestones_since(
     let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
 
     for i in 0..scan_limit {
-        if i >= all_ids.len() {
+        if i >= all_ids.len() as usize {
             break;
         }
         let gid = all_ids.get(i as u32).unwrap();
