@@ -15,6 +15,7 @@ path = "../contracts/stellar-grants"
 
 [dependencies.soroban-sdk]
 version = "25"
+features = ["testutils"]
 
 [[bin]]
 name = "fuzz_target_1"
