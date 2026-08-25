@@ -54,6 +54,17 @@ pub fn deposit_revenue(env: &Env, token: &Address, amount: i128) {
     let epoch_id = epoch_id_for(env);
     let mut epoch =
         Storage::get_revenue_epoch(env, epoch_id).unwrap_or_else(|| empty_epoch(epoch_id, token));
+
+    if epoch.finalized {
+        let next_epoch_id = epoch_id.saturating_add(1);
+        let mut next_epoch = Storage::get_revenue_epoch(env, next_epoch_id)
+            .unwrap_or_else(|| empty_epoch(next_epoch_id, token));
+        next_epoch.total_revenue = next_epoch.total_revenue.saturating_add(amount);
+        next_epoch.token = token.clone();
+        Storage::set_revenue_epoch(env, &next_epoch);
+        return;
+    }
+
     epoch.total_revenue = epoch.total_revenue.saturating_add(amount);
     epoch.token = token.clone();
     Storage::set_revenue_epoch(env, &epoch);
@@ -361,5 +372,33 @@ mod tests {
 
         assert_eq!(client.claim_revenue_share(&staker, &0), 100);
         assert!(client.try_claim_revenue_share(&staker, &0).is_err());
+    }
+
+    #[test]
+    fn test_deposit_revenue_after_finalized() {
+        let env = Env::default();
+        let token = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let epoch_id = epoch_id_for(&env);
+            
+            // finalize epoch
+            let mut epoch = empty_epoch(epoch_id, &token);
+            epoch.finalized = true;
+            Storage::set_revenue_epoch(&env, &epoch);
+
+            // try to deposit, it should route to next epoch
+            deposit_revenue(&env, &token, 500);
+
+            // current epoch shouldn't change
+            let curr = Storage::get_revenue_epoch(&env, epoch_id).unwrap();
+            assert_eq!(curr.total_revenue, 0);
+
+            // next epoch should receive funds
+            let next_epoch_id = epoch_id + 1;
+            let next = Storage::get_revenue_epoch(&env, next_epoch_id).unwrap();
+            assert_eq!(next.total_revenue, 500);
+        });
     }
 }
