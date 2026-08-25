@@ -1726,6 +1726,55 @@ impl Events {
         };
         event.publish(env);
     }
+
+    // ── Issue #955: Reviewer event emitters ────────────────────────────────
+
+    pub fn emit_reviewer_added_to_grant(env: &Env, grant_id: u64, reviewer: Address) {
+        let event = ReviewerAddedToGrant {
+            grant_id,
+            reviewer,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_reviewer_removed_from_grant(env: &Env, grant_id: u64, reviewer: Address) {
+        let event = ReviewerRemovedFromGrant {
+            grant_id,
+            reviewer,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #954: Template event emitters ────────────────────────────────
+
+    pub fn emit_template_saved(env: &Env, template_id: u64, owner: Address, name: String) {
+        let event = TemplateSaved {
+            template_id,
+            owner,
+            name,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_template_deleted(env: &Env, template_id: u64, owner: Address) {
+        let event = TemplateDeleted {
+            template_id,
+            owner,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_template_used(env: &Env, template_id: u64) {
+        let event = TemplateUsed {
+            template_id,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
 }
 
 // ── Issue #587: Grant Forked event ──────────────────────────────────────────
@@ -1763,5 +1812,49 @@ pub struct WaitlistPromoted {
 pub struct WaitlistLeft {
     pub grant_id: u64,
     pub applicant: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #955: Grant reviewer events ───────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerAddedToGrant {
+    pub grant_id: u64,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRemovedFromGrant {
+    pub grant_id: u64,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #954: Milestone template events ───────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateSaved {
+    pub template_id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateDeleted {
+    pub template_id: u64,
+    pub owner: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateUsed {
+    pub template_id: u64,
     pub timestamp: u64,
 }

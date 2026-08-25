@@ -1,4 +1,5 @@
 use crate::errors::ContractError;
+use crate::events::Events;
 use crate::storage::keys::{DataKey, GrantKey};
 use crate::storage::Storage;
 use crate::types::{
@@ -321,6 +322,7 @@ fn add_reviewer_to_grant(
     // Add reviewer
     grant.reviewers.push_back(reviewer.clone());
     Storage::set_grant(env, grant_id, &grant);
+    Events::emit_reviewer_added_to_grant(env, grant_id, reviewer.clone());
 
     Ok(())
 }
@@ -357,6 +359,7 @@ fn remove_reviewer_from_grant(
 
     grant.reviewers = new_reviewers;
     Storage::set_grant(env, grant_id, &grant);
+    Events::emit_reviewer_removed_from_grant(env, grant_id, reviewer.clone());
 
     Ok(())
 }

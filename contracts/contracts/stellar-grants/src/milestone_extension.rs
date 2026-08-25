@@ -2,7 +2,7 @@ use soroban_sdk::{contractevent, Address, Env, Map, String, Vec};
 
 use crate::errors::ContractError;
 use crate::storage::Storage;
-use crate::types::{ExtensionRequest, ExtensionStatus};
+use crate::types::{ExtensionRequest, ExtensionStatus, MilestoneState};
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,14 @@ pub fn request_extension(
 
     let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
         .ok_or(ContractError::MilestoneNotFound)?;
+
+    // Issue #953: Reject if milestone is already in a terminal state
+    if matches!(
+        milestone.state,
+        MilestoneState::Approved | MilestoneState::Rejected | MilestoneState::Paid
+    ) {
+        return Err(ContractError::InvalidState);
+    }
 
     // Only one pending request per milestone at a time.
     if let Some(existing) = Storage::get_extension_request(env, grant_id, milestone_idx) {
@@ -130,7 +138,10 @@ pub fn vote_extension(
         request.votes_deny = request.votes_deny.saturating_add(1);
     }
 
-    let total_reviewers = grant.reviewers.len();
+    // Issue #952: Use the same reviewer_count_snapshot that milestone approval uses
+    let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
+        .ok_or(ContractError::MilestoneNotFound)?;
+    let total_reviewers = milestone.reviewer_count_snapshot as usize;
     let majority = total_reviewers / 2 + 1;
 
     if request.votes_approve >= majority {
