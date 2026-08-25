@@ -1,3 +1,4 @@
+use crate::events::Events;
 use crate::storage::keys::DataKey;
 use crate::types::{ContractError, MilestoneTemplate, TemplateCategory};
 use soroban_sdk::{Address, Env, String, Vec};
@@ -45,7 +46,9 @@ pub fn save_template(
     owner_templates.push_back(id);
     env.storage()
         .persistent()
-        .set(&DataKey::TemplatesByOwner(owner), &owner_templates);
+        .set(&DataKey::TemplatesByOwner(owner.clone()), &owner_templates);
+
+    Events::emit_template_saved(env, id, owner, name);
 
     Ok(id)
 }
@@ -70,6 +73,8 @@ pub fn create_from_templates(
         env.storage()
             .persistent()
             .set(&DataKey::MilestoneTemplate(id), &template);
+
+        Events::emit_template_used(env, id);
 
         let amount = total_amount
             .checked_mul(template.default_amount_pct as i128)
@@ -138,7 +143,9 @@ pub fn delete_template(env: &Env, caller: Address, id: u64) -> Result<(), Contra
     }
     env.storage()
         .persistent()
-        .set(&DataKey::TemplatesByOwner(caller), &new_templates);
+        .set(&DataKey::TemplatesByOwner(caller.clone()), &new_templates);
+
+    Events::emit_template_deleted(env, id, caller);
 
     Ok(())
 }
