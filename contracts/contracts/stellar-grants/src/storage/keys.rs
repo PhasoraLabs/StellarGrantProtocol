@@ -312,7 +312,7 @@ pub enum DataKey {
 
     // Notifications
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 
     // Issue #609: Lockup
     Lockup(u64, u32),
@@ -481,5 +481,5 @@ pub enum LegacyDataKey {
     ForkRecord(u64),
     ForkChildren(u64),
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 }
