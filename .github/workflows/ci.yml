@@ -38,6 +38,9 @@ jobs:
       - name: Check (WASM)
         run: cargo check --workspace --target wasm32v1-none
 
+      - name: Test
+        run: cargo test --workspace
+
   backend:
     name: Backend (Node.js)
     runs-on: ubuntu-latest
