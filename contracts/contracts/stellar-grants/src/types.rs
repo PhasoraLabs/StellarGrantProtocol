@@ -316,6 +316,7 @@ pub struct InsurancePolicy {
     pub issued_at: u64,
     pub expires_at: u64,
     pub active: bool,
+    pub total_paid_out: i128,
 }
 
 #[contracttype]

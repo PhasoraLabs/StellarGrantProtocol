@@ -1502,7 +1502,11 @@ impl Storage {
 
     // ── Issue #568: Grant Transfer ────────────────────────────────────────────
 
-    pub fn get_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole) -> Option<TransferProposal> {
+    pub fn get_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+    ) -> Option<TransferProposal> {
         let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         let v = env.storage().persistent().get(&key);
         if v.is_some() {
@@ -1511,7 +1515,12 @@ impl Storage {
         v
     }
 
-    pub fn set_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole, proposal: &TransferProposal) {
+    pub fn set_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+        proposal: &TransferProposal,
+    ) {
         let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         env.storage().persistent().set(&key, proposal);
         Self::bump(env, &key);

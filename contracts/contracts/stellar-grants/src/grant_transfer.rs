@@ -279,11 +279,13 @@ mod test {
         assert_eq!(reviewer_result, Ok(()));
 
         // Check both proposals exist independently
-        let owner_proposal = Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Owner);
+        let owner_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Owner);
         assert!(owner_proposal.is_some());
         assert_eq!(owner_proposal.unwrap().proposed_new_holder, new_owner);
 
-        let reviewer_proposal = Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+        let reviewer_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
         assert!(reviewer_proposal.is_some());
         assert_eq!(reviewer_proposal.unwrap().proposed_new_holder, new_reviewer);
 
@@ -293,7 +295,8 @@ mod test {
         assert_eq!(grant.owner, new_owner);
 
         // Reviewer proposal should still exist
-        let reviewer_proposal = Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+        let reviewer_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
         assert!(reviewer_proposal.is_some());
     }
 }

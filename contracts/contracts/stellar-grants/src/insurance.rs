@@ -67,6 +67,10 @@ pub fn purchase_policy(
         .checked_div(BASIS_POINTS_SCALE as i128)
         .ok_or(ContractError::InvalidInput)?;
 
+    if premium == 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
     if premium > 0 {
         let token_client = token::Client::new(env, token);
         crate::reentrancy::protect_external_call(env, || {
@@ -99,6 +103,7 @@ pub fn purchase_policy(
         issued_at: now,
         expires_at,
         active: true,
+        total_paid_out: 0,
     };
     Storage::set_insurance_policy(env, &policy);
 
@@ -185,15 +190,19 @@ pub fn approve_claim(
         return Err(ContractError::ClaimAlreadyResolved);
     }
 
-    let policy = Storage::get_insurance_policy(env, claim.policy_grant_id)
+    let mut policy = Storage::get_insurance_policy(env, claim.policy_grant_id)
         .ok_or(ContractError::PolicyNotFound)?;
 
     let pool_balance = Storage::get_insurance_pool(env, &policy.token);
 
-    // Payout capped at min(claimed_amount, coverage_amount, pool_balance)
+    // Payout capped at min(claimed_amount, coverage_amount - total_paid_out, pool_balance)
+    let remaining_coverage = policy
+        .coverage_amount
+        .checked_sub(policy.total_paid_out)
+        .ok_or(ContractError::InvalidInput)?;
     let actual_payout = payout_amount
         .min(claim.claimed_amount)
-        .min(policy.coverage_amount)
+        .min(remaining_coverage)
         .min(pool_balance);
 
     if actual_payout <= 0 {
@@ -212,6 +221,13 @@ pub fn approve_claim(
     claim.resolved_at = Some(env.ledger().timestamp());
     claim.payout_amount = Some(actual_payout);
     Storage::set_insurance_claim(env, &claim);
+
+    // Update policy's total_paid_out
+    policy.total_paid_out = policy
+        .total_paid_out
+        .checked_add(actual_payout)
+        .ok_or(ContractError::InvalidInput)?;
+    Storage::set_insurance_policy(env, &policy);
 
     let token_client = token::Client::new(env, &policy.token);
     crate::reentrancy::protect_external_call(env, || {
@@ -302,6 +318,16 @@ mod tests {
     }
 
     #[test]
+    fn test_zero_premium_rejected() {
+        let (env, _admin, policyholder, token) = setup();
+        // coverage_amount <= 199 results in premium = 0 due to integer division
+        // 199 * 50 / 10_000 = 0
+        let coverage = 199i128;
+        let err = purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap_err();
+        assert_eq!(err, ContractError::InvalidInput);
+    }
+
+    #[test]
     fn test_claim_exceeding_coverage_is_capped() {
         let (env, admin, policyholder, token) = setup();
         let coverage = 1_000_000i128;
@@ -345,5 +371,44 @@ mod tests {
         let reason = String::from_str(&env, "late");
         let err = file_claim(&env, &policyholder, 1, 500_000, reason).unwrap_err();
         assert_eq!(err, ContractError::PolicyExpired);
+    }
+
+    #[test]
+    fn test_cumulative_payouts_capped_at_coverage() {
+        let (env, admin, policyholder, token) = setup();
+        let coverage = 1_000_000i128;
+        purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap();
+
+        // Mint extra into pool so pool isn't the bottleneck
+        let stellar_asset = StellarAssetClient::new(&env, &token);
+        stellar_asset.mint(&env.current_contract_address(), &2_000_000);
+        Storage::set_insurance_pool(&env, &token, 2_000_000);
+
+        // First claim for 600,000 (within coverage)
+        let reason1 = String::from_str(&env, "first incident");
+        let claim_id1 = file_claim(&env, &policyholder, 1, 600_000, reason1).unwrap();
+        approve_claim(&env, &admin, claim_id1, 600_000).unwrap();
+        let claim1 = get_claim(&env, claim_id1).unwrap();
+        assert_eq!(claim1.payout_amount, Some(600_000));
+
+        let policy = get_policy(&env, 1).unwrap();
+        assert_eq!(policy.total_paid_out, 600_000);
+
+        // Second claim for 600,000 (would exceed coverage)
+        // Should only pay remaining 400,000
+        let reason2 = String::from_str(&env, "second incident");
+        let claim_id2 = file_claim(&env, &policyholder, 1, 600_000, reason2).unwrap();
+        approve_claim(&env, &admin, claim_id2, 600_000).unwrap();
+        let claim2 = get_claim(&env, claim_id2).unwrap();
+        assert_eq!(claim2.payout_amount, Some(400_000));
+
+        let policy = get_policy(&env, 1).unwrap();
+        assert_eq!(policy.total_paid_out, 1_000_000);
+
+        // Third claim should fail since coverage is exhausted
+        let reason3 = String::from_str(&env, "third incident");
+        let claim_id3 = file_claim(&env, &policyholder, 1, 100_000, reason3).unwrap();
+        let err = approve_claim(&env, &admin, claim_id3, 100_000).unwrap_err();
+        assert_eq!(err, ContractError::InsufficientPoolBalance);
     }
 }

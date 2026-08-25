@@ -56,8 +56,7 @@ fn test_time_weighted_refund_policy_on_partial_cancel() {
     // time-weighted window so the refund split is a clean 50/50.
     let grant = client.get_grant(&grant_id);
     let start = grant.timestamp;
-    env.ledger()
-        .with_mut(|li| li.timestamp = start + 5_000);
+    env.ledger().with_mut(|li| li.timestamp = start + 5_000);
 
     let funder_before = token_client.balance(&funder);
     let owner_before = token_client.balance(&owner);

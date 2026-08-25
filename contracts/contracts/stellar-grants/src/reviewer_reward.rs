@@ -82,9 +82,8 @@ pub fn record_participation(
         PERSISTENT_TTL_EXTEND_TO,
     );
 
-    let index_key = DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(
-        reviewer.clone(),
-    ));
+    let index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
     let mut grant_ids: Vec<u64> = env
         .storage()
         .persistent()
@@ -194,9 +193,8 @@ fn compute_reviewer_share(
     let mut reviewer_votes: i128 = 0;
     let mut total_reviewer_votes: i128 = 0;
 
-    let reward_index_key = DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(
-        reviewer.clone(),
-    ));
+    let reward_index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
     let grant_ids: Vec<u64> = env
         .storage()
         .persistent()
