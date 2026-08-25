@@ -1136,6 +1136,13 @@ pub struct MultisigExecuted {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultisigProposalExpired {
+    pub proposal_id: u32,
+    pub timestamp: u64,
+}
+
 // ── Issue #548: Compliance events ─────────────────────────────────────────────
 
 #[contractevent]
@@ -1225,6 +1232,14 @@ pub struct RoleRenounced {
 }
 
 impl Events {
+    pub fn emit_multisig_proposal_expired(env: &Env, proposal_id: u32) {
+        MultisigProposalExpired {
+            proposal_id,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(env);
+    }
+
     // ... existing methods ...
 
     // ── Invoice event emitters ────────────────────────────────────────────────

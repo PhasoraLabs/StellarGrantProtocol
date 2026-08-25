@@ -677,6 +677,7 @@ pub struct MultisigProposal {
     pub threshold: u32,
     pub total_weight_signed: u32,
     pub executed: bool,
+    pub expired: bool,
     pub expired_at: u64,
     pub created_by: Address,
     pub created_at: u64,

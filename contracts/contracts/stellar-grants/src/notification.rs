@@ -49,8 +49,8 @@ pub fn subscribe(
         .persistent()
         .set(&DataKey::NotifSub(subscriber.clone(), 0, 0, 0), &subs);
 
-    let scope_type = scope_type_and_data(&scope).0;
-    let list_key = DataKey::NotifSubList(event as u32, scope_type);
+    let (scope_type, _scope_data) = scope_type_and_data(&scope);
+    let list_key = DataKey::NotifSubList(event as u32, scope_type, scope.clone());
     let mut list: Vec<Address> = env
         .storage()
         .persistent()
@@ -90,8 +90,8 @@ pub fn unsubscribe(
         .persistent()
         .set(&DataKey::NotifSub(subscriber.clone(), 0, 0, 0), &subs);
 
-    let scope_type = scope_type_and_data(scope).0;
-    let list_key = DataKey::NotifSubList(event as u32, scope_type);
+    let (scope_type, _scope_data) = scope_type_and_data(scope);
+    let list_key = DataKey::NotifSubList(event as u32, scope_type, scope.clone());
     let mut list: Vec<Address> = env
         .storage()
         .persistent()
@@ -117,8 +117,8 @@ pub fn get_subscribers(
     event: NotificationEvent,
     scope: &SubscriptionScope,
 ) -> Vec<Address> {
-    let scope_type = scope_type_and_data(scope).0;
-    let list_key = DataKey::NotifSubList(event as u32, scope_type);
+    let (scope_type, _scope_data) = scope_type_and_data(scope);
+    let list_key = DataKey::NotifSubList(event as u32, scope_type, scope.clone());
     env.storage()
         .persistent()
         .get(&list_key)
@@ -160,4 +160,68 @@ pub fn is_subscribed(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn subscription_lists_are_isolated_by_scope() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let subscriber_a = Address::generate(&env);
+            let subscriber_b = Address::generate(&env);
+            let contributor_a = Address::generate(&env);
+            let contributor_b = Address::generate(&env);
+
+            subscribe(
+                &env,
+                &subscriber_a,
+                NotificationEvent::MilestoneApproved,
+                SubscriptionScope::PerGrant(1),
+            )
+            .unwrap();
+            subscribe(
+                &env,
+                &subscriber_b,
+                NotificationEvent::MilestoneApproved,
+                SubscriptionScope::PerGrant(2),
+            )
+            .unwrap();
+            subscribe(
+                &env,
+                &subscriber_a,
+                NotificationEvent::NewGrant,
+                SubscriptionScope::PerContributor(contributor_a.clone()),
+            )
+            .unwrap();
+            subscribe(
+                &env,
+                &subscriber_b,
+                NotificationEvent::NewGrant,
+                SubscriptionScope::PerContributor(contributor_b.clone()),
+            )
+            .unwrap();
+
+            assert_eq!(
+                get_subscribers(
+                    &env,
+                    NotificationEvent::MilestoneApproved,
+                    &SubscriptionScope::PerGrant(1),
+                ),
+                Vec::from_array(&env, [subscriber_a.clone()])
+            );
+            assert_eq!(
+                get_subscribers(
+                    &env,
+                    NotificationEvent::NewGrant,
+                    &SubscriptionScope::PerContributor(contributor_a),
+                ),
+                Vec::from_array(&env, [subscriber_a])
+            );
+        });
+    }
 }
