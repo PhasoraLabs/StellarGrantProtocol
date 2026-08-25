@@ -204,6 +204,7 @@ fn cancel_grant_internal(env: &Env, grant_id: u64, reason: &String) -> Result<()
         let forfeit_reason = String::from_str(env, "grant cancelled by timer");
         let _ = crate::collateral::forfeit(
             env,
+            &grant.owner,
             grant_id,
             &grant.owner,
             req.forfeit_on_abandon_bps,

@@ -5,6 +5,9 @@ pub const SECONDS_PER_DAY: u64 = 86_400;
 pub const SECONDS_PER_WEEK: u64 = 604_800;
 pub const SECONDS_PER_YEAR: u64 = 31_536_000;
 
+// Default duration used for time-weighted refunds when no milestone deadlines set.
+pub const DEFAULT_TIME_WEIGHTED_DURATION_SECONDS: u64 = SECONDS_PER_WEEK * 4; // 4 weeks
+
 // ── Financial ────────────────────────────────────────────────────────────────
 pub const BASIS_POINTS_SCALE: u32 = 10_000;
 pub const DEFAULT_PROTOCOL_FEE_BPS: u32 = 100; // 1%

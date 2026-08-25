@@ -394,9 +394,10 @@ pub fn migrate_storage_keys_v2(env: &Env) -> Result<(), ContractError> {
             LegacyDataKey::TransferProposal(gid),
             crate::types::TransferProposal
         ) {
+            // Store legacy transfer proposal under role-specific key
             env.storage()
                 .persistent()
-                .set(&DataKey::Grant(GrantKey::Transfer(gid)), &v);
+                .set(&DataKey::Grant(GrantKey::Transfer(gid, v.role.clone())), &v);
         }
         if let Some(v) = read_legacy!(
             LegacyDataKey::SyndicateGrant(gid),

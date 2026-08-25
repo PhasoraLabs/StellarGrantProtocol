@@ -32,7 +32,14 @@
                     "symbol": "Grant"
                   },
                   {
-                    "u64": "1"
+                    "vec": [
+                      {
+                        "symbol": "Data"
+                      },
+                      {
+                        "u64": "1"
+                      }
+                    ]
                   }
                 ]
               },
@@ -103,6 +110,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "require_compliance"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "reviewers"
                     },
                     "val": {
@@ -163,7 +176,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
