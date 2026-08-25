@@ -26,7 +26,7 @@ pub fn save_template(
     let template = MilestoneTemplate {
         id,
         owner: owner.clone(),
-        name,
+        name: name.clone(),
         description,
         category,
         default_amount_pct,

@@ -4616,8 +4616,13 @@ impl StellarGrantsContract {
     }
 
     /// Return all provenance records for a grant.
-    pub fn provenance_get_by_grant(env: Env, grant_id: u64) -> Vec<ProvenanceRecord> {
-        provenance::get_by_grant(&env, grant_id)
+    pub fn provenance_get_by_grant(
+        env: Env,
+        grant_id: u64,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ProvenanceRecord> {
+        provenance::get_by_grant(&env, grant_id, offset, limit)
     }
 
     /// Return a specific provenance record by global ID.

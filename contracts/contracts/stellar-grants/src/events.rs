@@ -11,6 +11,14 @@ pub struct GrantCancelled {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParamChanged {
+    pub key: soroban_sdk::Symbol,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
 /// Issue #698: emitted instead of silently dropping the entry when a
 /// `grant_index` list (per-owner, per-status, per-token, or the global
 /// recency order) has already reached `MAX_INDEX_ENTRIES`.
@@ -447,6 +455,15 @@ pub struct BountyCancelled {
 pub struct Events;
 
 impl Events {
+    pub fn emit_param_changed(env: &Env, key: soroban_sdk::Symbol, set_by: Address) {
+        let event = ParamChanged {
+            key,
+            set_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
     pub fn emit_grant_cancelled(
         env: &Env,
         grant_id: u64,
