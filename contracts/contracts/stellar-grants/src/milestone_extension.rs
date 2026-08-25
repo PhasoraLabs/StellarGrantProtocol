@@ -142,7 +142,7 @@ pub fn vote_extension(
     let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
         .ok_or(ContractError::MilestoneNotFound)?;
     let total_reviewers = milestone.reviewer_count_snapshot as usize;
-    let majority = total_reviewers / 2 + 1;
+    let majority = (total_reviewers / 2 + 1) as u32;
 
     if request.votes_approve >= majority {
         // Approved: update milestone deadline without touching vote/submission state.
