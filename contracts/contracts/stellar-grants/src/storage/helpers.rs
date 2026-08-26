@@ -136,12 +136,12 @@ impl Storage {
     }
 
     pub fn get_milestone(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Milestone> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::Data(
-                grant_id,
-                milestone_idx,
-            )))
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_milestone_v(env: &Env, grant_id: u64, milestone_idx: u32) -> Milestone {
@@ -151,37 +151,39 @@ impl Storage {
     }
 
     pub fn set_milestone(env: &Env, grant_id: u64, milestone_idx: u32, milestone: &Milestone) {
-        env.storage().persistent().set(
-            &DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx)),
-            milestone,
-        );
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, milestone);
+        Self::bump(env, &key);
     }
 
     pub fn get_contributor(env: &Env, contributor: Address) -> Option<ContributorProfile> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::User(UserKey::Profile(contributor)))
+        let key = DataKey::User(UserKey::Profile(contributor));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_contributor(env: &Env, contributor: Address, profile: &ContributorProfile) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::User(UserKey::Profile(contributor)), profile);
+        let key = DataKey::User(UserKey::Profile(contributor));
+        env.storage().persistent().set(&key, profile);
+        Self::bump(env, &key);
     }
 
-    pub fn get_escrow_state(env: &Env, grant_id: u64) -> EscrowState {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Escrow(EscrowKey::State(grant_id)))
-            .unwrap_or_else(|| {
-                env.panic_with_error(ContractError::InvalidState);
-            })
+    pub fn get_escrow_state(env: &Env, grant_id: u64) -> Option<EscrowState> {
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_escrow_state(env: &Env, grant_id: u64, state: &EscrowState) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(EscrowKey::State(grant_id)), state);
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        env.storage().persistent().set(&key, state);
+        Self::bump(env, &key);
     }
 
     pub fn get_multisig_signers(env: &Env, grant_id: u64) -> Vec<Address> {

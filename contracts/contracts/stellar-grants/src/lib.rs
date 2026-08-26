@@ -424,7 +424,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id);
+            let mut escrow_state = Storage::get_escrow_state(&env, grant_id)
+                .ok_or(ContractError::InvalidState)?;
             if escrow_state.lifecycle == EscrowLifecycleState::Released {
                 return Err(ContractError::GrantAlreadyReleased);
             }
@@ -452,7 +453,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id);
+            let mut escrow_state = Storage::get_escrow_state(&env, grant_id)
+                .ok_or(ContractError::InvalidState)?;
             if escrow_state.mode != EscrowMode::HighSecurity {
                 return Err(ContractError::InvalidState);
             }
@@ -599,7 +601,8 @@ impl StellarGrantsContract {
         if multisig_pending {
             // Grant stays Active with escrow untouched (beyond what was
             // already paid out above) until execute_escrow_release runs.
-            let mut escrow_state = Storage::get_escrow_state(env, grant_id);
+            let mut escrow_state = Storage::get_escrow_state(env, grant_id)
+                .ok_or(ContractError::InvalidState)?;
             escrow_state.lifecycle = EscrowLifecycleState::AwaitingMultisig;
             escrow_state.quorum_ready = true;
             Storage::set_escrow_state(env, grant_id, &escrow_state);
@@ -634,7 +637,8 @@ impl StellarGrantsContract {
         // Issue #817: keep the data_export staleness/filter API fresh.
         data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
 
-        let mut escrow_state = Storage::get_escrow_state(env, grant_id);
+        let mut escrow_state = Storage::get_escrow_state(env, grant_id)
+            .ok_or(ContractError::InvalidState)?;
         escrow_state.lifecycle = EscrowLifecycleState::Released;
         escrow_state.quorum_ready = true;
         Storage::set_escrow_state(env, grant_id, &escrow_state);
