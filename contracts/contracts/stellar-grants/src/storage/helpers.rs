@@ -1445,6 +1445,18 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    pub fn get_syndicate_payouts(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
+        let key = DataKey::Grant(GrantKey::SyndicatePayouts(grant_id, milestone_idx));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(Vec::new(env))
+    }
+
     // ── Issue #591: Grant Specification Versioning ───────────────────────────
 
     pub fn get_grant_version(env: &Env, grant_id: u64, version: u32) -> Option<GrantVersion> {

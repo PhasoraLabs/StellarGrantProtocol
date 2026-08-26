@@ -2263,7 +2263,10 @@ impl StellarGrantsContract {
 
     pub fn cancel_bounty(env: Env, caller: Address, bounty_id: u64) -> Result<(), ContractError> {
         caller.require_auth();
-        bounty::cancel_bounty(&env, &caller, bounty_id)
+        let bounty = bounty::get_bounty(&env, bounty_id).ok_or(ContractError::BountyNotFound)?;
+        bounty::cancel_bounty(&env, &caller, bounty_id)?;
+        metrics::update_token_locked(&env, &bounty.token, -bounty.prize_amount);
+        Ok(())
     }
 
     pub fn get_bounty(env: Env, bounty_id: u64) -> Option<BountyGrant> {
@@ -3947,6 +3950,10 @@ impl StellarGrantsContract {
     ) -> Result<(), ContractError> {
         caller.require_auth();
         syndication::record_payout_allocation(&env, &caller, grant_id, milestone_idx, payout)
+    }
+
+    pub fn syndicate_payout_allocation(env: Env, grant_id: u64, milestone_idx: u32) -> Vec<(Address, i128)> {
+        syndication::get_payout_allocation(&env, grant_id, milestone_idx)
     }
 
     pub fn withdraw_syndicate(
