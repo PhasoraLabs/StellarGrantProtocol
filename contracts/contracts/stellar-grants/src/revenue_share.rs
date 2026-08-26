@@ -382,7 +382,7 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             let epoch_id = epoch_id_for(&env);
-            
+
             // finalize epoch
             let mut epoch = empty_epoch(epoch_id, &token);
             epoch.finalized = true;

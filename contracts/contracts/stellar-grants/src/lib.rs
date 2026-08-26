@@ -3962,7 +3962,11 @@ impl StellarGrantsContract {
         syndication::record_payout_allocation(&env, &caller, grant_id, milestone_idx, payout)
     }
 
-    pub fn syndicate_payout_allocation(env: Env, grant_id: u64, milestone_idx: u32) -> Vec<(Address, i128)> {
+    pub fn syndicate_payout_allocation(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
         syndication::get_payout_allocation(&env, grant_id, milestone_idx)
     }
 

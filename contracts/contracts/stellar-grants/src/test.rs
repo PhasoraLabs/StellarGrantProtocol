@@ -848,7 +848,7 @@ mod tests {
         let total_before = client.provenance_total_records();
         assert!(total_before >= 1);
 
-        let by_grant = client.provenance_get_by_grant(&grant_id);
+        let by_grant = client.provenance_get_by_grant(&grant_id, &0, &10);
         assert!(!by_grant.is_empty());
         let record = by_grant.get(0).unwrap();
         assert_eq!(record.grant_id, grant_id);
