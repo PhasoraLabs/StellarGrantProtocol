@@ -696,7 +696,7 @@ mod tests {
         assert_eq!(grant.escrow_balance, 1000);
 
         env.as_contract(&contract_id, || {
-            let escrow_state = Storage::get_escrow_state(&env, grant_id);
+            let escrow_state = Storage::get_escrow_state(&env, grant_id).unwrap();
             assert_eq!(
                 escrow_state.lifecycle,
                 EscrowLifecycleState::AwaitingMultisig
@@ -848,7 +848,7 @@ mod tests {
         let total_before = client.provenance_total_records();
         assert!(total_before >= 1);
 
-        let by_grant = client.provenance_get_by_grant(&grant_id);
+        let by_grant = client.provenance_get_by_grant(&grant_id, &0, &10);
         assert!(!by_grant.is_empty());
         let record = by_grant.get(0).unwrap();
         assert_eq!(record.grant_id, grant_id);

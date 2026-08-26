@@ -10,7 +10,6 @@ const BADGE_TTL_EXTEND_TO: u32 = 1_000_000;
 pub enum BadgeKey {
     Badge(Address, BadgeType),
     BadgeList(Address),
-    BadgeRegistry,
     BadgeAwardCount(BadgeType),
 }
 
@@ -107,16 +106,6 @@ fn write_award(
         &BadgeKey::BadgeAwardCount(badge_type.clone()),
         &count.saturating_add(1),
     );
-
-    let mut registry: Vec<BadgeRecord> = env
-        .storage()
-        .persistent()
-        .get(&BadgeKey::BadgeRegistry)
-        .unwrap_or_else(|| Vec::new(env));
-    registry.push_back(record.clone());
-    env.storage()
-        .persistent()
-        .set(&BadgeKey::BadgeRegistry, &registry);
 
     BadgeAwarded {
         contributor: contributor.clone(),
