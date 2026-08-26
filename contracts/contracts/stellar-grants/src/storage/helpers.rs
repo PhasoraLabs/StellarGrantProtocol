@@ -2257,6 +2257,21 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    // Issue #927: tracks how many waitlist promotions have happened for this
+    // grant so promote_next can enforce config.max_slots.
+    pub fn get_waitlist_promoted_count(env: &Env, grant_id: u64) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id)))
+            .unwrap_or(0)
+    }
+
+    pub fn set_waitlist_promoted_count(env: &Env, grant_id: u64, count: u32) {
+        let key = DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id));
+        env.storage().persistent().set(&key, &count);
+        Self::bump(env, &key);
+    }
+
     // ── Issue #533: Bounty-Mode Grants ───────────────────────────────────────
 
     pub fn next_bounty_id(env: &Env) -> u64 {

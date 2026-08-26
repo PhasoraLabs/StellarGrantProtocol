@@ -139,20 +139,34 @@ pub fn leave(env: &Env, applicant: &Address, grant_id: u64) -> Result<(), Contra
 
 /// Promote the top-ranked entry. Called when a slot opens.
 /// Returns the promoted address if successful, None if waitlist is empty.
-pub fn promote_next(env: &Env, grant_id: u64) -> Option<Address> {
-    let config = Storage::get_waitlist_config(env, grant_id)?;
+pub fn promote_next(env: &Env, caller: &Address, grant_id: u64) -> Result<Option<Address>, ContractError> {
+    caller.require_auth();
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.owner != *caller {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let config = match Storage::get_waitlist_config(env, grant_id) {
+        Some(c) => c,
+        None => return Ok(None),
+    };
     if !config.auto_promote {
-        return None;
+        return Ok(None);
+    }
+
+    let promoted_count = Storage::get_waitlist_promoted_count(env, grant_id);
+    if promoted_count >= config.max_slots {
+        return Err(ContractError::WaitlistFull);
     }
 
     let mut entries = Storage::get_waitlist_entries(env, grant_id);
 
     if entries.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     // Get the first (highest-ranked) entry
-    let promoted_entry = entries.get(0)?.clone();
+    let promoted_entry = entries.get(0).ok_or(ContractError::InvalidState)?.clone();
 
     // Mark as promoted
     let mut first = entries.get(0).unwrap();
@@ -171,9 +185,10 @@ pub fn promote_next(env: &Env, grant_id: u64) -> Option<Address> {
     }
 
     Storage::set_waitlist_entries(env, grant_id, &entries);
+    Storage::set_waitlist_promoted_count(env, grant_id, promoted_count + 1);
     Events::emit_waitlist_promoted(env, grant_id, promoted_entry.applicant.clone(), 1);
 
-    Some(promoted_entry.applicant)
+    Ok(Some(promoted_entry.applicant))
 }
 
 /// Return all entries, sorted by reputation (or FIFO).
@@ -461,13 +476,81 @@ mod tests {
             join(&env, &applicant2, grant_id).unwrap();
 
             // Promote first
-            let promoted = promote_next(&env, grant_id);
+            let promoted = promote_next(&env, &owner, grant_id).unwrap();
             assert_eq!(promoted, Some(applicant1.clone()));
 
             let waitlist = get_waitlist(&env, grant_id);
             assert_eq!(waitlist.len(), 1);
             assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
             assert_eq!(waitlist.get(0).unwrap().position, 1);
+        });
+    }
+
+    #[test]
+    fn test_promote_next_requires_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let applicant1 = Address::generate(&env);
+
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
+            setup_contributor(&env, &applicant1, 500);
+            join(&env, &applicant1, grant_id).unwrap();
+
+            let result = promote_next(&env, &stranger, grant_id);
+            assert_eq!(result, Err(ContractError::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn test_promote_next_stops_at_max_slots() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicant1 = Address::generate(&env);
+        let applicant2 = Address::generate(&env);
+        let applicant3 = Address::generate(&env);
+
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
+            setup_contributor(&env, &applicant3, 500);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
+            join(&env, &applicant3, grant_id).unwrap();
+
+            promote_next(&env, &owner, grant_id).unwrap();
+            promote_next(&env, &owner, grant_id).unwrap();
+
+            let result = promote_next(&env, &owner, grant_id);
+            assert_eq!(result, Err(ContractError::WaitlistFull));
         });
     }
 

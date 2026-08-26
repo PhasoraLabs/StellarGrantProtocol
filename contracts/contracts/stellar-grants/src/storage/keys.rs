@@ -151,6 +151,7 @@ pub enum CollateralKey {
 pub enum WaitlistKey {
     Config(u64),
     Entries(u64),
+    PromotedCount(u64),
 }
 
 #[contracttype]

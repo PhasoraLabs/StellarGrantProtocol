@@ -49,6 +49,9 @@ pub fn submit_evidence(
     if grant.owner != *caller {
         return Err(ContractError::Unauthorized);
     }
+    if milestone_idx >= grant.total_milestones {
+        return Err(ContractError::MilestoneIndexOutOfBounds);
+    }
 
     if let Some(schema) = Storage::get_evidence_schema(env, grant_id, milestone_idx) {
         for field in schema.fields.iter() {
@@ -223,5 +226,23 @@ mod test {
 
         let submit_result = submit_evidence(&env, &owner, 1, 0, values);
         assert_eq!(submit_result, Ok(()));
+    }
+
+    #[test]
+    fn test_submit_evidence_rejects_out_of_range_milestone() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        setup_grant(&env, 1, &owner);
+
+        let mut values = Map::new(&env);
+        values.set(
+            String::from_str(&env, "anything"),
+            String::from_str(&env, "value"),
+        );
+
+        let result = submit_evidence(&env, &owner, 1, 999_999, values);
+        assert_eq!(result, Err(ContractError::MilestoneIndexOutOfBounds));
     }
 }

@@ -1875,3 +1875,82 @@ pub struct TemplateUsed {
     pub template_id: u64,
     pub timestamp: u64,
 }
+
+// ── Issue #926: Escrow multisig events ──────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigRequestCreated {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigApproved {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub approver: Address,
+    pub total_approvals: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigExecuted {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+impl Events {
+    pub fn emit_escrow_multisig_request_created(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        amount: i128,
+    ) {
+        let event = EscrowMultisigRequestCreated {
+            grant_id,
+            milestone_idx,
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_escrow_multisig_approved(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        approver: Address,
+        total_approvals: u32,
+    ) {
+        let event = EscrowMultisigApproved {
+            grant_id,
+            milestone_idx,
+            approver,
+            total_approvals,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_escrow_multisig_executed(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        amount: i128,
+    ) {
+        let event = EscrowMultisigExecuted {
+            grant_id,
+            milestone_idx,
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+}
