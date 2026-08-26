@@ -4606,8 +4606,8 @@ impl StellarGrantsContract {
 
     /// Promote the top-ranked entry. Called when a slot opens.
     /// Returns the promoted address if successful, None if waitlist is empty.
-    pub fn promote_from_waitlist(env: Env, grant_id: u64) -> Option<Address> {
-        waitlist::promote_next(&env, grant_id)
+    pub fn promote_from_waitlist(env: Env, caller: Address, grant_id: u64) -> Result<Option<Address>, ContractError> {
+        waitlist::promote_next(&env, &caller, grant_id)
     }
 
     /// Return all entries, sorted by reputation (or FIFO).

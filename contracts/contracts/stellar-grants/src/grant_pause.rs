@@ -51,12 +51,11 @@ pub fn unpause(env: &Env, caller: &Address, grant_id: u64) -> Result<(), Contrac
     }
 
     let key = DataKey::GrantPaused(grant_id);
-    if let Some(mut record) = get_record(env, grant_id) {
-        let now = env.ledger().timestamp();
-        record.unpause_history.push_back((caller.clone(), now));
-        record.auto_unpause_at = Some(now);
-        env.storage().persistent().set(&key, &record);
-    }
+    let mut record = get_record(env, grant_id).ok_or(ContractError::InvalidState)?;
+    let now = env.ledger().timestamp();
+    record.unpause_history.push_back((caller.clone(), now));
+    record.auto_unpause_at = Some(now);
+    env.storage().persistent().set(&key, &record);
     env.events().publish(
         (Symbol::new(env, "grant_unpaused"), grant_id),
         caller.clone(),
@@ -308,6 +307,24 @@ mod tests {
 
             let record = get_record(&env, grant_id).unwrap();
             assert_eq!(record.unpause_history.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_unpause_never_paused_grant_returns_invalid_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let grant_id = 1;
+        let owner = Address::generate(&env);
+
+        with_contract_id(&env, &contract_id, || {
+            setup_grant(&env, &owner, grant_id);
+            assert!(!is_paused(&env, grant_id));
+
+            let result = unpause(&env, &owner, grant_id);
+            assert_eq!(result, Err(ContractError::InvalidState));
         });
     }
 }

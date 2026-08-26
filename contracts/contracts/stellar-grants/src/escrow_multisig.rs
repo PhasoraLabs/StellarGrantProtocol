@@ -1,3 +1,4 @@
+use crate::events::Events;
 use crate::storage::keys::DataKey;
 use crate::types::{ContractError, EscrowReleaseApproval, EscrowReleaseRequest, ProtocolConfig};
 use soroban_sdk::{Address, Env, Vec};
@@ -23,6 +24,7 @@ pub fn create_request(
         executed: false,
     };
     env.storage().persistent().set(&key, &request);
+    Events::emit_escrow_multisig_request_created(env, grant_id, milestone_idx, amount);
     Ok(())
 }
 
@@ -55,11 +57,13 @@ pub fn approve(
         approver: approver.clone(),
         timestamp: env.ledger().timestamp(),
     });
+    let total_approvals = request.approvals.len();
 
     env.storage().persistent().set(
         &DataKey::EscrowReleaseRequest(grant_id, milestone_idx),
         &request,
     );
+    Events::emit_escrow_multisig_approved(env, grant_id, milestone_idx, approver, total_approvals);
     Ok(())
 }
 
@@ -98,7 +102,9 @@ pub fn execute_release(env: &Env, grant_id: u64, milestone_idx: u32) -> Result<(
         &request,
     );
 
-    crate::escrow::release(env, grant_id, &request.recipient, request.amount)
+    crate::escrow::release(env, grant_id, &request.recipient, request.amount)?;
+    Events::emit_escrow_multisig_executed(env, grant_id, milestone_idx, request.amount);
+    Ok(())
 }
 
 pub fn get_request(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<EscrowReleaseRequest> {
