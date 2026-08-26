@@ -84,6 +84,13 @@ pub fn join_syndicate(
         return Err(ContractError::InvalidInput);
     }
 
+    // Check total commitments don't exceed target_total
+    let total_committed = total_deposited(env, grant_id);
+    let remaining = syndicate.target_total.saturating_sub(total_committed);
+    if amount > remaining {
+        return Err(ContractError::InvalidInput);
+    }
+
     escrow::deposit(env, grant_id, member, amount)?;
 
     let prior = Storage::get_syndicate_member(env, grant_id, member);

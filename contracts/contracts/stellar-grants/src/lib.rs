@@ -1535,16 +1535,22 @@ impl StellarGrantsContract {
         sender: Address,
         stream_id: u32,
     ) -> Result<(i128, i128), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::cancel_stream(&env, &sender, stream_id)
     }
 
     /// Pause an active stream.
     pub fn pause_stream(env: Env, sender: Address, stream_id: u32) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::pause_stream(&env, &sender, stream_id)
     }
 
     /// Resume a paused stream.
     pub fn resume_stream(env: Env, sender: Address, stream_id: u32) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::resume_stream(&env, &sender, stream_id)
     }
 
@@ -2950,6 +2956,8 @@ impl StellarGrantsContract {
         amount_in: i128,
     ) -> Result<SwapResult, ContractError> {
         caller.require_auth();
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap(&env, &caller, route, amount_in)
     }
 
@@ -2965,6 +2973,7 @@ impl StellarGrantsContract {
         input_amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap_and_fund(&env, &funder, grant_id, &input_token, input_amount)
     }
 
@@ -2978,6 +2987,7 @@ impl StellarGrantsContract {
         amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap_and_pay(
             &env,
             &payer,
