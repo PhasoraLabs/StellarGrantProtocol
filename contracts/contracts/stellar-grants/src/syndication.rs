@@ -196,6 +196,11 @@ pub fn record_payout_allocation(
     Ok(())
 }
 
+/// Get the recorded payout allocation for a milestone.
+pub fn get_payout_allocation(env: &Env, grant_id: u64, milestone_idx: u32) -> Vec<(Address, i128)> {
+    Storage::get_syndicate_payouts(env, grant_id, milestone_idx)
+}
+
 /// Allow members to withdraw after an unclosed formation expires.
 pub fn withdraw_syndicate(
     env: &Env,
@@ -227,6 +232,11 @@ pub fn withdraw_syndicate(
     Storage::set_syndicate_member_index(env, grant_id, &index);
     syndicate.member_count = syndicate.member_count.saturating_sub(1);
     Storage::set_syndicate_grant(env, grant_id, &syndicate);
+
+    env.events().publish(
+        (Symbol::new(env, "member_withdrew"), grant_id),
+        (member.clone(), amount),
+    );
 
     Ok(amount.min(record.deposited_amount))
 }
