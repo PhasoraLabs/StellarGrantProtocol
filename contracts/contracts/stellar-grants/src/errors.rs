@@ -183,4 +183,6 @@ pub enum ContractError {
     NotYetUnlocked = 142,
     LockupRevocationUnauthorized = 143,
     LockupAlreadyRevoked = 144,
+    // Delegation (#907)
+    DelegationChainTooLong = 145,
 }

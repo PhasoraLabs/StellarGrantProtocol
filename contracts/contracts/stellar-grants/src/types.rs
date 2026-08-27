@@ -2216,6 +2216,7 @@ pub struct DashboardView {
     pub total_reviewers: u32,
     pub recent_grant_ids: soroban_sdk::Vec<u64>,
     pub protocol_metrics: ProtocolMetrics,
+    pub truncated: bool,
 }
 
 #[contracttype]
@@ -2227,6 +2228,7 @@ pub struct ReviewerView {
     pub pending_votes: soroban_sdk::Vec<(u64, u32)>,
     pub sla_breach_count: u32,
     pub pending_rewards: i128,
+    pub truncated: bool,
 }
 
 // ── Issue #613: Conditional Release ───────────────────────────────────────

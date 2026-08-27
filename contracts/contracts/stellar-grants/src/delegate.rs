@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, contracttype, Address, Env};
+use soroban_sdk::{contractevent, contracttype, Address, Env, Vec};
 
 use crate::types::{ContractError, Delegation, DelegationScope};
 use crate::Storage;
@@ -76,20 +76,28 @@ fn would_create_cycle(env: &Env, delegator: &Address, delegate: &Address, scope:
         return true;
     }
     let mut current = delegate.clone();
-    let mut steps = 0u32;
-    while steps < 16 {
+    let mut visited = Vec::new(env);
+    let max_chain_length = 256;
+
+    loop {
         if current == *delegator {
             return true;
         }
+        if visited.contains(&current) {
+            return true;
+        }
+        if visited.len() >= max_chain_length {
+            return false;
+        }
+        visited.push_back(current.clone());
+
         let next = active_for_scope(env, &current, scope)
             .or_else(|| active_for_scope(env, &current, &DelegationScope::Global));
         match next {
             Some(d) => current = d.delegate,
             None => return false,
         }
-        steps += 1;
     }
-    true
 }
 
 pub fn delegate_vote(
