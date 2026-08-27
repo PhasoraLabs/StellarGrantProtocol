@@ -81,17 +81,22 @@ pub fn on_status_changed(
     new_status: GrantStatus,
 ) {
     if old_status != new_status {
-        remove_from_index(
-            env,
-            &DataKey::Grant(GrantKey::StatusIndex(old_status as u32)),
-            grant_id,
-        );
-        push_to_index(
+        // Push to the new-status index first. If the index is full the
+        // grant stays discoverable under its old status rather than being
+        // orphaned in neither index.
+        let pushed = push_to_index(
             env,
             &DataKey::Grant(GrantKey::StatusIndex(new_status as u32)),
             grant_id,
             constants::MAX_INDEX_ENTRIES,
         );
+        if pushed {
+            remove_from_index(
+                env,
+                &DataKey::Grant(GrantKey::StatusIndex(old_status as u32)),
+                grant_id,
+            );
+        }
     }
 }
 
