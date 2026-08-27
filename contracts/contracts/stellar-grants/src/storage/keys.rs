@@ -32,6 +32,7 @@ pub enum GrantKey {
     TokenIndex(Address),
     ContribIndex(Address),
     GlobalOrder,
+    SafetyFlags(u64),
 }
 
 #[contracttype]
