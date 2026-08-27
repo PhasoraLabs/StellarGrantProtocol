@@ -9,8 +9,8 @@ use crate::types::{
     AutoApproveRecord, BountyGrant, BountySubmission, BreakerState, ChecklistSubmission,
     ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
     CrowdfundCampaign, CrowdfundPledge, DaoProposal, DexConfig, Dispute, EscrowAccount,
-    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion,
-    HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
+    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantSafetyFlags, GrantTag,
+    GrantVersion, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
     MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal,
     OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig,
     ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction,
@@ -90,6 +90,25 @@ impl Storage {
         env.storage()
             .persistent()
             .has(&DataKey::Grant(GrantKey::Data(grant_id)))
+    }
+
+    /// Archetype-derived safety flags for a grant (issue #912). Defaults to
+    /// all-false for grants not created via an archetype template.
+    pub fn get_grant_safety_flags(env: &Env, grant_id: u64) -> GrantSafetyFlags {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Grant(GrantKey::SafetyFlags(grant_id)))
+            .unwrap_or(GrantSafetyFlags {
+                requires_staking: false,
+                multisig_required: false,
+                insurance_opt_in: false,
+            })
+    }
+
+    pub fn set_grant_safety_flags(env: &Env, grant_id: u64, flags: &GrantSafetyFlags) {
+        let key = DataKey::Grant(GrantKey::SafetyFlags(grant_id));
+        env.storage().persistent().set(&key, flags);
+        Self::bump(env, &key);
     }
 
     /// Append a grant id to the owner's portfolio index (used by multi_grant queries).

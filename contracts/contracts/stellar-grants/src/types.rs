@@ -1327,6 +1327,15 @@ pub struct GrantTemplate {
     pub insurance_opt_in: bool,
 }
 
+/// Archetype-derived safety flags enforced on a specific grant (issue #912).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantSafetyFlags {
+    pub requires_staking: bool,
+    pub multisig_required: bool,
+    pub insurance_opt_in: bool,
+}
+
 // ── Waitlist Module ─────────────────────────────────────────────────────────────
 
 #[contracttype]

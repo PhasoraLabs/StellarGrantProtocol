@@ -40,6 +40,12 @@ pub struct ClaimRejected {
     pub claim_id: u32,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolicyDeactivated {
+    pub grant_id: u64,
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Purchase insurance for a grant. Premium = coverage * premium_rate_bps / BASIS_POINTS_SCALE.
@@ -56,6 +62,8 @@ pub fn purchase_policy(
     if coverage_amount <= 0 {
         return Err(ContractError::InvalidInput);
     }
+
+    Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
 
     if Storage::get_insurance_policy(env, grant_id).is_some() {
         return Err(ContractError::AlreadyRegistered);
@@ -131,6 +139,8 @@ pub fn file_claim(
     if claimed_amount <= 0 {
         return Err(ContractError::InvalidInput);
     }
+
+    Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
 
     let policy =
         Storage::get_insurance_policy(env, grant_id).ok_or(ContractError::PolicyNotFound)?;
@@ -270,6 +280,29 @@ pub fn reject_claim(env: &Env, admin: &Address, claim_id: u32) -> Result<(), Con
     Ok(())
 }
 
+/// Deactivate an active insurance policy. Admin only.
+pub fn deactivate_policy(env: &Env, admin: &Address, grant_id: u64) -> Result<(), ContractError> {
+    admin.require_auth();
+
+    if Storage::get_global_admin(env) != Some(admin.clone()) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let mut policy =
+        Storage::get_insurance_policy(env, grant_id).ok_or(ContractError::PolicyNotFound)?;
+
+    if !policy.active {
+        return Err(ContractError::PolicyInactive);
+    }
+
+    policy.active = false;
+    Storage::set_insurance_policy(env, &policy);
+
+    PolicyDeactivated { grant_id }.publish(env);
+
+    Ok(())
+}
+
 /// Return total funds in the insurance pool for a given token.
 pub fn pool_balance(env: &Env, token: &Address) -> i128 {
     Storage::get_insurance_pool(env, token)
@@ -290,8 +323,30 @@ pub fn get_claim(env: &Env, claim_id: u32) -> Result<InsuranceClaim, ContractErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{Grant, GrantStatus};
     use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::{token::StellarAssetClient, Address, Env, String};
+    use soroban_sdk::{token::StellarAssetClient, Address, Env, String, Vec};
+
+    fn make_grant(env: &Env, owner: &Address, token: &Address, grant_id: u64) -> Grant {
+        Grant {
+            id: grant_id,
+            owner: owner.clone(),
+            title: String::from_str(env, "Test"),
+            description: String::from_str(env, "Desc"),
+            token: token.clone(),
+            status: GrantStatus::Active,
+            total_amount: 1_000_000,
+            milestone_amount: 500_000,
+            reviewers: Vec::new(env),
+            total_milestones: 2,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
 
     fn setup() -> (Env, Address, Address, Address) {
         let env = Env::default();
@@ -304,6 +359,9 @@ mod tests {
             .address();
         let stellar_asset = StellarAssetClient::new(&env, &token_contract);
         stellar_asset.mint(&policyholder, &10_000_000);
+        Storage::set_global_admin(&env, &admin);
+        let grant = make_grant(&env, &policyholder, &token_contract, 1);
+        Storage::set_grant(&env, 1, &grant);
         (env, admin, policyholder, token_contract)
     }
 
@@ -410,5 +468,54 @@ mod tests {
         let claim_id3 = file_claim(&env, &policyholder, 1, 100_000, reason3).unwrap();
         let err = approve_claim(&env, &admin, claim_id3, 100_000).unwrap_err();
         assert_eq!(err, ContractError::InsufficientPoolBalance);
+    }
+
+    #[test]
+    fn test_purchase_policy_rejects_nonexistent_grant() {
+        let (env, _admin, policyholder, token) = setup();
+        let err = purchase_policy(&env, &policyholder, 999, &token, 1_000_000).unwrap_err();
+        assert_eq!(err, ContractError::GrantNotFound);
+    }
+
+    #[test]
+    fn test_file_claim_rejects_nonexistent_grant() {
+        let (env, _admin, policyholder, token) = setup();
+        purchase_policy(&env, &policyholder, 1, &token, 1_000_000).unwrap();
+        // grant_id 999 was never created.
+        let reason = String::from_str(&env, "no grant");
+        let err = file_claim(&env, &policyholder, 999, 500_000, reason).unwrap_err();
+        assert_eq!(err, ContractError::GrantNotFound);
+    }
+
+    #[test]
+    fn test_deactivate_policy_by_admin() {
+        let (env, admin, policyholder, token) = setup();
+        purchase_policy(&env, &policyholder, 1, &token, 1_000_000).unwrap();
+
+        deactivate_policy(&env, &admin, 1).unwrap();
+
+        let policy = get_policy(&env, 1).unwrap();
+        assert!(!policy.active);
+
+        let reason = String::from_str(&env, "late");
+        let err = file_claim(&env, &policyholder, 1, 500_000, reason).unwrap_err();
+        assert_eq!(err, ContractError::PolicyInactive);
+    }
+
+    #[test]
+    fn test_deactivate_policy_requires_admin() {
+        let (env, _admin, policyholder, token) = setup();
+        purchase_policy(&env, &policyholder, 1, &token, 1_000_000).unwrap();
+
+        let stranger = Address::generate(&env);
+        let err = deactivate_policy(&env, &stranger, 1).unwrap_err();
+        assert_eq!(err, ContractError::Unauthorized);
+    }
+
+    #[test]
+    fn test_deactivate_policy_not_found() {
+        let (env, admin, _policyholder, _token) = setup();
+        let err = deactivate_policy(&env, &admin, 999).unwrap_err();
+        assert_eq!(err, ContractError::PolicyNotFound);
     }
 }

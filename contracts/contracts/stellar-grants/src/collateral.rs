@@ -211,10 +211,17 @@ pub fn require_deposited(
     grant_id: u64,
     contributor: &Address,
 ) -> Result<(), ContractError> {
-    // If no requirement is set, pass through.
+    // If no requirement is set, pass through — unless the grant's archetype
+    // (issue #912) mandates staking, in which case a requirement must have
+    // been configured before work can proceed.
     let req = match Storage::get_collateral_requirement(env, grant_id) {
         Some(r) => r,
-        None => return Ok(()),
+        None => {
+            if Storage::get_grant_safety_flags(env, grant_id).requires_staking {
+                return Err(ContractError::CollateralNotDeposited);
+            }
+            return Ok(());
+        }
     };
 
     let deposit = Storage::get_collateral_deposit(env, grant_id, contributor)
@@ -304,6 +311,30 @@ mod tests {
         let contributor = Address::generate(&env);
         // No requirement set -> should pass
         assert_eq!(require_deposited(&env, 1, &contributor), Ok(()));
+    }
+
+    #[test]
+    fn test_require_deposited_blocks_archetype_requires_staking() {
+        use crate::types::GrantSafetyFlags;
+
+        let env = Env::default();
+        let contributor = Address::generate(&env);
+
+        // No requirement configured, and the grant's archetype (issue #912)
+        // mandates staking -> must not silently pass through.
+        Storage::set_grant_safety_flags(
+            &env,
+            1,
+            &GrantSafetyFlags {
+                requires_staking: true,
+                multisig_required: false,
+                insurance_opt_in: false,
+            },
+        );
+        assert_eq!(
+            require_deposited(&env, 1, &contributor),
+            Err(ContractError::CollateralNotDeposited)
+        );
     }
 
     #[test]

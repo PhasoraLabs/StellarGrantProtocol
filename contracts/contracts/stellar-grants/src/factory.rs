@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, String, Vec};
 use crate::constants::LEDGERS_PER_DAY;
 use crate::errors::ContractError;
 use crate::storage::Storage;
-use crate::types::{GrantArchetype, GrantTemplate, VotingMechanism};
+use crate::types::{GrantArchetype, GrantSafetyFlags, GrantTemplate, VotingMechanism};
 
 /// Return the default GrantTemplate for a given archetype.
 pub fn template_for(archetype: GrantArchetype) -> GrantTemplate {
@@ -136,6 +136,19 @@ pub fn create_from_custom_template(
     )?;
 
     Storage::set_voting_mechanism(env, grant_id, &template.voting_mechanism);
+
+    // Issue #912: persist the archetype's safety flags so they are actually
+    // enforced (staking, multisig, insurance) rather than discarded.
+    Storage::set_grant_safety_flags(
+        env,
+        grant_id,
+        &GrantSafetyFlags {
+            requires_staking: template.requires_staking,
+            multisig_required: template.multisig_required,
+            insurance_opt_in: template.insurance_opt_in,
+        },
+    );
+
     Ok(grant_id)
 }
 
@@ -262,6 +275,69 @@ mod tests {
 
             let grant = Storage::get_grant(&env, grant_id).unwrap();
             assert_eq!(grant.total_milestones, 4);
+        });
+    }
+
+    #[test]
+    fn test_protocol_integration_persists_safety_flags() {
+        let env = Env::default();
+        env.mock_all_auths();
+        with_contract(&env, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+            let mut reviewers = Vec::new(&env);
+            for _ in 0..4 {
+                reviewers.push_back(Address::generate(&env));
+            }
+
+            let grant_id = create_from_template(
+                &env,
+                &owner,
+                GrantArchetype::ProtocolIntegration,
+                String::from_str(&env, "Integration"),
+                String::from_str(&env, "Desc"),
+                &token,
+                500,
+                reviewers,
+            )
+            .unwrap();
+
+            // The ProtocolIntegration archetype declares multisig_required
+            // and insurance_opt_in — those flags must be persisted on the
+            // grant so downstream enforcement can act on them (issue #912).
+            let flags = Storage::get_grant_safety_flags(&env, grant_id);
+            assert!(flags.multisig_required);
+            assert!(flags.insurance_opt_in);
+            assert!(!flags.requires_staking);
+        });
+    }
+
+    #[test]
+    fn test_community_project_has_no_safety_flags() {
+        let env = Env::default();
+        env.mock_all_auths();
+        with_contract(&env, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+            let mut reviewers = Vec::new(&env);
+            reviewers.push_back(Address::generate(&env));
+
+            let grant_id = create_from_template(
+                &env,
+                &owner,
+                GrantArchetype::CommunityProject,
+                String::from_str(&env, "Community"),
+                String::from_str(&env, "Desc"),
+                &token,
+                300,
+                reviewers,
+            )
+            .unwrap();
+
+            let flags = Storage::get_grant_safety_flags(&env, grant_id);
+            assert!(!flags.multisig_required);
+            assert!(!flags.insurance_opt_in);
+            assert!(!flags.requires_staking);
         });
     }
 }

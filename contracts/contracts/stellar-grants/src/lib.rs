@@ -529,6 +529,17 @@ impl StellarGrantsContract {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
         }
 
+        // Issue #912: enforce archetype-derived safety flags that were
+        // previously recorded but never checked anywhere.
+        let safety_flags = Storage::get_grant_safety_flags(env, grant_id);
+        if safety_flags.insurance_opt_in {
+            let policy =
+                insurance::get_policy(env, grant_id).ok_or(ContractError::PolicyNotFound)?;
+            if !policy.active {
+                return Err(ContractError::PolicyInactive);
+            }
+        }
+
         let total_paid =
             Self::compute_total_paid_if_quorum_ready(env, grant_id, grant.total_milestones)?;
         if grant.escrow_balance < total_paid {
@@ -572,7 +583,11 @@ impl StellarGrantsContract {
             }
             if owner_amount > 0 {
                 let config: ProtocolConfig = config::get_config(env);
-                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                // Issue #912: an archetype with `multisig_required: true` must
+                // have its releases multisig-gated regardless of amount.
+                let multisig_gated = safety_flags.multisig_required
+                    || (config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold);
+                if multisig_gated {
                     // Issue #821: a multisig request only reserves the payout;
                     // it must not be treated as a completed release until a
                     // signer actually executes it via `execute_escrow_release`.
@@ -1677,6 +1692,15 @@ impl StellarGrantsContract {
     /// Return a claim by id.
     pub fn get_insurance_claim(env: Env, claim_id: u32) -> Result<InsuranceClaim, ContractError> {
         insurance::get_claim(&env, claim_id)
+    }
+
+    /// Deactivate an active insurance policy for a grant. Admin only.
+    pub fn insurance_deactivate_policy(
+        env: Env,
+        admin: Address,
+        grant_id: u64,
+    ) -> Result<(), ContractError> {
+        insurance::deactivate_policy(&env, &admin, grant_id)
     }
 
     // ── External Callback Hooks (#539) ──────────────────────────────────────
