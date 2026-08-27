@@ -12,6 +12,13 @@ pub fn raise_dispute(
     caller: &Address,
     reason: String,
 ) -> Result<Dispute, ContractError> {
+    if grant.status != crate::types::GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
+    if milestone_idx >= grant.total_milestones {
+        return Err(ContractError::MilestoneIndexOutOfBounds);
+    }
+
     let is_owner = grant.owner == *caller;
     let is_reviewer = grant.reviewers.contains(caller.clone());
     if !(is_owner || is_reviewer) {
@@ -21,6 +28,8 @@ pub fn raise_dispute(
     if Storage::get_dispute(env, grant.id, milestone_idx).is_some() {
         return Err(ContractError::InvalidState);
     }
+
+    crate::escrow::lock(env, grant.id)?;
 
     let dispute = Dispute {
         grant_id: grant.id,
@@ -143,58 +152,26 @@ pub fn resolve_dispute(
     let grant_id = dispute.grant_id;
     let milestone_idx = dispute.milestone_idx;
 
+    crate::escrow::unlock(env, grant_id)?;
+
     if outcome == DisputeStatus::ResolvedForContributor {
         if let Some(milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-            let balance = grant.escrow_balance;
-            if balance >= milestone.amount {
-                token::Client::new(env, &grant.token).transfer(
-                    &env.current_contract_address(),
-                    &grant.owner,
-                    &milestone.amount,
-                );
-                grant.escrow_balance = balance
-                    .checked_sub(milestone.amount)
-                    .ok_or(ContractError::InvalidInput)?;
-            }
+            crate::escrow::release(env, grant_id, &grant.owner, milestone.amount)?;
         }
     } else if let Some(milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-        let balance = grant.escrow_balance;
-        if balance >= milestone.amount && !grant.funders.is_empty() {
-            let mut total_contributed: i128 = 0;
-            for fund in grant.funders.iter() {
-                total_contributed = total_contributed.saturating_add(fund.amount);
-            }
-            if total_contributed > 0 {
-                let tok_client = token::Client::new(env, &grant.token);
-                let mut distributed: i128 = 0;
-                let funders_len = grant.funders.len();
-                for i in 0..funders_len {
-                    let fund = grant.funders.get(i).ok_or(ContractError::InvalidInput)?;
-                    let is_last = i + 1 == funders_len;
-                    let share = if is_last {
-                        milestone.amount - distributed
-                    } else {
-                        fund.amount
-                            .checked_mul(milestone.amount)
-                            .ok_or(ContractError::InvalidInput)?
-                            .checked_div(total_contributed)
-                            .ok_or(ContractError::InvalidInput)?
-                    };
-                    if share > 0 {
-                        tok_client.transfer(&env.current_contract_address(), &fund.funder, &share);
-                        distributed = distributed.saturating_add(share);
-                    }
-                }
-                grant.escrow_balance = balance
-                    .checked_sub(distributed)
-                    .ok_or(ContractError::InvalidInput)?;
-            }
+        if !grant.funders.is_empty() {
+            crate::escrow::release_to_funders(env, grant_id, &grant.funders, milestone.amount)?;
         }
     }
 
     dispute.status = outcome.clone();
     dispute.resolved_at = Some(env.ledger().timestamp());
     Storage::set_dispute(env, grant_id, milestone_idx, dispute);
+
+    // Reload grant to get updated escrow_balance from escrow operations
+    if let Some(updated_grant) = Storage::get_grant(env, grant_id) {
+        *grant = updated_grant;
+    }
 
     let for_contributor = outcome == DisputeStatus::ResolvedForContributor;
     Events::emit_dispute_resolved(env, grant_id, milestone_idx, for_contributor);
@@ -222,9 +199,10 @@ pub fn cancel_dispute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Grant, GrantFund, GrantStatus};
+    use crate::types::{Grant, GrantFund, GrantStatus, Milestone, MilestoneState};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::{Env, String, Vec};
+    use soroban_sdk::{token, Env, String, Vec};
 
     fn make_grant(env: &Env, owner: Address) -> Grant {
         Grant {
@@ -355,5 +333,175 @@ mod tests {
         };
         let result = arbiter_vote(&env, &mut dispute, &stranger, true);
         assert_eq!(result, Err(ContractError::Unauthorized));
+    }
+
+    fn make_milestone(env: &Env, idx: u32, amount: i128) -> Milestone {
+        Milestone {
+            idx,
+            description: String::from_str(env, "M"),
+            amount,
+            state: MilestoneState::Approved,
+            votes: soroban_sdk::Map::new(env),
+            approvals: 0,
+            rejections: 0,
+            reasons: soroban_sdk::Map::new(env),
+            status_updated_at: 0,
+            proof_url: None,
+            submission_timestamp: 0,
+            deadline: None,
+            reviewer_count_snapshot: 0,
+        }
+    }
+
+    /// Sets up a grant with a real `EscrowAccount` funded via the normal
+    /// deposit flow (mirrors `grant.funders`), plus two milestone records.
+    /// Returns the grant loaded back from storage (so `funders`/`escrow_balance`
+    /// reflect the deposit).
+    ///
+    /// The deposit goes through the contract's `grant_fund` entrypoint
+    /// (rather than calling `escrow::deposit` directly) because the token
+    /// transfer needs `funder`'s auth tied to a root contract invocation.
+    fn setup_funded_grant(
+        env: &Env,
+        client: &crate::StellarGrantsContractClient,
+        contract_id: &Address,
+        owner: &Address,
+        funder: &Address,
+        token_id: &Address,
+        deposit_amount: i128,
+    ) -> Grant {
+        let mut grant = make_grant(env, owner.clone());
+        grant.token = token_id.clone();
+        grant.total_milestones = 2;
+
+        env.as_contract(contract_id, || {
+            Storage::set_grant(env, grant.id, &grant);
+            crate::escrow::open(env, grant.id, owner, token_id).unwrap();
+            Storage::set_milestone(env, grant.id, 0, &make_milestone(env, 0, 400));
+            Storage::set_milestone(env, grant.id, 1, &make_milestone(env, 1, 300));
+        });
+
+        client.grant_fund(&grant.id, funder, &deposit_amount);
+
+        env.as_contract(contract_id, || Storage::get_grant(env, grant.id).unwrap())
+    }
+
+    #[test]
+    fn test_resolve_dispute_for_contributor_unlocks_escrow_and_pays_milestone() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin);
+        let token_id = asset.address();
+        token::StellarAssetClient::new(&env, &token_id).mint(&funder, &10_000);
+        let token_client = token::Client::new(&env, &token_id);
+
+        let grant = setup_funded_grant(
+            &env,
+            &client,
+            &contract_id,
+            &owner,
+            &funder,
+            &token_id,
+            1_000,
+        );
+
+        let mut dispute = env
+            .as_contract(&contract_id, || {
+                raise_dispute(&env, &grant, 0, &owner, String::from_str(&env, "bad proof"))
+            })
+            .unwrap();
+
+        env.as_contract(&contract_id, || {
+            assert!(crate::escrow::get_account(&env, grant.id).unwrap().locked);
+        });
+
+        dispute.status = DisputeStatus::UnderReview;
+        dispute.votes_contributor = 1;
+        dispute.votes_funder = 0;
+
+        let mut grant_mut = grant.clone();
+        let outcome = env
+            .as_contract(&contract_id, || {
+                resolve_dispute(&env, &mut grant_mut, &mut dispute)
+            })
+            .unwrap();
+
+        assert_eq!(outcome, DisputeStatus::ResolvedForContributor);
+        assert_eq!(dispute.status, DisputeStatus::ResolvedForContributor);
+        assert_eq!(token_client.balance(&owner), 400);
+
+        env.as_contract(&contract_id, || {
+            let account = crate::escrow::get_account(&env, grant.id).unwrap();
+            assert!(!account.locked);
+            assert_eq!(account.balance, 600);
+
+            // Escrow is usable for the next milestone's payout.
+            crate::escrow::release(&env, grant.id, &owner, 300).unwrap();
+        });
+        assert_eq!(token_client.balance(&owner), 700);
+    }
+
+    #[test]
+    fn test_resolve_dispute_for_funder_unlocks_escrow_and_releases_funds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin);
+        let token_id = asset.address();
+        token::StellarAssetClient::new(&env, &token_id).mint(&funder, &10_000);
+        let token_client = token::Client::new(&env, &token_id);
+
+        let grant = setup_funded_grant(
+            &env,
+            &client,
+            &contract_id,
+            &owner,
+            &funder,
+            &token_id,
+            1_000,
+        );
+        // The normal deposit flow mirrors the funder onto `grant.funders`.
+        assert_eq!(grant.funders.len(), 1);
+
+        let mut dispute = env
+            .as_contract(&contract_id, || {
+                raise_dispute(&env, &grant, 0, &owner, String::from_str(&env, "bad proof"))
+            })
+            .unwrap();
+
+        dispute.status = DisputeStatus::UnderReview;
+        dispute.votes_contributor = 0;
+        dispute.votes_funder = 1;
+
+        let mut grant_mut = grant.clone();
+        let outcome = env
+            .as_contract(&contract_id, || {
+                resolve_dispute(&env, &mut grant_mut, &mut dispute)
+            })
+            .unwrap();
+
+        assert_eq!(outcome, DisputeStatus::ResolvedForFunder);
+        assert_eq!(token_client.balance(&funder), 10_000 - 1_000 + 400);
+
+        env.as_contract(&contract_id, || {
+            let account = crate::escrow::get_account(&env, grant.id).unwrap();
+            assert!(!account.locked);
+            assert_eq!(account.balance, 600);
+
+            // Escrow is usable for the next milestone's payout.
+            crate::escrow::release(&env, grant.id, &owner, 300).unwrap();
+        });
+        assert_eq!(token_client.balance(&owner), 300);
     }
 }

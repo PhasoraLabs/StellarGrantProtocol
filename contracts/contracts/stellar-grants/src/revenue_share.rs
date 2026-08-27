@@ -54,6 +54,17 @@ pub fn deposit_revenue(env: &Env, token: &Address, amount: i128) {
     let epoch_id = epoch_id_for(env);
     let mut epoch =
         Storage::get_revenue_epoch(env, epoch_id).unwrap_or_else(|| empty_epoch(epoch_id, token));
+
+    if epoch.finalized {
+        let next_epoch_id = epoch_id.saturating_add(1);
+        let mut next_epoch = Storage::get_revenue_epoch(env, next_epoch_id)
+            .unwrap_or_else(|| empty_epoch(next_epoch_id, token));
+        next_epoch.total_revenue = next_epoch.total_revenue.saturating_add(amount);
+        next_epoch.token = token.clone();
+        Storage::set_revenue_epoch(env, &next_epoch);
+        return;
+    }
+
     epoch.total_revenue = epoch.total_revenue.saturating_add(amount);
     epoch.token = token.clone();
     Storage::set_revenue_epoch(env, &epoch);
@@ -115,6 +126,7 @@ pub fn compute_claim(env: &Env, staker: &Address, epoch_id: u32) -> i128 {
 
 /// Staker claims their revenue share for a finalized epoch.
 pub fn claim(env: &Env, staker: &Address, epoch_id: u32) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     staker.require_auth();
 
     let mut epoch = Storage::get_revenue_epoch(env, epoch_id).ok_or(ContractError::InvalidState)?;
@@ -142,7 +154,10 @@ pub fn claim(env: &Env, staker: &Address, epoch_id: u32) -> Result<i128, Contrac
     Storage::set_revenue_epoch(env, &epoch);
 
     let token_client = token::Client::new(env, &epoch.token);
-    token_client.transfer(&env.current_contract_address(), staker, &claimable);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(&env.current_contract_address(), staker, &claimable);
+        Ok(())
+    })?;
 
     RevenueClaimed {
         staker: staker.clone(),
@@ -287,6 +302,41 @@ mod tests {
     }
 
     #[test]
+    fn test_claim_rejects_reentrant_call_when_guard_is_held() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let token = Address::generate(&env);
+        let staker = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut epoch = empty_epoch(0, &token);
+            epoch.finalized = true;
+            epoch.total_revenue = 100;
+            epoch.total_stake_weight = 100;
+            Storage::set_revenue_epoch(&env, &epoch);
+            Storage::set_staker_epoch_record(
+                &env,
+                &StakerEpochRecord {
+                    staker: staker.clone(),
+                    epoch_id: 0,
+                    stake_weight: 100,
+                    claimable: 0,
+                    claimed: false,
+                    claimed_at: None,
+                },
+            );
+
+            env.storage()
+                .temporary()
+                .set(&crate::reentrancy::ReentrancyKey::ExternalCallGuard, &());
+
+            let err = claim(&env, &staker, 0).unwrap_err();
+            assert_eq!(err, ContractError::Reentrancy);
+        });
+    }
+
+    #[test]
     fn test_claim_after_epoch_finalized_and_rejects_double_claim() {
         let env = Env::default();
         env.mock_all_auths();
@@ -322,5 +372,33 @@ mod tests {
 
         assert_eq!(client.claim_revenue_share(&staker, &0), 100);
         assert!(client.try_claim_revenue_share(&staker, &0).is_err());
+    }
+
+    #[test]
+    fn test_deposit_revenue_after_finalized() {
+        let env = Env::default();
+        let token = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let epoch_id = epoch_id_for(&env);
+            
+            // finalize epoch
+            let mut epoch = empty_epoch(epoch_id, &token);
+            epoch.finalized = true;
+            Storage::set_revenue_epoch(&env, &epoch);
+
+            // try to deposit, it should route to next epoch
+            deposit_revenue(&env, &token, 500);
+
+            // current epoch shouldn't change
+            let curr = Storage::get_revenue_epoch(&env, epoch_id).unwrap();
+            assert_eq!(curr.total_revenue, 0);
+
+            // next epoch should receive funds
+            let next_epoch_id = epoch_id + 1;
+            let next = Storage::get_revenue_epoch(&env, next_epoch_id).unwrap();
+            assert_eq!(next.total_revenue, 500);
+        });
     }
 }

@@ -149,84 +149,105 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
 
+    // Storage access requires an active contract context under the current
+    // soroban-sdk; every test below runs its body through this helper.
+    fn with_contract(env: &Env, f: impl FnOnce()) {
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, f);
+    }
+
     #[test]
     fn test_deposit_zero_amount_rejected() {
         let env = Env::default();
-        let token = Address::generate(&env);
-        let from = Address::generate(&env);
-        let result = deposit(&env, &token, &from, 0);
-        assert_eq!(result, Err(ContractError::ZeroAmount));
+        with_contract(&env, || {
+            let token = Address::generate(&env);
+            let from = Address::generate(&env);
+            let result = deposit(&env, &token, &from, 0);
+            assert_eq!(result, Err(ContractError::ZeroAmount));
+        });
     }
 
     #[test]
     fn test_deposit_accumulates_balance() {
         let env = Env::default();
-        let token = Address::generate(&env);
-        let from = Address::generate(&env);
-        deposit(&env, &token, &from, 100).unwrap();
-        let new_balance = deposit(&env, &token, &from, 50).unwrap();
-        assert_eq!(new_balance, 150);
-        assert_eq!(balance(&env, &token), 150);
+        with_contract(&env, || {
+            let token = Address::generate(&env);
+            let from = Address::generate(&env);
+            deposit(&env, &token, &from, 100).unwrap();
+            let new_balance = deposit(&env, &token, &from, 50).unwrap();
+            assert_eq!(new_balance, 150);
+            assert_eq!(balance(&env, &token), 150);
+        });
     }
 
     #[test]
     fn test_withdraw_unauthorized_caller_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let stranger = Address::generate(&env);
-        let token = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let result = withdraw(&env, &stranger, &token, &stranger, 10);
-        assert_eq!(result, Err(ContractError::Unauthorized));
+        with_contract(&env, || {
+            let admin = Address::generate(&env);
+            let stranger = Address::generate(&env);
+            let token = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let result = withdraw(&env, &stranger, &token, &stranger, 10);
+            assert_eq!(result, Err(ContractError::Unauthorized));
+        });
     }
 
     #[test]
     fn test_withdraw_insufficient_balance_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let token = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let result = withdraw(&env, &admin, &token, &admin, 10);
-        assert_eq!(result, Err(ContractError::InsufficientTreasuryBalance));
+        with_contract(&env, || {
+            let admin = Address::generate(&env);
+            let token = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let result = withdraw(&env, &admin, &token, &admin, 10);
+            assert_eq!(result, Err(ContractError::InsufficientTreasuryBalance));
+        });
     }
 
     #[test]
     fn test_reallocate_same_token_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let token = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let result = reallocate(&env, &admin, &token, &token, 10);
-        assert_eq!(result, Err(ContractError::InvalidInput));
+        with_contract(&env, || {
+            let admin = Address::generate(&env);
+            let token = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let result = reallocate(&env, &admin, &token, &token, 10);
+            assert_eq!(result, Err(ContractError::InvalidInput));
+        });
     }
 
     #[test]
     fn test_reallocate_moves_balance_between_tokens() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let from = Address::generate(&env);
-        let to = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        deposit(&env, &from, &admin, 200).unwrap();
+        with_contract(&env, || {
+            let admin = Address::generate(&env);
+            let from = Address::generate(&env);
+            let to = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            deposit(&env, &from, &admin, 200).unwrap();
 
-        reallocate(&env, &admin, &from, &to, 80).unwrap();
+            reallocate(&env, &admin, &from, &to, 80).unwrap();
 
-        assert_eq!(balance(&env, &from), 120);
-        assert_eq!(balance(&env, &to), 80);
+            assert_eq!(balance(&env, &from), 120);
+            assert_eq!(balance(&env, &to), 80);
+        });
     }
 
     #[test]
     fn test_snapshot_reflects_current_balance() {
         let env = Env::default();
-        let token = Address::generate(&env);
-        let from = Address::generate(&env);
-        deposit(&env, &token, &from, 333).unwrap();
-        let snap = snapshot(&env, &token);
-        assert_eq!(snap.balance, 333);
-        assert_eq!(snap.token, token);
+        with_contract(&env, || {
+            let token = Address::generate(&env);
+            let from = Address::generate(&env);
+            deposit(&env, &token, &from, 333).unwrap();
+            let snap = snapshot(&env, &token);
+            assert_eq!(snap.balance, 333);
+            assert_eq!(snap.token, token);
+        });
     }
 }

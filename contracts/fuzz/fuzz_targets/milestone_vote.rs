@@ -27,7 +27,6 @@ fuzz_target!(|data: &[u8]| {
 
     let milestone_amount: i128 = 10;
     let total_milestones: u32 = 1;
-    let quorum: u32 = 1;
     let grant_id = match StellarGrantsContract::grant_create(
         env.clone(),
         owner.clone(),
@@ -38,12 +37,6 @@ fuzz_target!(|data: &[u8]| {
         milestone_amount,
         total_milestones,
         reviewers.clone(),
-        quorum,
-        None,
-        0i128,
-        0i128,
-        Vec::new(&env),
-        false,
     ) {
         Ok(id) => id,
         Err(_) => return,
@@ -57,17 +50,15 @@ fuzz_target!(|data: &[u8]| {
         owner.clone(),
         SorobanString::from_str(&env, "desc"),
         SorobanString::from_str(&env, "proof"),
-        None,
     );
 
-    let approve = data[0] % 2 == 0;
+    let approve = data[0].is_multiple_of(2);
     let _ = StellarGrantsContract::milestone_vote(
         env.clone(),
         grant_id,
         milestone_idx,
         reviewer.clone(),
         approve,
-        None,
         None,
     );
 

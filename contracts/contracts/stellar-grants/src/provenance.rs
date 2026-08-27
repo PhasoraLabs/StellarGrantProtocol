@@ -1,3 +1,4 @@
+use crate::pagination;
 use crate::storage::keys::{DataKey, ProvenanceKey};
 use crate::types::{ContributionType, ProvenanceRecord};
 use soroban_sdk::{Address, Bytes, Env, Vec};
@@ -96,21 +97,12 @@ pub fn get_by_address(
         .get(&index_key)
         .unwrap_or_else(|| Vec::new(env));
 
-    let mut result = Vec::new(env);
-    let len = record_ids.len() as u32;
-    let end = if offset + limit > len {
-        len
-    } else {
-        offset + limit
-    };
+    let page_ids = pagination::paginate(env, &record_ids, offset, limit);
 
-    if offset < len {
-        for i in offset..end {
-            if let Some(record_id) = record_ids.get(i) {
-                if let Some(record) = get_record(env, record_id) {
-                    result.push_back(record);
-                }
-            }
+    let mut result = Vec::new(env);
+    for record_id in page_ids.iter() {
+        if let Some(record) = get_record(env, record_id) {
+            result.push_back(record);
         }
     }
 
@@ -124,7 +116,7 @@ pub fn get_record(env: &Env, record_id: u32) -> Option<ProvenanceRecord> {
 }
 
 /// Return all provenance records for a grant.
-pub fn get_by_grant(env: &Env, grant_id: u64) -> Vec<ProvenanceRecord> {
+pub fn get_by_grant(env: &Env, grant_id: u64, offset: u32, limit: u32) -> Vec<ProvenanceRecord> {
     let grant_key = DataKey::Provenance(ProvenanceKey::ByGrant(grant_id));
     let record_ids: Vec<u32> = env
         .storage()
@@ -132,12 +124,11 @@ pub fn get_by_grant(env: &Env, grant_id: u64) -> Vec<ProvenanceRecord> {
         .get(&grant_key)
         .unwrap_or_else(|| Vec::new(env));
 
+    let page_ids = pagination::paginate(env, &record_ids, offset, limit);
     let mut result = Vec::new(env);
-    for i in 0..record_ids.len() {
-        if let Some(record_id) = record_ids.get(i) {
-            if let Some(record) = get_record(env, record_id) {
-                result.push_back(record);
-            }
+    for record_id in page_ids.iter() {
+        if let Some(record) = get_record(env, record_id) {
+            result.push_back(record);
         }
     }
 
@@ -186,30 +177,37 @@ mod tests {
     use crate::types::ContributionType;
     use soroban_sdk::testutils::Address as _;
 
+    fn with_contract(env: &soroban_sdk::Env, f: impl FnOnce()) {
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, f);
+    }
+
     #[test]
     fn test_record_append_and_retrieve() {
         let env = soroban_sdk::Env::default();
         let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        record(
-            &env,
-            ContributionType::GrantCreated,
-            &actor,
-            1,
-            None,
-            Some(1000),
-            None,
-            co_contributors,
-        );
+        with_contract(&env, || {
+            record(
+                &env,
+                ContributionType::GrantCreated,
+                &actor,
+                1,
+                None,
+                Some(1000),
+                None,
+                co_contributors,
+            );
 
-        let total = total_records(&env);
-        assert_eq!(total, 1);
+            let total = total_records(&env);
+            assert_eq!(total, 1);
 
-        let record = get_record(&env, 1).expect("Record should exist");
-        assert_eq!(record.id, 1);
-        assert_eq!(record.grant_id, 1);
-        assert_eq!(record.contribution_type, ContributionType::GrantCreated);
+            let record = get_record(&env, 1).expect("Record should exist");
+            assert_eq!(record.id, 1);
+            assert_eq!(record.grant_id, 1);
+            assert_eq!(record.contribution_type, ContributionType::GrantCreated);
+        });
     }
 
     #[test]
@@ -218,30 +216,32 @@ mod tests {
         let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        record(
-            &env,
-            ContributionType::GrantCreated,
-            &actor,
-            1,
-            None,
-            Some(1000),
-            None,
-            co_contributors.clone(),
-        );
+        with_contract(&env, || {
+            record(
+                &env,
+                ContributionType::GrantCreated,
+                &actor,
+                1,
+                None,
+                Some(1000),
+                None,
+                co_contributors.clone(),
+            );
 
-        record(
-            &env,
-            ContributionType::MilestoneDelivered,
-            &actor,
-            1,
-            Some(0),
-            Some(500),
-            None,
-            co_contributors,
-        );
+            record(
+                &env,
+                ContributionType::MilestoneDelivered,
+                &actor,
+                1,
+                Some(0),
+                Some(500),
+                None,
+                co_contributors,
+            );
 
-        let records = get_by_address(&env, &actor, 0, 10);
-        assert_eq!(records.len(), 2);
+            let records = get_by_address(&env, &actor, 0, 10);
+            assert_eq!(records.len(), 2);
+        });
     }
 
     #[test]
@@ -251,30 +251,62 @@ mod tests {
         let actor2 = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        record(
-            &env,
-            ContributionType::GrantCreated,
-            &actor1,
-            1,
-            None,
-            Some(1000),
-            None,
-            co_contributors.clone(),
-        );
+        with_contract(&env, || {
+            record(
+                &env,
+                ContributionType::GrantCreated,
+                &actor1,
+                1,
+                None,
+                Some(1000),
+                None,
+                co_contributors.clone(),
+            );
 
-        record(
-            &env,
-            ContributionType::MilestoneReviewed,
-            &actor2,
-            1,
-            Some(0),
-            None,
-            None,
-            co_contributors,
-        );
+            record(
+                &env,
+                ContributionType::MilestoneReviewed,
+                &actor2,
+                1,
+                Some(0),
+                None,
+                None,
+                co_contributors,
+            );
 
-        let records = get_by_grant(&env, 1);
-        assert_eq!(records.len(), 2);
+            let records = get_by_grant(&env, 1, 0, 10);
+            assert_eq!(records.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_get_by_grant_pagination() {
+        let env = soroban_sdk::Env::default();
+        let actor = Address::generate(&env);
+        let co_contributors = Vec::new(&env);
+
+        with_contract(&env, || {
+            for i in 0..5 {
+                record(
+                    &env,
+                    ContributionType::GrantFunded,
+                    &actor,
+                    1,
+                    None,
+                    Some((i * 100) as i128),
+                    None,
+                    co_contributors.clone(),
+                );
+            }
+
+            let page1 = get_by_grant(&env, 1, 0, 2);
+            let page2 = get_by_grant(&env, 1, 2, 2);
+            let page3 = get_by_grant(&env, 1, 4, 2);
+
+            assert_eq!(page1.len(), 2);
+            assert_eq!(page2.len(), 2);
+            assert_eq!(page3.len(), 1);
+        });
     }
 
     #[test]
@@ -283,21 +315,23 @@ mod tests {
         let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        record(
-            &env,
-            ContributionType::GrantCreated,
-            &actor,
-            1,
-            None,
-            Some(1000),
-            None,
-            co_contributors,
-        );
+        with_contract(&env, || {
+            record(
+                &env,
+                ContributionType::GrantCreated,
+                &actor,
+                1,
+                None,
+                Some(1000),
+                None,
+                co_contributors,
+            );
 
-        let hash1 = proof_hash(&env, 1).expect("Hash should be generated");
-        let hash2 = proof_hash(&env, 1).expect("Hash should be generated");
+            let hash1 = proof_hash(&env, 1).expect("Hash should be generated");
+            let hash2 = proof_hash(&env, 1).expect("Hash should be generated");
 
-        assert_eq!(hash1, hash2);
+            assert_eq!(hash1, hash2);
+        });
     }
 
     #[test]
@@ -306,32 +340,34 @@ mod tests {
         let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        record(
-            &env,
-            ContributionType::GrantCreated,
-            &actor,
-            1,
-            None,
-            Some(1000),
-            None,
-            co_contributors.clone(),
-        );
+        with_contract(&env, || {
+            record(
+                &env,
+                ContributionType::GrantCreated,
+                &actor,
+                1,
+                None,
+                Some(1000),
+                None,
+                co_contributors.clone(),
+            );
 
-        record(
-            &env,
-            ContributionType::GrantFunded,
-            &actor,
-            2,
-            None,
-            Some(2000),
-            None,
-            co_contributors,
-        );
+            record(
+                &env,
+                ContributionType::GrantFunded,
+                &actor,
+                2,
+                None,
+                Some(2000),
+                None,
+                co_contributors,
+            );
 
-        let hash1 = proof_hash(&env, 1).expect("Hash should be generated");
-        let hash2 = proof_hash(&env, 2).expect("Hash should be generated");
+            let hash1 = proof_hash(&env, 1).expect("Hash should be generated");
+            let hash2 = proof_hash(&env, 2).expect("Hash should be generated");
 
-        assert_ne!(hash1, hash2);
+            assert_ne!(hash1, hash2);
+        });
     }
 
     #[test]
@@ -340,25 +376,54 @@ mod tests {
         let actor = Address::generate(&env);
         let co_contributors = Vec::new(&env);
 
-        for i in 0..5 {
+        with_contract(&env, || {
+            for i in 0..5 {
+                record(
+                    &env,
+                    ContributionType::GrantCreated,
+                    &actor,
+                    i as u64,
+                    None,
+                    Some(1000),
+                    None,
+                    co_contributors.clone(),
+                );
+            }
+
+            let page1 = get_by_address(&env, &actor, 0, 2);
+            let page2 = get_by_address(&env, &actor, 2, 2);
+            let page3 = get_by_address(&env, &actor, 4, 2);
+
+            assert_eq!(page1.len(), 2);
+            assert_eq!(page2.len(), 2);
+            assert_eq!(page3.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_get_by_address_near_u32_max_does_not_panic() {
+        let env = soroban_sdk::Env::default();
+        let actor = Address::generate(&env);
+        let co_contributors = Vec::new(&env);
+
+        with_contract(&env, || {
             record(
                 &env,
                 ContributionType::GrantCreated,
                 &actor,
-                i as u64,
+                1,
                 None,
                 Some(1000),
                 None,
-                co_contributors.clone(),
+                co_contributors,
             );
-        }
 
-        let page1 = get_by_address(&env, &actor, 0, 2);
-        let page2 = get_by_address(&env, &actor, 2, 2);
-        let page3 = get_by_address(&env, &actor, 4, 2);
+            // offset + limit would overflow u32 with plain addition.
+            let records = get_by_address(&env, &actor, u32::MAX - 1, u32::MAX - 1);
+            assert_eq!(records.len(), 0);
 
-        assert_eq!(page1.len(), 2);
-        assert_eq!(page2.len(), 2);
-        assert_eq!(page3.len(), 1);
+            let records = get_by_address(&env, &actor, 0, u32::MAX);
+            assert_eq!(records.len(), 1);
+        });
     }
 }

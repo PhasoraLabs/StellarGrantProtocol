@@ -229,6 +229,7 @@ pub fn require_dao_mode_disabled(env: &Env) -> Result<(), ContractError> {
 }
 
 fn require_global_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    caller.require_auth();
     let admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
     if admin != *caller {
         return Err(ContractError::Unauthorized);
@@ -239,7 +240,15 @@ fn require_global_admin(env: &Env, caller: &Address) -> Result<(), ContractError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::DEFAULT_DAO_VOTING_PERIOD_LEDGERS;
     use soroban_sdk::testutils::{Address as _, Ledger};
+
+    // Storage access requires an active contract context under the current
+    // soroban-sdk; every test below runs its body through this helper.
+    fn with_contract(env: &Env, f: impl FnOnce()) {
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, f);
+    }
 
     fn setup(env: &Env) -> Address {
         let admin = Address::generate(env);
@@ -251,186 +260,354 @@ mod tests {
     fn test_create_proposal_empty_title_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let result = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, ""),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        );
-        assert_eq!(result, Err(ContractError::InvalidInput));
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let result = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, ""),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            );
+            assert_eq!(result, Err(ContractError::InvalidInput));
+        });
     }
 
     #[test]
     fn test_create_proposal_success_starts_active() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Add new feature"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
-        let proposal = get_proposal(&env, id).unwrap();
-        assert_eq!(proposal.status, DaoProposalStatus::Active);
-        assert_eq!(proposal.votes_for, 0);
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Add new feature"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
+            let proposal = get_proposal(&env, id).unwrap();
+            assert_eq!(proposal.status, DaoProposalStatus::Active);
+            assert_eq!(proposal.votes_for, 0);
+        });
     }
 
     #[test]
     fn test_vote_twice_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let voter = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let voter = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
 
-        vote(&env, &voter, id, true).unwrap();
-        let result = vote(&env, &voter, id, true);
-        assert_eq!(result, Err(ContractError::AlreadyVoted));
+            vote(&env, &voter, id, true).unwrap();
+            let result = vote(&env, &voter, id, true);
+            assert_eq!(result, Err(ContractError::AlreadyVoted));
+        });
     }
 
     #[test]
     fn test_vote_on_unknown_proposal_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let voter = Address::generate(&env);
-        let result = vote(&env, &voter, 999, true);
-        assert_eq!(result, Err(ContractError::DaoProposalNotFound));
+        with_contract(&env, || {
+            let voter = Address::generate(&env);
+            let result = vote(&env, &voter, 999, true);
+            assert_eq!(result, Err(ContractError::DaoProposalNotFound));
+        });
     }
 
     #[test]
     fn test_finalize_before_deadline_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
-        let result = finalize(&env, id);
-        assert_eq!(result, Err(ContractError::DaoProposalVotingClosed));
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
+            let result = finalize(&env, id);
+            assert_eq!(result, Err(ContractError::DaoProposalVotingClosed));
+        });
     }
 
     #[test]
     fn test_finalize_quorum_not_reached_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
 
-        env.ledger().with_mut(|l| {
-            l.timestamp += DEFAULT_DAO_VOTING_PERIOD_LEDGERS as u64 + 1;
+            env.ledger().with_mut(|l| {
+                l.timestamp += DEFAULT_DAO_VOTING_PERIOD_LEDGERS as u64 + 1;
+            });
+
+            let result = finalize(&env, id);
+            assert_eq!(result, Err(ContractError::DaoProposalQuorumNotReached));
         });
-
-        let result = finalize(&env, id);
-        assert_eq!(result, Err(ContractError::DaoProposalQuorumNotReached));
     }
 
     #[test]
     fn test_execute_non_passed_proposal_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
-        let result = execute(&env, &proposer, id);
-        assert_eq!(result, Err(ContractError::DaoProposalRejected));
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
+            let result = execute(&env, &proposer, id);
+            assert_eq!(result, Err(ContractError::DaoProposalRejected));
+        });
     }
 
     #[test]
     fn test_cancel_by_non_proposer_non_admin_rejected() {
         let env = Env::default();
         env.mock_all_auths();
-        setup(&env);
-        let proposer = Address::generate(&env);
-        let stranger = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
-        let result = cancel(&env, &stranger, id);
-        assert_eq!(result, Err(ContractError::Unauthorized));
+        with_contract(&env, || {
+            setup(&env);
+            let proposer = Address::generate(&env);
+            let stranger = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
+            let result = cancel(&env, &stranger, id);
+            assert_eq!(result, Err(ContractError::Unauthorized));
+        });
     }
 
     #[test]
     fn test_cancel_by_proposer_succeeds() {
         let env = Env::default();
         env.mock_all_auths();
-        let proposer = Address::generate(&env);
-        let id = create_proposal(
-            &env,
-            &proposer,
-            String::from_str(&env, "Title"),
-            String::from_str(&env, "desc"),
-            DaoProposalType::Generic,
-        )
-        .unwrap();
-        cancel(&env, &proposer, id).unwrap();
-        let proposal = get_proposal(&env, id).unwrap();
-        assert_eq!(proposal.status, DaoProposalStatus::Cancelled);
+        with_contract(&env, || {
+            let proposer = Address::generate(&env);
+            let id = create_proposal(
+                &env,
+                &proposer,
+                String::from_str(&env, "Title"),
+                String::from_str(&env, "desc"),
+                DaoProposalType::Generic,
+            )
+            .unwrap();
+            cancel(&env, &proposer, id).unwrap();
+            let proposal = get_proposal(&env, id).unwrap();
+            assert_eq!(proposal.status, DaoProposalStatus::Cancelled);
+        });
     }
 
     #[test]
     fn test_set_dao_mode_requires_admin() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = setup(&env);
-        let stranger = Address::generate(&env);
-        assert_eq!(
-            set_dao_mode(&env, &stranger, true),
-            Err(ContractError::Unauthorized)
-        );
-        set_dao_mode(&env, &admin, true).unwrap();
-        assert!(is_dao_mode_enabled(&env));
+        with_contract(&env, || {
+            let admin = setup(&env);
+            let stranger = Address::generate(&env);
+            assert_eq!(
+                set_dao_mode(&env, &stranger, true),
+                Err(ContractError::Unauthorized)
+            );
+            set_dao_mode(&env, &admin, true).unwrap();
+            assert!(is_dao_mode_enabled(&env));
+        });
+    }
+
+    #[test]
+    fn test_set_dao_mode_rejects_admin_address_without_real_auth() {
+        let env = Env::default();
+        // Do NOT mock auths: this verifies require_global_admin enforces a
+        // genuine `require_auth()` on the caller, rather than only comparing
+        // addresses (which anyone could pass since the admin's address is
+        // public). Without any authorization recorded for `admin`, the call
+        // must be rejected even though the address itself matches.
+        with_contract(&env, || {
+            let admin = setup(&env);
+            let result = set_dao_mode(&env, &admin, true);
+            assert!(result.is_err());
+
+            let result = set_voting_period(&env, &admin, 100);
+            assert!(result.is_err());
+
+            let result = set_quorum_votes(&env, &admin, 5);
+            assert!(result.is_err());
+        });
     }
 
     #[test]
     fn test_require_dao_mode_disabled_passes_when_off() {
         let env = Env::default();
-        assert!(require_dao_mode_disabled(&env).is_ok());
+        with_contract(&env, || {
+            assert!(require_dao_mode_disabled(&env).is_ok());
+        });
     }
 
     #[test]
     fn test_require_dao_mode_disabled_fails_when_on() {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = setup(&env);
-        set_dao_mode(&env, &admin, true).unwrap();
+        with_contract(&env, || {
+            let admin = setup(&env);
+            set_dao_mode(&env, &admin, true).unwrap();
+            assert_eq!(
+                require_dao_mode_disabled(&env),
+                Err(ContractError::DaoModeDisabled)
+            );
+        });
+    }
+
+    // ── Issue #681: end-to-end tests through the real contract entrypoints ──
+
+    fn vote_to_quorum(client: &crate::StellarGrantsContractClient, env: &Env, proposal_id: u64) {
+        // Default reviewer reputation is 1 per unregistered address, and the
+        // default quorum is DEFAULT_DAO_QUORUM_VOTES (3), so three distinct
+        // voters voting `true` reach quorum with a unanimous majority.
+        for _ in 0..3 {
+            let voter = Address::generate(env);
+            client.dao_vote(&voter, &proposal_id, &true);
+        }
+    }
+
+    #[test]
+    fn test_dao_update_config_proposal_executes_through_contract() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let proposer = Address::generate(&env);
+        let mut new_config = crate::config::default_config();
+        new_config.protocol_fee_bps = 250;
+        new_config.max_reviewers = 15;
+
+        let id = client.dao_create_proposal(
+            &proposer,
+            &String::from_str(&env, "Raise protocol fee"),
+            &String::from_str(&env, "Adjust fee and reviewer cap"),
+            &DaoProposalType::UpdateConfig(new_config.clone()),
+        );
+
+        vote_to_quorum(&client, &env, id);
+
+        env.ledger().with_mut(|l| {
+            l.timestamp += DEFAULT_DAO_VOTING_PERIOD_LEDGERS as u64 + 1;
+        });
+
+        assert_eq!(client.dao_finalize(&id), DaoProposalStatus::Passed);
+
+        let executor = Address::generate(&env);
+        client.dao_execute(&executor, &id);
+
+        let stored_config = client.get_protocol_config();
+        assert_eq!(stored_config.protocol_fee_bps, 250);
+        assert_eq!(stored_config.max_reviewers, 15);
+
+        let proposal = client.get_dao_proposal(&id).unwrap();
+        assert_eq!(proposal.status, DaoProposalStatus::Executed);
+    }
+
+    #[test]
+    fn test_dao_treasury_withdrawal_proposal_moves_tokens() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_global_admin(&admin, &admin);
+
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let stellar_asset = soroban_sdk::token::StellarAssetClient::new(&env, &asset.address());
+        let token = asset.address();
+
+        // Tokens actually held by the contract, plus the matching ledger
+        // bookkeeping entry (mirrors how a real fee/deposit flow would work).
+        stellar_asset.mint(&contract_id, &1_000_000);
+        client.treasury_deposit(&admin, &token, &admin, &1_000_000);
+
+        let proposer = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let id = client.dao_create_proposal(
+            &proposer,
+            &String::from_str(&env, "Fund ecosystem grant"),
+            &String::from_str(&env, "Withdraw from treasury"),
+            &DaoProposalType::TreasuryWithdrawal(token.clone(), recipient.clone(), 400_000),
+        );
+
+        vote_to_quorum(&client, &env, id);
+
+        env.ledger().with_mut(|l| {
+            l.timestamp += DEFAULT_DAO_VOTING_PERIOD_LEDGERS as u64 + 1;
+        });
+
+        assert_eq!(client.dao_finalize(&id), DaoProposalStatus::Passed);
+
+        let executor = Address::generate(&env);
+        client.dao_execute(&executor, &id);
+
+        let token_client = soroban_sdk::token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&recipient), 400_000);
+        assert_eq!(client.treasury_balance(&token), 600_000);
+    }
+
+    #[test]
+    fn test_legacy_admin_paths_gated_by_dao_mode() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_global_admin(&admin, &admin);
+
+        // Off by default: legacy paths work normally.
+        let cfg = crate::config::default_config();
+        client.update_config(&admin, &cfg);
+
+        client.set_dao_mode(&admin, &true);
+
+        // Once enabled, both legacy admin paths are gated.
+        let new_admin = Address::generate(&env);
         assert_eq!(
-            require_dao_mode_disabled(&env),
-            Err(ContractError::DaoModeDisabled)
+            client.try_update_config(&admin, &cfg),
+            Err(Ok(ContractError::DaoModeDisabled))
+        );
+        assert_eq!(
+            client.try_set_global_admin(&admin, &new_admin),
+            Err(Ok(ContractError::DaoModeDisabled))
         );
     }
 }

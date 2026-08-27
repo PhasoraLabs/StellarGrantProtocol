@@ -1,7 +1,7 @@
 use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::errors::ContractError;
-use crate::events::{MultisigExecuted, MultisigProposalCreated, MultisigSigned};
+use crate::events::{Events, MultisigExecuted, MultisigProposalCreated, MultisigSigned};
 use crate::storage::Storage;
 use crate::types::{MultisigProposal, MultisigSigner, SignatureStatus};
 
@@ -17,7 +17,10 @@ pub fn create_proposal(
     threshold: u32,
     ttl_ledgers: u32,
 ) -> Result<u32, ContractError> {
-    if signer_addresses.is_empty() || threshold == 0 {
+    if signer_addresses.is_empty()
+        || threshold == 0
+        || threshold > signer_addresses.len()
+    {
         return Err(ContractError::InvalidInput);
     }
 
@@ -43,6 +46,7 @@ pub fn create_proposal(
         threshold,
         total_weight_signed: 0,
         executed: false,
+        expired: false,
         expired_at,
         created_by: creator.clone(),
         created_at: now,
@@ -86,8 +90,7 @@ pub fn sign(
         if s.address == *signer {
             found = true;
             if s.status != SignatureStatus::Pending {
-                // Already signed or rejected — idempotent reject of re-sign.
-                return Ok(proposal.total_weight_signed);
+                return Err(ContractError::AlreadyVoted);
             }
             if approve {
                 s.status = SignatureStatus::Signed;
@@ -176,7 +179,10 @@ pub fn expire_proposal(env: &Env, proposal_id: u32) -> Result<(), ContractError>
         return Err(ContractError::InvalidState);
     }
 
-    // Proposal is expired; no state change needed beyond the TTL check in execute/sign.
+    let mut proposal = proposal;
+    proposal.expired = true;
+    Storage::set_multisig_proposal(env, &proposal);
+    Events::emit_multisig_proposal_expired(env, proposal_id);
     Ok(())
 }
 
@@ -202,4 +208,103 @@ pub fn decode_grant_withdraw(payload: &Bytes) -> Option<u64> {
         *byte = payload.get(i as u32)?;
     }
     Some(u64::from_be_bytes(bytes))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _};
+
+    #[test]
+    fn threshold_and_duplicate_signatures() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let signer1 = Address::generate(&env);
+            let signer2 = Address::generate(&env);
+            let mut signers = Vec::new(&env);
+            signers.push_back(signer1.clone());
+            signers.push_back(signer2.clone());
+
+            let payload = encode_grant_withdraw(&env, 7);
+            let id = create_proposal(&env, &creator, 7, payload.clone(), signers, 2, 100).unwrap();
+
+            assert_eq!(sign(&env, &signer1, id, true), Ok(1));
+            assert!(!is_threshold_met(&get_proposal(&env, id).unwrap()));
+            assert_eq!(
+                execute(&env, &creator, id),
+                Err(ContractError::ThresholdNotMet)
+            );
+
+            assert_eq!(
+                sign(&env, &signer1, id, true),
+                Err(ContractError::AlreadyVoted)
+            );
+            assert_eq!(sign(&env, &signer2, id, true), Ok(2));
+            assert!(is_threshold_met(&get_proposal(&env, id).unwrap()));
+            assert_eq!(execute(&env, &creator, id), Ok(payload));
+        });
+    }
+
+    #[test]
+    fn rejects_unreachable_threshold() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let signer = Address::generate(&env);
+            let mut signers = Vec::new(&env);
+            signers.push_back(signer);
+
+            assert_eq!(
+                create_proposal(
+                    &env,
+                    &creator,
+                    1,
+                    Bytes::new(&env),
+                    signers,
+                    2,
+                    100,
+                ),
+                Err(ContractError::InvalidInput)
+            );
+        });
+    }
+
+    #[test]
+    fn expired_proposal_cannot_be_signed_or_executed() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let signer = Address::generate(&env);
+            let mut signers = Vec::new(&env);
+            signers.push_back(signer.clone());
+
+            let id = create_proposal(&env, &creator, 1, Bytes::new(&env), signers, 1, 10).unwrap();
+            env.ledger().set_timestamp(env.ledger().timestamp() + 11);
+
+            assert_eq!(expire_proposal(&env, id), Ok(()));
+            assert!(get_proposal(&env, id).unwrap().expired);
+
+            assert_eq!(
+                sign(&env, &signer, id, true),
+                Err(ContractError::ProposalExpired)
+            );
+            assert_eq!(
+                execute(&env, &creator, id),
+                Err(ContractError::ProposalExpired)
+            );
+        });
+    }
+
+    #[test]
+    fn grant_withdraw_payload_round_trip() {
+        let env = Env::default();
+        let grant_id = 123_456_789;
+        let payload = encode_grant_withdraw(&env, grant_id);
+
+        assert_eq!(decode_grant_withdraw(&payload), Some(grant_id));
+    }
 }

@@ -14,6 +14,9 @@ pub fn safe_sub(a: i128, b: i128) -> Result<i128, ContractError> {
 /// Uses the identity: `(amount / 10_000) * bps + (amount % 10_000) * bps / 10_000`
 /// Returns Err(InvalidInput) if basis_points > 10_000.
 pub fn basis_points_of(amount: i128, basis_points: u32) -> Result<i128, ContractError> {
+    if amount < 0 {
+        return Err(ContractError::InvalidInput);
+    }
     if basis_points > 10_000 {
         return Err(ContractError::InvalidInput);
     }
@@ -119,6 +122,15 @@ mod tests {
             basis_points_of(10000, 10001),
             Err(ContractError::InvalidInput)
         );
+    }
+
+    #[test]
+    fn test_basis_points_of_negative_amount() {
+        assert_eq!(
+            basis_points_of(-100, 2500),
+            Err(ContractError::InvalidInput)
+        );
+        assert_eq!(basis_points_of(-1, 10000), Err(ContractError::InvalidInput));
     }
 
     #[test]

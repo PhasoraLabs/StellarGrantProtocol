@@ -1,7 +1,7 @@
 /// Milestone NFT certificate module (issue #570).
 /// Mints a unique, soulbound (non-transferable by default) NFT for each approved milestone,
 /// permanently linking the contributor's address to their on-chain work history.
-use soroban_sdk::{Address, Bytes, Env, Vec};
+use soroban_sdk::{xdr::ToXdr, Address, Bytes, Env, Vec};
 
 use crate::errors::ContractError;
 use crate::events::Events;
@@ -137,20 +137,21 @@ pub fn transfer(
     Ok(())
 }
 
-/// Compute `SHA-256(grant_id_be || milestone_idx_be || minted_at_be)`.
-/// The owner address bytes are included via a fixed-size xor of their last 4 bytes for gas
-/// efficiency (full address serialization is not available in no_std Soroban).
+/// Compute `SHA-256(grant_id_be || milestone_idx_be || minted_at_be || owner_xdr)`.
+/// Binds the grant ID, milestone index, timestamp, and owner address to permanently link
+/// the contributor's address to their on-chain milestone proof.
 fn compute_proof_hash(
     env: &Env,
     grant_id: u64,
     milestone_idx: u32,
-    _owner: &Address,
+    owner: &Address,
     minted_at: u64,
 ) -> Bytes {
     let mut input = Bytes::new(env);
     input.extend_from_array(&grant_id.to_be_bytes());
     input.extend_from_array(&milestone_idx.to_be_bytes());
     input.extend_from_array(&minted_at.to_be_bytes());
+    input.append(&owner.to_xdr(env));
     env.crypto().sha256(&input).into()
 }
 
@@ -247,6 +248,36 @@ mod tests {
         // Tamper: overwrite proof_hash with zeroes
         let mut nft = get_nft(&env, 1, 0).unwrap();
         nft.proof_hash = Bytes::new(&env);
+        Storage::set_milestone_nft(&env, &nft);
+
+        assert!(!verify_nft(&env, token_id));
+    }
+
+    #[test]
+    fn proof_hash_depends_on_owner() {
+        let env = Env::default();
+        let owner1 = Address::generate(&env);
+        let owner2 = Address::generate(&env);
+
+        let hash1 = compute_proof_hash(&env, 1, 0, &owner1, 100);
+        let hash2 = compute_proof_hash(&env, 1, 0, &owner2, 100);
+
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn verify_nft_detects_owner_tampering() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let token_id = mint(&env, 1, 0, &owner, sample_metadata(&env)).unwrap();
+        assert!(verify_nft(&env, token_id));
+
+        // Tamper: change stored owner address on the NFT
+        let mut nft = get_nft(&env, 1, 0).unwrap();
+        nft.owner = attacker;
         Storage::set_milestone_nft(&env, &nft);
 
         assert!(!verify_nft(&env, token_id));

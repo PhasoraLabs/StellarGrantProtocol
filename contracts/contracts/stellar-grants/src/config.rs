@@ -76,6 +76,9 @@ pub fn set_config(
     if Storage::get_global_admin(env) != Some(admin.clone()) {
         return Err(ContractError::Unauthorized);
     }
+    // Issue #681: once DAO mode is enabled, protocol config changes must go
+    // through a passed-and-executed DAO proposal instead of this direct path.
+    crate::dao::require_dao_mode_disabled(env)?;
     validate_config(&new_config)?;
     Storage::set_protocol_config(env, &new_config);
     Ok(())

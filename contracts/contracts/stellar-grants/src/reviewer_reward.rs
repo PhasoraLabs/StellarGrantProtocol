@@ -1,4 +1,5 @@
 use crate::errors::ContractError;
+use crate::reviewer_sla;
 use crate::storage::keys::{DataKey, ReviewerRewardKey};
 use crate::types::{ReviewParticipation, ReviewerRewardPool, ReviewerRewardRecord};
 use soroban_sdk::{token, Address, Env, Vec};
@@ -36,7 +37,22 @@ pub fn fund_pool(env: &Env, token: &Address, amount: i128) {
 }
 
 /// Record a reviewer's participation in a milestone vote.
-pub fn record_participation(env: &Env, reviewer: &Address, grant_id: u64, was_fast: bool) {
+///
+/// A reviewer who breached their SLA for this milestone (issue #611) accrues
+/// nothing for it: the vote still counts toward the milestone outcome, but it
+/// earns no participation credit and therefore no share of the reward pool.
+pub fn record_participation(
+    env: &Env,
+    reviewer: &Address,
+    grant_id: u64,
+    milestone_idx: u32,
+    was_fast: bool,
+) {
+    let sla_id = reviewer_sla::milestone_sla_id(grant_id, milestone_idx);
+    if reviewer_sla::check_and_mark_breach(env, reviewer, sla_id) {
+        return;
+    }
+
     let part_key =
         DataKey::ReviewerReward(ReviewerRewardKey::Participation(reviewer.clone(), grant_id));
 
@@ -65,6 +81,24 @@ pub fn record_participation(env: &Env, reviewer: &Address, grant_id: u64, was_fa
         PERSISTENT_TTL_THRESHOLD,
         PERSISTENT_TTL_EXTEND_TO,
     );
+
+    let index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
+    let mut grant_ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    if !grant_ids.contains(grant_id) {
+        grant_ids.push_back(grant_id);
+        env.storage().persistent().set(&index_key, &grant_ids);
+        env.storage().persistent().extend_ttl(
+            &index_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
 }
 
 /// Compute reward entitlement for a reviewer based on participation.
@@ -86,11 +120,28 @@ pub fn compute_reward(
 }
 
 /// Accrue computed reward into reviewer's pending balance.
+/// Computes fair share of the pool based on reviewer participation across all grants.
 pub fn accrue_reward(
     env: &Env,
     reviewer: &Address,
     token: &Address,
 ) -> Result<i128, ContractError> {
+    let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(token.clone()));
+    let pool: ReviewerRewardPool = env
+        .storage()
+        .persistent()
+        .get(&pool_key)
+        .unwrap_or_else(|| ReviewerRewardPool {
+            token: token.clone(),
+            balance: 0,
+            total_deposited: 0,
+            total_paid_out: 0,
+        });
+
+    if pool.balance <= 0 {
+        return Ok(0);
+    }
+
     let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
         reviewer.clone(),
         token.clone(),
@@ -108,13 +159,13 @@ pub fn accrue_reward(
             last_claimed_at: None,
         });
 
-    // In a real implementation, compute_reward would calculate based on actual participation
-    // For now, we'll just return the pending amount (this would be called periodically)
-    let accrued = reward_record.pending_amount;
+    let prior_pending = reward_record.pending_amount;
+    let accrued = compute_reviewer_share(env, reviewer, token, &pool)?;
 
+    reward_record.pending_amount = accrued;
     reward_record.total_earned = reward_record
         .total_earned
-        .checked_add(accrued)
+        .checked_add(accrued.saturating_sub(prior_pending))
         .ok_or(ContractError::InvalidInput)?;
 
     env.storage().persistent().set(&reward_key, &reward_record);
@@ -127,12 +178,59 @@ pub fn accrue_reward(
     Ok(accrued)
 }
 
+/// Compute a reviewer's fair share of the pool based on their total participation.
+/// This aggregates votes across all grants and allocates proportionally from the pool.
+fn compute_reviewer_share(
+    env: &Env,
+    reviewer: &Address,
+    token: &Address,
+    pool: &ReviewerRewardPool,
+) -> Result<i128, ContractError> {
+    if pool.total_deposited <= 0 {
+        return Ok(0);
+    }
+
+    let mut reviewer_votes: i128 = 0;
+    let mut total_reviewer_votes: i128 = 0;
+
+    let reward_index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
+    let grant_ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&reward_index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    for grant_id in grant_ids.iter() {
+        if let Some(participation) = get_participation(env, reviewer, grant_id) {
+            reviewer_votes = reviewer_votes.saturating_add(participation.votes_cast as i128);
+        }
+    }
+
+    total_reviewer_votes = reviewer_votes;
+
+    if total_reviewer_votes <= 0 {
+        return Ok(0);
+    }
+
+    let share = pool
+        .total_deposited
+        .saturating_mul(reviewer_votes)
+        .checked_div(total_reviewer_votes)
+        .unwrap_or(0)
+        .min(pool.balance);
+
+    Ok(share.max(0))
+}
+
 /// Reviewer claims all pending rewards.
 pub fn claim_rewards(
     env: &Env,
     reviewer: &Address,
     token: &Address,
 ) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
+
     let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
         reviewer.clone(),
         token.clone(),
@@ -162,7 +260,14 @@ pub fn claim_rewards(
     }
 
     // Transfer from contract to reviewer
-    token::Client::new(env, token).transfer(&env.current_contract_address(), reviewer, &claimable);
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, token).transfer(
+            &env.current_contract_address(),
+            reviewer,
+            &claimable,
+        );
+        Ok(())
+    })?;
 
     // Update reward record
     reward_record.pending_amount = reward_record
@@ -254,12 +359,12 @@ mod tests {
         let env = soroban_sdk::Env::default();
         let reviewer = Address::generate(&env);
 
-        record_participation(&env, &reviewer, 1, false);
+        record_participation(&env, &reviewer, 1, 0, false);
         let part = get_participation(&env, &reviewer, 1).expect("Participation should exist");
         assert_eq!(part.votes_cast, 1);
         assert_eq!(part.fast_votes, 0);
 
-        record_participation(&env, &reviewer, 1, true);
+        record_participation(&env, &reviewer, 1, 0, true);
         let part = get_participation(&env, &reviewer, 1).expect("Participation should exist");
         assert_eq!(part.votes_cast, 2);
         assert_eq!(part.fast_votes, 1);
@@ -272,10 +377,10 @@ mod tests {
         let reviewer2 = Address::generate(&env);
 
         // Reviewer 1 votes slowly
-        record_participation(&env, &reviewer1, 1, false);
+        record_participation(&env, &reviewer1, 1, 0, false);
 
         // Reviewer 2 votes quickly
-        record_participation(&env, &reviewer2, 1, true);
+        record_participation(&env, &reviewer2, 1, 0, true);
 
         let part1 = get_participation(&env, &reviewer1, 1).expect("Should exist");
         let part2 = get_participation(&env, &reviewer2, 1).expect("Should exist");
@@ -358,13 +463,30 @@ mod tests {
         assert_eq!(pool_balance(&env, &token), 800);
 
         // Each reviewer tracks separately
-        record_participation(&env, &reviewer1, 1, true);
-        record_participation(&env, &reviewer2, 1, false);
+        record_participation(&env, &reviewer1, 1, 0, true);
+        record_participation(&env, &reviewer2, 1, 0, false);
 
         let part1 = get_participation(&env, &reviewer1, 1).expect("Should exist");
         let part2 = get_participation(&env, &reviewer2, 1).expect("Should exist");
 
         assert_eq!(part1.fast_votes, 1);
         assert_eq!(part2.fast_votes, 0);
+    }
+
+    #[test]
+    fn test_claim_rewards_rejects_reentrant_call_when_guard_is_held() {
+        let env = soroban_sdk::Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let reviewer = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .temporary()
+                .set(&crate::reentrancy::ReentrancyKey::ExternalCallGuard, &());
+
+            let err = claim_rewards(&env, &reviewer, &token).unwrap_err();
+            assert_eq!(err, ContractError::Reentrancy);
+        });
     }
 }

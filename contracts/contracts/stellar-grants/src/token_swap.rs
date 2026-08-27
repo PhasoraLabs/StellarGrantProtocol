@@ -63,13 +63,16 @@ pub fn quote(env: &Env, route: &SwapRoute, amount_in: i128) -> Result<i128, Cont
         return Err(ContractError::InvalidInput);
     }
 
-    let expected_out = amount_in;
-    if expected_out < route.min_out {
-        return Err(ContractError::SwapExceedsSlippage);
-    }
-    Ok(expected_out)
+    // No real DEX/AMM is integrated yet. Refuse rather than fake a 1:1 rate
+    // and silently confiscate the caller's input token (see #683).
+    Err(ContractError::SwapNotImplemented)
 }
 
+/// Performs the swap. Callers that have not already authenticated `caller`
+/// elsewhere in the same call chain must call `caller.require_auth()`
+/// themselves before invoking this (see the `swap_tokens` entry point) —
+/// this function does not re-check it, since a repeated `require_auth()` for
+/// the same address within one invocation is rejected as redundant.
 pub fn swap(
     env: &Env,
     caller: &Address,
@@ -77,7 +80,6 @@ pub fn swap(
     amount_in: i128,
 ) -> Result<SwapResult, ContractError> {
     crate::reentrancy::protect(env)?;
-    caller.require_auth();
 
     let config = get_dex_config(env)?;
     if !config.is_active {
@@ -185,6 +187,7 @@ pub fn swap_and_fund(
 
 pub fn swap_and_pay(
     env: &Env,
+    payer: &Address,
     grant_id: u64,
     recipient: &Address,
     grant_token: &Address,
@@ -192,6 +195,16 @@ pub fn swap_and_pay(
     amount: i128,
 ) -> Result<SwapResult, ContractError> {
     crate::reentrancy::protect(env)?;
+    payer.require_auth();
+
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.owner != *payer {
+        return Err(ContractError::Unauthorized);
+    }
+    if grant.token != *grant_token {
+        return Err(ContractError::InvalidInput);
+    }
+
     if grant_token == preferred_token {
         crate::escrow::release(env, grant_id, recipient, amount)?;
         let result = SwapResult {
@@ -372,6 +385,249 @@ mod tests {
         env.as_contract(&contract_id, || {
             let grant = Storage::get_grant(&env, 1).unwrap();
             assert!(grant.escrow_balance > 0);
+        });
+    }
+
+    fn open_funded_grant(
+        env: &Env,
+        contract_id: &Address,
+        owner: &Address,
+        token: &Address,
+        funder: &Address,
+        amount: i128,
+    ) {
+        env.as_contract(contract_id, || {
+            crate::escrow::open(env, 1, owner, token).unwrap();
+            let grant = crate::types::Grant {
+                id: 1,
+                owner: owner.clone(),
+                title: soroban_sdk::String::from_str(env, "test"),
+                description: soroban_sdk::String::from_str(env, "desc"),
+                token: token.clone(),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 100_000,
+                milestone_amount: 10_000,
+                reviewers: soroban_sdk::Vec::new(env),
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: soroban_sdk::Vec::new(env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            Storage::set_grant(env, 1, &grant);
+        });
+        env.as_contract(contract_id, || {
+            // escrow::deposit trusts its caller to have already authorized
+            // the funder (as swap_and_fund/grant_fund do in production).
+            funder.require_auth();
+            crate::escrow::deposit(env, 1, funder, amount).unwrap();
+        });
+    }
+
+    // ── Issue #682: swap_and_pay must not release escrow to an unauthorized caller ──
+
+    #[test]
+    fn test_swap_and_pay_unauthorized_rejected() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let funder = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        StellarAssetClient::new(&env, &asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&owner, &owner);
+
+        let token = asset.address();
+        open_funded_grant(&env, &contract_id, &owner, &token, &funder, 50_000);
+
+        // A non-owner cannot drain the escrow via swap_and_pay.
+        let result = env.as_contract(&contract_id, || {
+            swap_and_pay(&env, &stranger, 1, &recipient, &token, &token, 10_000)
+        });
+        assert_eq!(result, Err(ContractError::Unauthorized));
+
+        env.as_contract(&contract_id, || {
+            let grant = Storage::get_grant(&env, 1).unwrap();
+            assert_eq!(grant.escrow_balance, 50_000);
+        });
+
+        // The real grant owner can.
+        let result = env.as_contract(&contract_id, || {
+            swap_and_pay(&env, &owner, 1, &recipient, &token, &token, 10_000)
+        });
+        assert!(result.is_ok());
+
+        let token_client = token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&recipient), 10_000);
+    }
+
+    #[test]
+    fn test_swap_and_pay_grant_token_mismatch_rejected() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let other_token = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        StellarAssetClient::new(&env, &asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&owner, &owner);
+
+        let token = asset.address();
+        open_funded_grant(&env, &contract_id, &owner, &token, &funder, 50_000);
+
+        let result = env.as_contract(&contract_id, || {
+            swap_and_pay(
+                &env,
+                &owner,
+                1,
+                &recipient,
+                &other_token,
+                &other_token,
+                10_000,
+            )
+        });
+        assert_eq!(result, Err(ContractError::InvalidInput));
+    }
+
+    // ── Issue #683: quote/swap must refuse rather than confiscate funds ──────
+
+    #[test]
+    fn test_quote_returns_not_implemented() {
+        let (env, contract_id) = setup_env();
+        let admin = Address::generate(&env);
+        let dex_contract = Address::generate(&env);
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+        client.set_global_admin(&admin, &admin);
+
+        env.as_contract(&contract_id, || {
+            let config = DexConfig {
+                dex_contract,
+                max_slippage_bps: 100,
+                is_active: true,
+            };
+            Storage::set_dex_config(&env, &config);
+        });
+
+        let route = SwapRoute {
+            from_token: Address::generate(&env),
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: 0,
+        };
+        let result = env.as_contract(&contract_id, || quote(&env, &route, 1000));
+        assert_eq!(result, Err(ContractError::SwapNotImplemented));
+    }
+
+    #[test]
+    fn test_swap_returns_not_implemented_and_touches_no_funds() {
+        let (env, contract_id) = setup_env();
+        let admin = Address::generate(&env);
+        let dex_contract = Address::generate(&env);
+        let caller = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let from_asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        StellarAssetClient::new(&env, &from_asset.address()).mint(&caller, &1_000_000);
+
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+        client.set_global_admin(&admin, &admin);
+
+        env.as_contract(&contract_id, || {
+            let config = DexConfig {
+                dex_contract,
+                max_slippage_bps: 100,
+                is_active: true,
+            };
+            Storage::set_dex_config(&env, &config);
+        });
+
+        let route = SwapRoute {
+            from_token: from_asset.address(),
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: 0,
+        };
+        let result = env.as_contract(&contract_id, || swap(&env, &caller, route, 1000));
+        assert_eq!(result, Err(ContractError::SwapNotImplemented));
+
+        let token_client = token::Client::new(&env, &from_asset.address());
+        assert_eq!(token_client.balance(&caller), 1_000_000);
+    }
+
+    // ── Issue #684: swap_and_fund cannot double-charge once swap() is disabled ──
+
+    #[test]
+    fn test_swap_and_fund_cross_token_rejected_cleanly() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let funder = Address::generate(&env);
+
+        let grant_token_admin = Address::generate(&env);
+        let grant_asset = env.register_stellar_asset_contract_v2(grant_token_admin.clone());
+
+        let input_token_admin = Address::generate(&env);
+        let input_asset = env.register_stellar_asset_contract_v2(input_token_admin.clone());
+        StellarAssetClient::new(&env, &input_asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&admin, &admin);
+
+        let grant_token = grant_asset.address();
+        env.as_contract(&contract_id, || {
+            let config = DexConfig {
+                dex_contract: Address::generate(&env),
+                max_slippage_bps: 100,
+                is_active: true,
+            };
+            Storage::set_dex_config(&env, &config);
+            crate::escrow::open(&env, 1, &admin, &grant_token).unwrap();
+            let grant = crate::types::Grant {
+                id: 1,
+                owner: admin.clone(),
+                title: soroban_sdk::String::from_str(&env, "test"),
+                description: soroban_sdk::String::from_str(&env, "desc"),
+                token: grant_token.clone(),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 100_000,
+                milestone_amount: 10_000,
+                reviewers: soroban_sdk::Vec::new(&env),
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: soroban_sdk::Vec::new(&env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            Storage::set_grant(&env, 1, &grant);
+        });
+
+        let input_token = input_asset.address();
+        let result = env.as_contract(&contract_id, || {
+            swap_and_fund(&env, &funder, 1, &input_token, 1000)
+        });
+        assert_eq!(result, Err(ContractError::SwapNotImplemented));
+
+        // The funder was charged exactly zero times, not twice.
+        let input_token_client = token::Client::new(&env, &input_token);
+        assert_eq!(input_token_client.balance(&funder), 1_000_000);
+
+        env.as_contract(&contract_id, || {
+            let grant = Storage::get_grant(&env, 1).unwrap();
+            assert_eq!(grant.escrow_balance, 0);
         });
     }
 }

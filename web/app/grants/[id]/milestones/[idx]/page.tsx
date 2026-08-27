@@ -14,10 +14,11 @@
  * Breadcrumb: Grants → Grant #id → Milestones → Milestone idx
  */
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useGrant } from "@/hooks/useGrant";
 import { useMilestone } from "@/hooks/useMilestone";
+import { useContractEvents } from "@/hooks/useContractEvents";
 import { useWalletStore } from "@/lib/store/walletStore";
 import { formatTokenAmount, getTokenMetadata } from "@/lib/tokens";
 import { Badge } from "@/components/ui/Badge";
@@ -34,17 +35,17 @@ import type { Milestone } from "@/types";
 // ─── Status → Badge variant mapping ──────────────────────────────────────────
 
 function milestoneVariant(m: Milestone): BadgeVariant {
-  if (m.paid)     return "success";
+  if (m.paid) return "success";
   if (m.approved) return "info";
   if (m.submitted) return "warning";
   return "muted";
 }
 
 function milestoneStatusLabel(m: Milestone): string {
-  if (m.paid)      return "Paid";
-  if (m.approved)  return "Approved";
+  if (m.paid) return "Paid";
+  if (m.approved) return "Approved";
   if (m.submitted) return "Submitted";
-  if (m.overdue)   return "Overdue";
+  if (m.overdue) return "Overdue";
   return "Pending";
 }
 
@@ -76,7 +77,13 @@ function MilestoneDetailSkeleton() {
 
 // ─── Error card ───────────────────────────────────────────────────────────────
 
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorCard({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="container mx-auto max-w-3xl px-4 py-8">
       <div className="rounded-none border border-danger/40 bg-danger/10 p-6 space-y-4">
@@ -94,21 +101,33 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
 
 // ─── Breadcrumb ───────────────────────────────────────────────────────────────
 
-function Breadcrumb({ grantId, milestoneIdx }: { grantId: string; milestoneIdx: string }) {
+function Breadcrumb({
+  grantId,
+  milestoneIdx,
+}: {
+  grantId: string;
+  milestoneIdx: string;
+}) {
   const crumbs = [
-    { label: "Grants",          href: "/grants" },
+    { label: "Grants", href: "/grants" },
     { label: `Grant #${grantId}`, href: `/grants/${grantId}` },
-    { label: "Milestones",      href: `/grants/${grantId}/milestones` },
+    { label: "Milestones", href: `/grants/${grantId}/milestones` },
     { label: `Milestone ${milestoneIdx}`, href: null },
   ];
 
   return (
-    <nav className="flex items-center gap-1.5 font-mono text-xs text-text-muted" aria-label="Breadcrumb">
+    <nav
+      className="flex items-center gap-1.5 font-mono text-xs text-text-muted"
+      aria-label="Breadcrumb"
+    >
       {crumbs.map((c, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-border-color">›</span>}
           {c.href ? (
-            <Link href={c.href} className="hover:text-text-primary transition-colors">
+            <Link
+              href={c.href}
+              className="hover:text-text-primary transition-colors"
+            >
               {c.label}
             </Link>
           ) : (
@@ -129,7 +148,12 @@ function MilestoneDetailContent({
   grantId: string;
   milestoneIdx: number;
 }) {
-  const { data: grantDetail, isLoading: grantLoading, error: grantError, refetch } = useGrant(grantId);
+  const {
+    data: grantDetail,
+    isLoading: grantLoading,
+    error: grantError,
+    refetch,
+  } = useGrant(grantId);
   const grant = grantDetail?.grant ?? null;
   const {
     milestone,
@@ -137,7 +161,24 @@ function MilestoneDetailContent({
     error: milestoneError,
   } = useMilestone(grantId, milestoneIdx);
   const { address: walletAddress } = useWalletStore();
+  const { events, connectionStatus } = useContractEvents({ grantId });
   const [amountFormatted, setAmountFormatted] = useState<string>("");
+
+  const prevEventsLenRef = useRef(events.length);
+  useEffect(() => {
+    if (events.length > prevEventsLenRef.current) {
+      prevEventsLenRef.current = events.length;
+      const latest = events[events.length - 1];
+      if (
+        latest?.type === "MilestoneApproved" ||
+        latest?.type === "MilestoneRejected"
+      ) {
+        void refetch();
+      }
+    } else if (events.length < prevEventsLenRef.current) {
+      prevEventsLenRef.current = events.length;
+    }
+  }, [events, refetch]);
 
   // Set page title dynamically (generateMetadata cannot be used in "use client" pages)
   useEffect(() => {
@@ -152,7 +193,7 @@ function MilestoneDetailContent({
         formatTokenAmount(milestone.amount!, meta.decimals, {
           symbol: meta.symbol,
           showSymbol: true,
-        })
+        }),
       );
     });
   }, [milestone?.amount, milestone?.token]);
@@ -160,10 +201,17 @@ function MilestoneDetailContent({
   if (grantLoading || milestoneLoading) return <MilestoneDetailSkeleton />;
 
   if (grantError) {
-    return <ErrorCard message={grantError.message} onRetry={() => void refetch()} />;
+    return (
+      <ErrorCard message={grantError.message} onRetry={() => void refetch()} />
+    );
   }
   if (milestoneError) {
-    return <ErrorCard message={milestoneError.message} onRetry={() => void refetch()} />;
+    return (
+      <ErrorCard
+        message={milestoneError.message}
+        onRetry={() => void refetch()}
+      />
+    );
   }
 
   // No grant data (e.g. 404)
@@ -178,17 +226,17 @@ function MilestoneDetailContent({
 
   // Roles
   const isRecipient = !!walletAddress && walletAddress === grant.owner;
-  const isReviewer  = !!walletAddress && grant.reviewers.includes(walletAddress);
+  const isReviewer = !!walletAddress && grant.reviewers.includes(walletAddress);
 
   // Milestone may be null if the grant came from the mock and doesn't carry
   // individual milestone objects — show a placeholder in that case.
-  const statusLabel   = milestone ? milestoneStatusLabel(milestone) : "Unknown";
-  const badgeVariant  = milestone ? milestoneVariant(milestone) : "muted";
+  const statusLabel = milestone ? milestoneStatusLabel(milestone) : "Unknown";
+  const badgeVariant = milestone ? milestoneVariant(milestone) : "muted";
   const milestoneTitle = milestone?.title ?? `Milestone ${milestoneIdx}`;
 
   const showSubmitForm =
     isRecipient && milestone && !milestone.submitted && !milestone.approved;
-  const showProof      = milestone?.proof_hash;
+  const showProof = milestone?.proof_hash;
 
   return (
     <div className="container mx-auto max-w-3xl px-4 py-8 space-y-8">
@@ -203,14 +251,18 @@ function MilestoneDetailContent({
         </div>
 
         {milestone?.description && (
-          <p className="text-sm leading-6 text-text-muted">{milestone.description}</p>
+          <p className="text-sm leading-6 text-text-muted">
+            {milestone.description}
+          </p>
         )}
 
         {/* Reward amount */}
         {amountFormatted && (
           <p className="mt-2 font-mono text-xs text-text-muted">
             Reward:{" "}
-            <span className="text-text-primary font-semibold">{amountFormatted}</span>
+            <span className="text-text-primary font-semibold">
+              {amountFormatted}
+            </span>
           </p>
         )}
       </div>
@@ -228,7 +280,10 @@ function MilestoneDetailContent({
             <p className="mb-4 font-mono text-xs uppercase tracking-widest text-text-muted">
               Submit milestone proof
             </p>
-            <MilestoneSubmitForm grantId={grantId} milestoneIdx={milestoneIdx} />
+            <MilestoneSubmitForm
+              grantId={grantId}
+              milestoneIdx={milestoneIdx}
+            />
           </div>
         ) : (
           <div className="rounded-none border border-border-color/40 p-4">
@@ -252,10 +307,12 @@ function MilestoneDetailContent({
           reviewers={grant.reviewers}
           quorum={Math.ceil(grant.reviewers.length * 0.67)}
           threshold={0.67}
+          connectionStatus={connectionStatus}
         />
         {!isReviewer && !isRecipient && walletAddress && (
           <p className="font-mono text-xs text-text-muted">
-            Your wallet is not a reviewer or the grant recipient — viewing in read-only mode.
+            Your wallet is not a reviewer or the grant recipient — viewing in
+            read-only mode.
           </p>
         )}
         {!walletAddress && (

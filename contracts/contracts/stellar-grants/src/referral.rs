@@ -226,6 +226,7 @@ pub fn claim_rewards(
     referrer: &Address,
     token: &Address,
 ) -> Result<i128, ContractError> {
+    crate::reentrancy::protect(env)?;
     referrer.require_auth();
 
     let pending = Storage::get_referral_rewards(env, referrer, token);
@@ -235,7 +236,14 @@ pub fn claim_rewards(
 
     Storage::set_referral_rewards(env, referrer, token, 0);
 
-    token::Client::new(env, token).transfer(&env.current_contract_address(), referrer, &pending);
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, token).transfer(
+            &env.current_contract_address(),
+            referrer,
+            &pending,
+        );
+        Ok(())
+    })?;
 
     ReferralRewardsClaimed {
         referrer: referrer.clone(),
@@ -284,4 +292,257 @@ pub fn deactivate_code(
     .publish(env);
 
     Ok(())
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+    use crate::types::AcceptanceCriteria;
+    use crate::{StellarGrantsContract, StellarGrantsContractClient};
+    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::{vec, String, Vec};
+
+    struct Fixture<'a> {
+        env: Env,
+        client: StellarGrantsContractClient<'a>,
+        token: Address,
+        owner: Address,
+        referrer: Address,
+        reviewer: Address,
+        funder: Address,
+    }
+
+    fn setup<'a>() -> Fixture<'a> {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+
+        // The payout path reads the persisted protocol config, so publish the
+        // defaults (1% protocol fee, 10% of that to the referrer).
+        client.set_global_admin(&admin, &admin);
+        client.update_config(&admin, &config::default_config());
+
+        let funder = Address::generate(&env);
+        token::StellarAssetClient::new(&env, &token).mint(&funder, &100_000_000);
+
+        Fixture {
+            client,
+            token,
+            owner: Address::generate(&env),
+            referrer: Address::generate(&env),
+            reviewer: Address::generate(&env),
+            funder,
+            env,
+        }
+    }
+
+    fn register_referrer(f: &Fixture) {
+        f.client.reviewer_register(
+            &f.referrer,
+            &String::from_str(&f.env, "Referrer"),
+            &Vec::new(&f.env),
+            &None,
+        );
+    }
+
+    /// Register the referrer (a code requires a registered participant) and
+    /// have `owner` join under their code.
+    fn apply_referral(f: &Fixture) {
+        register_referrer(f);
+        let code = f.client.referral_create_code(&f.referrer, &None, &None);
+        f.client.referral_apply_code(&f.owner, &code);
+    }
+
+    /// Run one grant of `amount` for `owner` all the way to payout: the fee it
+    /// generates is the qualifying action that triggers the referral reward.
+    fn run_grant_to_payout(f: &Fixture, amount: i128) -> u64 {
+        let env = &f.env;
+        let grant_id = f.client.grant_create(
+            &f.owner,
+            &String::from_str(env, "Referred grant"),
+            &String::from_str(env, "Description"),
+            &f.token,
+            &amount,
+            &amount,
+            &1,
+            &vec![env, f.reviewer.clone()],
+        );
+        f.client.grant_fund(&grant_id, &f.funder, &amount);
+        f.client.milestone_submit(
+            &grant_id,
+            &0,
+            &f.owner,
+            &String::from_str(env, "Done"),
+            &String::from_str(env, "https://proof.url"),
+        );
+
+        // An approving vote requires every required criterion to be signed off.
+        f.client.checklist_define_criteria(
+            &f.owner,
+            &grant_id,
+            &0,
+            &vec![
+                env,
+                AcceptanceCriteria {
+                    idx: 0,
+                    description: String::from_str(env, "Ships"),
+                    is_required: true,
+                },
+            ],
+        );
+        f.client
+            .checklist_submit(&f.owner, &grant_id, &0, &vec![env, None]);
+        f.client
+            .checklist_review_criterion(&f.reviewer, &grant_id, &0, &0, &true);
+
+        f.client
+            .milestone_vote(&grant_id, &0, &f.reviewer, &true, &None);
+        f.client.grant_complete(&grant_id);
+        grant_id
+    }
+
+    #[test]
+    fn test_code_creation_expiry_and_max_uses() {
+        let f = setup();
+        register_referrer(&f);
+
+        let expires_at = f.env.ledger().timestamp() + 10;
+        let expiring = f
+            .client
+            .referral_create_code(&f.referrer, &Some(expires_at), &None);
+        let stored = f.env.as_contract(&f.client.address, || {
+            Storage::get_referral_code(&f.env, &expiring).unwrap()
+        });
+        assert_eq!(stored.expires_at, Some(expires_at));
+        assert!(stored.is_active);
+
+        f.env.ledger().set_timestamp(expires_at + 1);
+        assert_eq!(
+            f.client
+                .try_referral_apply_code(&f.owner, &expiring)
+                .unwrap_err(),
+            Ok(ContractError::ReferralCodeExpired)
+        );
+
+        let limited = f.client.referral_create_code(&f.referrer, &None, &Some(1));
+        f.client.referral_apply_code(&f.owner, &limited);
+        let another = Address::generate(&f.env);
+        assert_eq!(
+            f.client
+                .try_referral_apply_code(&another, &limited)
+                .unwrap_err(),
+            Ok(ContractError::ReferralCodeExhausted)
+        );
+    }
+
+    #[test]
+    fn test_self_referral_and_double_apply_are_rejected() {
+        let f = setup();
+        register_referrer(&f);
+        let code = f.client.referral_create_code(&f.referrer, &None, &None);
+
+        assert_eq!(
+            f.client
+                .try_referral_apply_code(&f.referrer, &code)
+                .unwrap_err(),
+            Ok(ContractError::InvalidInput)
+        );
+        f.client.referral_apply_code(&f.owner, &code);
+        assert_eq!(
+            f.client
+                .try_referral_apply_code(&f.owner, &code)
+                .unwrap_err(),
+            Ok(ContractError::AlreadyReferred)
+        );
+    }
+
+    #[test]
+    fn test_referral_reward_accrues_on_first_qualifying_payout() {
+        let f = setup();
+        apply_referral(&f);
+
+        assert_eq!(f.client.referral_pending_rewards(&f.referrer, &f.token), 0);
+
+        run_grant_to_payout(&f, 1_000_000);
+
+        // 1% protocol fee on 1_000_000 = 10_000; 10% referral share = 1_000.
+        assert_eq!(
+            f.client.referral_pending_rewards(&f.referrer, &f.token),
+            1_000
+        );
+
+        let record = f.client.referral_get_record(&f.owner).unwrap();
+        assert!(record.reward_paid);
+        assert!(record.first_action_at.is_some());
+    }
+
+    #[test]
+    fn test_referrer_can_claim_reward_after_referred_payout() {
+        let f = setup();
+        apply_referral(&f);
+
+        // Before the qualifying action there is nothing to claim.
+        assert_eq!(
+            f.client
+                .try_referral_claim_rewards(&f.referrer, &f.token)
+                .unwrap_err(),
+            Ok(ContractError::NoRewardsToClaim)
+        );
+
+        run_grant_to_payout(&f, 1_000_000);
+
+        let claimed = f.client.referral_claim_rewards(&f.referrer, &f.token);
+        assert_eq!(claimed, 1_000);
+        assert_eq!(
+            token::Client::new(&f.env, &f.token).balance(&f.referrer),
+            1_000
+        );
+        assert_eq!(f.client.referral_pending_rewards(&f.referrer, &f.token), 0);
+    }
+
+    #[test]
+    fn test_referral_reward_pays_only_once_per_referred_user() {
+        let f = setup();
+        apply_referral(&f);
+
+        run_grant_to_payout(&f, 1_000_000);
+        run_grant_to_payout(&f, 1_000_000);
+
+        assert_eq!(
+            f.client.referral_pending_rewards(&f.referrer, &f.token),
+            1_000
+        );
+    }
+
+    #[test]
+    fn test_payout_without_referral_record_accrues_nothing() {
+        let f = setup();
+
+        run_grant_to_payout(&f, 1_000_000);
+
+        assert_eq!(f.client.referral_pending_rewards(&f.referrer, &f.token), 0);
+        assert!(f.client.referral_get_record(&f.owner).is_none());
+    }
+
+    #[test]
+    fn test_claim_rewards_rejects_reentrant_call_when_guard_is_held() {
+        let f = setup();
+
+        f.env.as_contract(&f.client.address, || {
+            f.env
+                .storage()
+                .temporary()
+                .set(&crate::reentrancy::ReentrancyKey::ExternalCallGuard, &());
+
+            let err = claim_rewards(&f.env, &f.referrer, &f.token).unwrap_err();
+            assert_eq!(err, ContractError::Reentrancy);
+        });
+    }
 }

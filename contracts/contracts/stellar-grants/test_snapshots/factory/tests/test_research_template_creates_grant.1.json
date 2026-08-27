@@ -703,7 +703,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -1474,6 +1474,35 @@
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              },
+              {
+                "u32": 0
+              },
+              {
+                "u32": 2
+              },
+              {
+                "u128": "0"
+              }
+            ],
+            "data": {
+              "u128": "1"
             }
           }
         }

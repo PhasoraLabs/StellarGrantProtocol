@@ -316,6 +316,7 @@ pub struct InsurancePolicy {
     pub issued_at: u64,
     pub expires_at: u64,
     pub active: bool,
+    pub total_paid_out: i128,
 }
 
 #[contracttype]
@@ -437,6 +438,55 @@ pub struct ProtocolConfig {
     pub revenue_share_pool_bps: u32,
     /// Number of multisig approvals required to release a high-value escrow request.
     pub multisig_escrow_threshold: u32,
+}
+
+// ── Issue #681: DAO Governance ───────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DaoProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub title: String,
+    pub description: String,
+    pub proposal_type: DaoProposalType,
+    pub status: DaoProposalStatus,
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub created_at: u64,
+    pub voting_deadline: u64,
+    pub executed_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DaoProposalStatus {
+    Active,
+    Passed,
+    Rejected,
+    Executed,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DaoProposalType {
+    UpdateConfig(ProtocolConfig),
+    ChangeAdmin(Address),
+    TreasuryWithdrawal(Address, Address, i128), // (token, to, amount)
+    Generic,
+}
+
+// ── Issue #681: Treasury Ledger (separate concept from the simple
+// Storage::get_treasury/set_treasury payout address used by slash_reviewer —
+// see PR description for the design rationale) ───────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreasurySnapshot {
+    pub token: Address,
+    pub balance: i128,
+    pub taken_at: u64,
 }
 
 // ── Issue #632: Contributor Verification ───────────────────────────────────
@@ -627,6 +677,7 @@ pub struct MultisigProposal {
     pub threshold: u32,
     pub total_weight_signed: u32,
     pub executed: bool,
+    pub expired: bool,
     pub expired_at: u64,
     pub created_by: Address,
     pub created_at: u64,
@@ -736,6 +787,67 @@ pub struct RelayRecord {
     pub nonce: u32,
     pub relayed_at: u64,
     pub reimbursement_paid: i128,
+}
+
+/// Typed dispatch payload for `relay::execute_relayed` (#694).
+///
+/// Each variant carries the typed parameters required to actually perform the
+/// relayed action on behalf of `sender`. The relay entry point used to take an
+/// opaque `Bytes` payload that was never inspected; the new typed envelope makes
+/// the "actually dispatch" guarantee explicit at the type-system level and lets
+/// the relay module route to the right internal handler.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RelayDispatch {
+    ContributorRegister(ContributorRegisterPayload),
+    MilestoneSubmit(MilestoneSubmitPayload),
+    ClaimVested(ClaimVestedPayload),
+    WithdrawStream(WithdrawStreamPayload),
+}
+
+impl RelayDispatch {
+    /// The `RelayableAction` tag this dispatch variant corresponds to.
+    /// Lets the relay module verify a relayer's claimed action matches the
+    /// actual payload variant with a single equality compare instead of a
+    /// parallel `matches!` arm list that can drift apart over time.
+    pub fn action_tag(&self) -> RelayableAction {
+        match self {
+            RelayDispatch::ContributorRegister(_) => RelayableAction::ContributorRegister,
+            RelayDispatch::MilestoneSubmit(_) => RelayableAction::MilestoneSubmit,
+            RelayDispatch::ClaimVested(_) => RelayableAction::ClaimVested,
+            RelayDispatch::WithdrawStream(_) => RelayableAction::WithdrawStream,
+        }
+    }
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContributorRegisterPayload {
+    pub name: String,
+    pub bio: String,
+    pub skills: Vec<String>,
+    pub github_url: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MilestoneSubmitPayload {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub description: String,
+    pub proof_url: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaimVestedPayload {
+    pub grant_id: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WithdrawStreamPayload {
+    pub stream_id: u32,
 }
 
 // ── Issue #567: Decentralized Reviewer Recruitment Marketplace ──────────────
@@ -953,13 +1065,12 @@ pub enum ProtocolModule {
     Dao = 3,
     Staking = 4,
     Vesting = 5,
-    YieldEscrow = 6,
-    MatchingPool = 7,
-    Crowdfund = 8,
-    Insurance = 9,
-    Relay = 10,
-    TokenSwap = 11,
-    Oracle = 12,
+    MatchingPool = 6,
+    Crowdfund = 7,
+    Insurance = 8,
+    Relay = 9,
+    TokenSwap = 10,
+    Oracle = 11,
 }
 
 #[contracttype]
@@ -1216,6 +1327,15 @@ pub struct GrantTemplate {
     pub insurance_opt_in: bool,
 }
 
+/// Archetype-derived safety flags enforced on a specific grant (issue #912).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantSafetyFlags {
+    pub requires_staking: bool,
+    pub multisig_required: bool,
+    pub insurance_opt_in: bool,
+}
+
 // ── Waitlist Module ─────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -1251,6 +1371,7 @@ pub enum RateLimitAction {
     ContributorRegister = 2,
     DisputeRaise = 3,
     BountyCreate = 4,
+    WaitlistJoin = 5,
 }
 
 #[contracttype]
@@ -1337,6 +1458,11 @@ pub struct AnalyticsSnapshot {
     pub top_category_id: Option<u32>,
     pub tvl_7day_growth_bps: i128,
     pub snapshot_at: u64,
+    /// Ledger sequence at which the snapshot was captured (#695).
+    /// `analytics::get_snapshot` compares the current ledger sequence
+    /// against this value (not a fresh `env.ledger().sequence()` call) to
+    /// decide whether to rebuild the cached snapshot.
+    pub captured_at_ledger: u32,
 }
 
 // ── Issue #596: Dynamic On-Chain Protocol Parameter Store ─────────────────────
@@ -1837,9 +1963,11 @@ pub struct GrantPortfolio {
     pub stats: PortfolioStats,
 }
 
+// ── Issue #570: Multi-Grant Batch Operations ──────────────────────────────
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BatchResult {
+pub struct MultiGrantBatchResult {
     pub successful: u32,
     pub failed: u32,
     pub total: u32,
@@ -2005,6 +2133,7 @@ pub struct ArbitrationCase {
     pub finalized: bool,
     pub assigned_at: u64,
     pub deadline: u64,
+    pub panel_stakes: Vec<i128>, // Snapshot of each panelist's stake at finalization time
 }
 
 // ── Issue #574: Surety Bonds for High-Value Grant Delivery ───────────────────
@@ -2170,9 +2299,16 @@ pub struct BatchItemResult {
     pub error_code: Option<u32>,
 }
 
-// NOTE: this batch-op BatchResult (total/succeeded/failed/results) is unused
-// while `batch.rs` stays unwired from lib.rs, to avoid clashing with the
-// multi_grant::BatchResult shape (successful/failed/total) already exported.
+// ── Issue #622: Batch Operations Result ────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchResult {
+    pub total: u32,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub results: Vec<BatchItemResult>,
+}
 
 // ── Issue #622: Batch Read View Types ─────────────────────────────────────
 

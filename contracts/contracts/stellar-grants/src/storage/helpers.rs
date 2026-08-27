@@ -1,30 +1,31 @@
 use super::keys::{
     ArbitrationKey, AutoApproveKey, BondKey, BountyKey, CollateralKey, ConditionalReleaseKey,
-    CrowdfundKey, DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey,
-    VotingKey, WaitlistKey,
+    CrowdfundKey, DaoKey, DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey,
+    TreasuryKey, UserKey, VotingKey, WaitlistKey,
 };
+use crate::constants::{DEFAULT_DAO_QUORUM_VOTES, DEFAULT_DAO_VOTING_PERIOD_LEDGERS};
 use crate::types::{
     AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, AutoApproveConfig,
     AutoApproveRecord, BountyGrant, BountySubmission, BreakerState, ChecklistSubmission,
     ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
-    CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount, EscrowState,
-    EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord, MerkleCommitment,
-    MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal, OracleConfig,
-    ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig, ProtocolMetrics,
-    ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction, RateLimitRecord,
-    RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition, RenewalProposal, RevenueEpoch,
-    ReviewerProfile, ReviewerRequest, Role, RoleAssignment, RollingWindow, ScoringRubric,
-    StakerEpochRecord, StructuredEvidence, SyndicateGrant, SyndicateMember, TimerRecord,
-    TokenMetric, TransferProposal, VerificationAttestation, VoiceCredits, VotingMechanism,
-    WaitlistConfig, WaitlistEntry,
+    CrowdfundCampaign, CrowdfundPledge, DaoProposal, DexConfig, Dispute, EscrowAccount,
+    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantSafetyFlags, GrantTag,
+    GrantVersion, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
+    MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal,
+    OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig,
+    ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction,
+    RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition, RenewalProposal,
+    RevenueEpoch, ReviewerProfile, ReviewerRequest, Role, RoleAssignment, RollingWindow,
+    ScoringRubric, StakerEpochRecord, StructuredEvidence, SyndicateGrant, SyndicateMember,
+    TimerRecord, TokenMetric, TransferProposal, TransferableRole, VerificationAttestation,
+    VoiceCredits, VotingMechanism, WaitlistConfig, WaitlistEntry,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
     ExtensionRequest, PerformanceBond, ReferralCode, ReferralRecord, WhitelistEntry, WhitelistMode,
     WhitelistScope,
 };
-use soroban_sdk::{Address, Bytes, Env, Symbol, Vec};
+use soroban_sdk::{Address, Bytes, Env, String, Symbol, Vec};
 
 pub(crate) const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
 pub(crate) const PERSISTENT_TTL_EXTEND_TO: u32 = 1_000_000;
@@ -65,9 +66,12 @@ impl Storage {
     }
 
     pub fn get_grant(env: &Env, grant_id: u64) -> Option<Grant> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Grant(GrantKey::Data(grant_id)))
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_grant_v(env: &Env, grant_id: u64) -> Grant {
@@ -77,15 +81,34 @@ impl Storage {
     }
 
     pub fn set_grant(env: &Env, grant_id: u64, grant: &Grant) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Grant(GrantKey::Data(grant_id)), grant);
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        env.storage().persistent().set(&key, grant);
+        Self::bump(env, &key);
     }
 
     pub fn has_grant(env: &Env, grant_id: u64) -> bool {
         env.storage()
             .persistent()
             .has(&DataKey::Grant(GrantKey::Data(grant_id)))
+    }
+
+    /// Archetype-derived safety flags for a grant (issue #912). Defaults to
+    /// all-false for grants not created via an archetype template.
+    pub fn get_grant_safety_flags(env: &Env, grant_id: u64) -> GrantSafetyFlags {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Grant(GrantKey::SafetyFlags(grant_id)))
+            .unwrap_or(GrantSafetyFlags {
+                requires_staking: false,
+                multisig_required: false,
+                insurance_opt_in: false,
+            })
+    }
+
+    pub fn set_grant_safety_flags(env: &Env, grant_id: u64, flags: &GrantSafetyFlags) {
+        let key = DataKey::Grant(GrantKey::SafetyFlags(grant_id));
+        env.storage().persistent().set(&key, flags);
+        Self::bump(env, &key);
     }
 
     /// Append a grant id to the owner's portfolio index (used by multi_grant queries).
@@ -132,12 +155,12 @@ impl Storage {
     }
 
     pub fn get_milestone(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Milestone> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::Data(
-                grant_id,
-                milestone_idx,
-            )))
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_milestone_v(env: &Env, grant_id: u64, milestone_idx: u32) -> Milestone {
@@ -147,37 +170,39 @@ impl Storage {
     }
 
     pub fn set_milestone(env: &Env, grant_id: u64, milestone_idx: u32, milestone: &Milestone) {
-        env.storage().persistent().set(
-            &DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx)),
-            milestone,
-        );
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, milestone);
+        Self::bump(env, &key);
     }
 
     pub fn get_contributor(env: &Env, contributor: Address) -> Option<ContributorProfile> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::User(UserKey::Profile(contributor)))
+        let key = DataKey::User(UserKey::Profile(contributor));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_contributor(env: &Env, contributor: Address, profile: &ContributorProfile) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::User(UserKey::Profile(contributor)), profile);
+        let key = DataKey::User(UserKey::Profile(contributor));
+        env.storage().persistent().set(&key, profile);
+        Self::bump(env, &key);
     }
 
-    pub fn get_escrow_state(env: &Env, grant_id: u64) -> EscrowState {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Escrow(EscrowKey::State(grant_id)))
-            .unwrap_or_else(|| {
-                env.panic_with_error(ContractError::InvalidState);
-            })
+    pub fn get_escrow_state(env: &Env, grant_id: u64) -> Option<EscrowState> {
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_escrow_state(env: &Env, grant_id: u64, state: &EscrowState) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(EscrowKey::State(grant_id)), state);
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        env.storage().persistent().set(&key, state);
+        Self::bump(env, &key);
     }
 
     pub fn get_multisig_signers(env: &Env, grant_id: u64) -> Vec<Address> {
@@ -848,6 +873,14 @@ impl Storage {
             .set(&DataKey::RelayNonce(address.clone()), &nonce);
     }
 
+    /// Append a `RelayRecord` for a successfully dispatched relay action (#694).
+    /// The historical set of records lets auditors verify that each nonce
+    /// corresponded to an action that actually ran (not just bookkeeping).
+    pub fn set_relay_record(env: &Env, record: &crate::types::RelayRecord) {
+        let key = DataKey::RelayRecord(record.sender.clone(), record.relayed_at, record.nonce);
+        env.storage().persistent().set(&key, record);
+    }
+
     // ── Issue #567: Reviewer Pool Module ──────────────────────────────────────
 
     pub fn get_reviewer_profile(env: &Env, reviewer: &Address) -> Option<ReviewerProfile> {
@@ -860,6 +893,21 @@ impl Storage {
         env.storage().persistent().set(
             &DataKey::User(UserKey::ReviewerProfile(profile.reviewer.clone())),
             profile,
+        );
+    }
+
+    /// Reviewers indexed under an exact expertise tag.
+    pub fn get_reviewer_tag_index(env: &Env, tag: &String) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::User(UserKey::ReviewerTagIndex(tag.clone())))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_reviewer_tag_index(env: &Env, tag: &String, reviewers: &Vec<Address>) {
+        env.storage().persistent().set(
+            &DataKey::User(UserKey::ReviewerTagIndex(tag.clone())),
+            reviewers,
         );
     }
 
@@ -924,6 +972,19 @@ impl Storage {
         env.storage()
             .persistent()
             .set(&DataKey::Grant(GrantKey::CategoryList), categories);
+    }
+
+    pub fn get_category_index(env: &Env, category_id: u32) -> Vec<u64> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Grant(GrantKey::CategoryIndex(category_id)))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_category_index(env: &Env, category_id: u32, grant_ids: &Vec<u64>) {
+        let key = DataKey::Grant(GrantKey::CategoryIndex(category_id));
+        env.storage().persistent().set(&key, grant_ids);
+        Self::bump(env, &key);
     }
 
     // ── Issue #577: Grant Renewal Module ──────────────────────────────────────
@@ -1405,6 +1466,18 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    pub fn get_syndicate_payouts(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
+        let key = DataKey::Grant(GrantKey::SyndicatePayouts(grant_id, milestone_idx));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(Vec::new(env))
+    }
+
     // ── Issue #591: Grant Specification Versioning ───────────────────────────
 
     pub fn get_grant_version(env: &Env, grant_id: u64, version: u32) -> Option<GrantVersion> {
@@ -1462,8 +1535,12 @@ impl Storage {
 
     // ── Issue #568: Grant Transfer ────────────────────────────────────────────
 
-    pub fn get_transfer_proposal(env: &Env, grant_id: u64) -> Option<TransferProposal> {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn get_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+    ) -> Option<TransferProposal> {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         let v = env.storage().persistent().get(&key);
         if v.is_some() {
             Self::bump(env, &key);
@@ -1471,16 +1548,21 @@ impl Storage {
         v
     }
 
-    pub fn set_transfer_proposal(env: &Env, grant_id: u64, proposal: &TransferProposal) {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn set_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+        proposal: &TransferProposal,
+    ) {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         env.storage().persistent().set(&key, proposal);
         Self::bump(env, &key);
     }
 
-    pub fn remove_transfer_proposal(env: &Env, grant_id: u64) {
+    pub fn remove_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole) {
         env.storage()
             .persistent()
-            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id)));
+            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id, role.clone())));
     }
 
     // ── Issue #583: Typed Evidence Schemas ───────────────────────────────────
@@ -2194,6 +2276,21 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    // Issue #927: tracks how many waitlist promotions have happened for this
+    // grant so promote_next can enforce config.max_slots.
+    pub fn get_waitlist_promoted_count(env: &Env, grant_id: u64) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id)))
+            .unwrap_or(0)
+    }
+
+    pub fn set_waitlist_promoted_count(env: &Env, grant_id: u64, count: u32) {
+        let key = DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id));
+        env.storage().persistent().set(&key, &count);
+        Self::bump(env, &key);
+    }
+
     // ── Issue #533: Bounty-Mode Grants ───────────────────────────────────────
 
     pub fn next_bounty_id(env: &Env) -> u64 {
@@ -2255,5 +2352,288 @@ impl Storage {
         submitters.push_back(submitter.clone());
         env.storage().persistent().set(&key, &submitters);
         Self::bump(env, &key);
+    }
+
+    // ── Issue #681: DAO Governance ────────────────────────────────────────────
+
+    pub fn next_dao_proposal_id(env: &Env) -> u64 {
+        let key = DataKey::Dao(DaoKey::Counter);
+        let mut id: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        id += 1;
+        env.storage().persistent().set(&key, &id);
+        id
+    }
+
+    pub fn get_dao_proposal(env: &Env, proposal_id: u64) -> Option<DaoProposal> {
+        let key = DataKey::Dao(DaoKey::Proposal(proposal_id));
+        let v = env.storage().persistent().get(&key);
+        if v.is_some() {
+            Self::bump(env, &key);
+        }
+        v
+    }
+
+    pub fn set_dao_proposal(env: &Env, proposal: &DaoProposal) {
+        let key = DataKey::Dao(DaoKey::Proposal(proposal.id));
+        env.storage().persistent().set(&key, proposal);
+        Self::bump(env, &key);
+    }
+
+    pub fn has_dao_voted(env: &Env, proposal_id: u64, voter: &Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Dao(DaoKey::Vote(proposal_id, voter.clone())))
+    }
+
+    pub fn record_dao_vote(env: &Env, proposal_id: u64, voter: &Address) {
+        let key = DataKey::Dao(DaoKey::Vote(proposal_id, voter.clone()));
+        env.storage().persistent().set(&key, &true);
+        Self::bump(env, &key);
+    }
+
+    pub fn is_dao_mode_enabled(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Dao(DaoKey::ModeEnabled))
+            .unwrap_or(false)
+    }
+
+    pub fn set_dao_mode_enabled(env: &Env, enabled: bool) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Dao(DaoKey::ModeEnabled), &enabled);
+    }
+
+    pub fn get_dao_voting_period_ledgers(env: &Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Dao(DaoKey::VotingPeriod))
+            .unwrap_or(DEFAULT_DAO_VOTING_PERIOD_LEDGERS)
+    }
+
+    pub fn set_dao_voting_period_ledgers(env: &Env, ledgers: u32) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Dao(DaoKey::VotingPeriod), &ledgers);
+    }
+
+    pub fn get_dao_quorum_votes(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Dao(DaoKey::QuorumVotes))
+            .unwrap_or(DEFAULT_DAO_QUORUM_VOTES)
+    }
+
+    pub fn set_dao_quorum_votes(env: &Env, quorum: u64) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Dao(DaoKey::QuorumVotes), &quorum);
+    }
+
+    // ── Issue #681: Treasury ledger (separate from Storage::get_treasury/
+    // set_treasury — see PR description for the design rationale) ─────────────
+
+    pub fn get_treasury_balance(env: &Env, token: &Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TreasuryLedger(TreasuryKey::Balance(
+                token.clone(),
+            )))
+            .unwrap_or(0)
+    }
+
+    pub fn set_treasury_balance(env: &Env, token: &Address, balance: i128) {
+        let key = DataKey::TreasuryLedger(TreasuryKey::Balance(token.clone()));
+        env.storage().persistent().set(&key, &balance);
+        Self::bump(env, &key);
+    }
+
+    pub fn set_treasury_address(env: &Env, treasury: &Address) {
+        env.storage().persistent().set(
+            &DataKey::TreasuryLedger(TreasuryKey::ManagerAddress),
+            treasury,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{storage::Persistent as _, Address as _, Ledger as _},
+        Env,
+    };
+
+    #[test]
+    fn test_global_admin_roundtrip() {
+        let env = Env::default();
+        assert!(Storage::get_global_admin(&env).is_none());
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+        assert_eq!(Storage::get_global_admin(&env).unwrap(), admin);
+    }
+
+    #[test]
+    fn test_council_roundtrip() {
+        let env = Env::default();
+        assert!(Storage::get_council(&env).is_none());
+
+        let council = Address::generate(&env);
+        Storage::set_council(&env, &council);
+        assert_eq!(Storage::get_council(&env).unwrap(), council);
+    }
+
+    #[test]
+    fn test_grant_counter_increments() {
+        let env = Env::default();
+        let id1 = Storage::increment_grant_counter(&env);
+        let id2 = Storage::increment_grant_counter(&env);
+        let id3 = Storage::increment_grant_counter(&env);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(id3, 3);
+    }
+
+    #[test]
+    fn test_grant_not_found_returns_none() {
+        let env = Env::default();
+        assert!(Storage::get_grant(&env, 999).is_none());
+    }
+
+    #[test]
+    fn test_set_and_get_grant() {
+        let env = Env::default();
+        let owner = Address::generate(&env);
+        let grant = crate::types::Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        Storage::set_grant(&env, 1, &grant);
+
+        let loaded = Storage::get_grant(&env, 1).unwrap();
+        assert_eq!(loaded.owner, owner);
+        assert_eq!(loaded.total_milestones, 3);
+    }
+
+    fn advance_ledger_sequence(env: &Env, by: u32) {
+        env.ledger().with_mut(|li| {
+            li.sequence_number += by;
+            li.max_entry_ttl = li.max_entry_ttl.max(PERSISTENT_TTL_EXTEND_TO * 2);
+        });
+    }
+
+    #[test]
+    fn test_get_and_set_grant_extend_ttl() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        advance_ledger_sequence(&env, 0);
+
+        let owner = Address::generate(&env);
+        let grant = crate::types::Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        let key = DataKey::Grant(GrantKey::Data(1));
+
+        // A write extends the TTL out to PERSISTENT_TTL_EXTEND_TO.
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &grant);
+        });
+        let ttl_after_set =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_set >= PERSISTENT_TTL_THRESHOLD);
+
+        // Let the TTL decay below the bump threshold.
+        advance_ledger_sequence(
+            &env,
+            PERSISTENT_TTL_EXTEND_TO - PERSISTENT_TTL_THRESHOLD / 2,
+        );
+        let ttl_before_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_before_get < PERSISTENT_TTL_THRESHOLD);
+
+        // A read re-extends the TTL back out.
+        let loaded = env.as_contract(&contract_id, || Storage::get_grant(&env, 1));
+        assert!(loaded.is_some());
+        let ttl_after_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_get >= PERSISTENT_TTL_THRESHOLD);
+        assert!(ttl_after_get > ttl_before_get);
+    }
+
+    #[test]
+    fn test_contributor_index_empty_by_default() {
+        let env = Env::default();
+        let index = Storage::get_contributor_index(&env);
+        assert_eq!(index.len(), 0);
+    }
+
+    #[test]
+    fn test_reviewer_allowlist_roundtrip() {
+        let env = Env::default();
+        let allowlist = Storage::get_reviewer_allowlist(&env);
+        assert_eq!(allowlist.len(), 0);
+
+        let reviewer = Address::generate(&env);
+        let mut list = soroban_sdk::Vec::new(&env);
+        list.push_back(reviewer.clone());
+        Storage::set_reviewer_allowlist(&env, &list);
+
+        let loaded = Storage::get_reviewer_allowlist(&env);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.get(0).unwrap(), reviewer);
+    }
+
+    #[test]
+    fn test_payment_split_roundtrip() {
+        let env = Env::default();
+        let addr = Address::generate(&env);
+        let split = PaymentSplit {
+            grant_id: 1,
+            milestone_idx: 0,
+            recipients: soroban_sdk::Vec::new(&env),
+            registered_by: addr,
+            registered_at: 12345,
+        };
+        Storage::set_payment_split(&env, 1, 0, &split);
+
+        let loaded = Storage::get_payment_split(&env, 1, 0).unwrap();
+        assert_eq!(loaded.grant_id, 1);
+        assert_eq!(loaded.registered_at, 12345);
+    }
+
+    #[test]
+    fn test_payment_split_none_for_missing() {
+        let env = Env::default();
+        assert!(Storage::get_payment_split(&env, 999, 0).is_none());
     }
 }

@@ -28,13 +28,20 @@
               "key": {
                 "vec": [
                   {
-                    "symbol": "MerkleCommitment"
+                    "symbol": "Milestone"
                   },
                   {
-                    "u64": "42"
-                  },
-                  {
-                    "u32": 1
+                    "vec": [
+                      {
+                        "symbol": "MerkleCommit"
+                      },
+                      {
+                        "u64": "42"
+                      },
+                      {
+                        "u32": 1
+                      }
+                    ]
                   }
                 ]
               },

@@ -44,14 +44,14 @@ Make sure you have the following installed before contributing:
 |------|---------|---------|
 | [Rust](https://rustup.rs/) | `>= 1.78` | Smart contract language |
 | [stellar CLI](https://developers.stellar.org/docs/tools/stellar-cli) | Latest | Deploy & invoke contracts |
-| `wasm32-unknown-unknown` target | — | Compile contracts to WASM |
+| `wasm32v1-none` target | — | Compile contracts to WASM |
 | Node.js | `>= 18` | TypeScript client examples |
 | Git | Any | Version control |
 
 Install the WASM target:
 
 ```bash
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 ```
 
 Install the Stellar CLI:
@@ -93,7 +93,7 @@ make deploy-testnet
 Or using Cargo directly:
 
 ```bash
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 cargo test
 cargo clippy -- -D warnings
 cargo fmt --check
@@ -250,7 +250,7 @@ Closes #38
 
    ## Changes Made
    - Added `milestone_approve()` function in `lib.rs`
-   - Added vote storage map in `storage.rs`
+   - Added vote storage accessors in `storage/helpers.rs`
    - Emits `MilestoneApproved` event
 
    ## Testing
@@ -295,11 +295,11 @@ cargo clippy -- -D warnings
 - No dead code (`#[allow(dead_code)]` requires maintainer approval)
 
 **Soroban-specific rules:**
-- Always call `env.storage()` through wrapper functions in `storage.rs`
+- Always call `env.storage()` through the `Storage` wrapper in `storage/helpers.rs`
 - Use `require_auth()` at the top of every state-changing function
 - Use `checked_add` / `checked_sub` for all balance math — never raw arithmetic
 - Emit events via `env.events().publish()` for all state transitions
-- Use `Symbol::new(&env, "key")` for storage keys — no raw strings in `lib.rs`
+- Use the typed `DataKey` enum from `storage/keys.rs` for storage keys — never raw `Symbol`s in `lib.rs`
 
 ---
 
@@ -355,13 +355,43 @@ open target/llvm-cov/html/index.html
 
 ### Storage Keys
 
-All storage keys must be defined in `storage.rs` as `Symbol` constants — never inline in `lib.rs`:
+Storage is organized as a `storage/` module, not a single file:
+
+- `storage/keys.rs` — the typed `#[contracttype]` key enums
+- `storage/helpers.rs` — the `Storage` wrapper with typed accessors
+- `storage/mod.rs` — re-exports the public storage surface
+
+All storage keys must be defined as variants of the typed `DataKey` enum in
+`storage/keys.rs` — never as raw `Symbol`s inlined in `lib.rs`. `DataKey` groups
+related keys under per-domain sub-enums (`GrantKey`, `MilestoneKey`, `EscrowKey`,
+`UserKey`, …), each annotated with `#[contracttype]` so Soroban derives a stable
+XDR encoding:
 
 ```rust
-// ✅ Correct
-pub fn grant_key(env: &Env, grant_id: u64) -> Val { ... }
+// storage/keys.rs
+#[contracttype]
+#[derive(Clone)]
+pub enum GrantKey {
+    Data(u64),
+    Counter,
+    // ...
+}
 
-// ❌ Wrong — raw string in lib.rs
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Grant(GrantKey),
+    Milestone(MilestoneKey),
+    // ... protocol singletons, per-address keys, etc.
+    Admin,
+}
+```
+
+```rust
+// ✅ Correct — typed key via the Storage wrapper / DataKey enum
+env.storage().persistent().get(&DataKey::Grant(GrantKey::Data(grant_id)))
+
+// ❌ Wrong — raw Symbol string in lib.rs
 env.storage().persistent().get(&Symbol::new(env, "grant"))
 ```
 

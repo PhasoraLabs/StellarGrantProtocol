@@ -2,7 +2,9 @@ use soroban_sdk::{
     testutils::{Address as TestAddress, Ledger as _},
     Address, Env, String, Vec,
 };
-use stellar_grants::{MilestoneState, StellarGrantsContractClient, COMMUNITY_REVIEW_PERIOD};
+use stellar_grants::{MilestoneState, StellarGrantsContractClient};
+
+const COMMUNITY_REVIEW_PERIOD: u64 = 3 * 24 * 60 * 60;
 
 #[test]
 fn test_milestone_voting_quorum_and_events() {
@@ -23,7 +25,6 @@ fn test_milestone_voting_quorum_and_events() {
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
-    let quorum = 2u32;
 
     let grant_id = client.grant_create(
         &owner,
@@ -34,20 +35,10 @@ fn test_milestone_voting_quorum_and_events() {
         &10,
         &3,
         &reviewers,
-        &quorum,
-        &None,
-        &0i128,
-        &0i128,
-        &soroban_sdk::Vec::<soroban_sdk::String>::new(&env),
-        &false,
-        &false,
-        &false,
     );
 
-    client.grant_accept(&grant_id, &owner);
-
     token_admin.mint(&owner, &1000);
-    client.grant_fund(&grant_id, &owner, &100, &token_id, &None);
+    client.grant_fund(&grant_id, &owner, &100);
 
     client.milestone_submit(
         &grant_id,
@@ -55,7 +46,6 @@ fn test_milestone_voting_quorum_and_events() {
         &owner,
         &String::from_str(&env, "desc"),
         &String::from_str(&env, "proof"),
-        &None,
     );
 
     // Advance past the community review period so reviewer voting is allowed
@@ -63,42 +53,21 @@ fn test_milestone_voting_quorum_and_events() {
     env.ledger()
         .set_timestamp(ts.saturating_add(COMMUNITY_REVIEW_PERIOD).saturating_add(1));
 
-    let res1 = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(0).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
+    let res1 = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &true, &None);
     assert!(!res1); // Quorum not reached yet
-    let res2 = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(1).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
+    let res2 = client.milestone_vote(&grant_id, &0, &reviewers.get(1).unwrap(), &true, &None);
     assert!(res2);
 
     let milestone = client.get_milestone(&grant_id, &0);
-    // Awaiting payout after quorum
-    assert_eq!(milestone.state(), MilestoneState::AwaitingPayout);
-
-    env.ledger()
-        .set_timestamp(env.ledger().timestamp() + stellar_grants::CHALLENGE_PERIOD + 1);
-    client.milestone_payout(&grant_id, &0, &owner);
-
-    let paid_milestone = client.get_milestone(&grant_id, &0);
-    assert_eq!(paid_milestone.state(), MilestoneState::Paid);
+    // After quorum the milestone should be Approved
+    assert_eq!(milestone.state, MilestoneState::Approved);
 }
 
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #7)")]
 fn test_milestone_vote_after_quorum_panics() {
     use soroban_sdk::{testutils::Address as TestAddress, Address, Env, String, Vec};
-    use stellar_grants::{StellarGrantsContractClient, COMMUNITY_REVIEW_PERIOD};
+    use stellar_grants::StellarGrantsContractClient;
     let env = Env::default();
     env.mock_all_auths();
 
@@ -116,7 +85,6 @@ fn test_milestone_vote_after_quorum_panics() {
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
-    let quorum = 2u32;
 
     let grant_id = client.grant_create(
         &owner,
@@ -127,59 +95,29 @@ fn test_milestone_vote_after_quorum_panics() {
         &10,
         &3,
         &reviewers,
-        &quorum,
-        &None,
-        &0i128,
-        &0i128,
-        &soroban_sdk::Vec::<soroban_sdk::String>::new(&env),
-        &false,
-        &false,
-        &false,
     );
-    client.grant_accept(&grant_id, &owner);
+
     client.milestone_submit(
         &grant_id,
         &0,
         &owner,
         &String::from_str(&env, "desc"),
         &String::from_str(&env, "proof"),
-        &None,
     );
     let ts = env.ledger().timestamp();
     env.ledger()
         .set_timestamp(ts.saturating_add(COMMUNITY_REVIEW_PERIOD).saturating_add(1));
-    let _ = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(0).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
-    let _ = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(1).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
+    let _ = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &true, &None);
+    let _ = client.milestone_vote(&grant_id, &0, &reviewers.get(1).unwrap(), &true, &None);
     // This vote should panic (milestone already approved — MilestoneNotSubmitted #7)
-    let _ = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(2).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
+    let _ = client.milestone_vote(&grant_id, &0, &reviewers.get(2).unwrap(), &true, &None);
 }
 
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #8)")]
 fn test_milestone_double_voting_panics() {
     use soroban_sdk::{testutils::Address as TestAddress, Address, Env, String, Vec};
-    use stellar_grants::{StellarGrantsContractClient, COMMUNITY_REVIEW_PERIOD};
+    use stellar_grants::StellarGrantsContractClient;
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, stellar_grants::StellarGrantsContract);
@@ -194,7 +132,6 @@ fn test_milestone_double_voting_panics() {
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
     reviewers.push_back(<Address as TestAddress>::generate(&env));
-    let quorum = 2u32;
 
     let grant_id = client.grant_create(
         &owner,
@@ -205,17 +142,7 @@ fn test_milestone_double_voting_panics() {
         &10,
         &3,
         &reviewers,
-        &quorum,
-        &None,
-        &0i128,
-        &0i128,
-        &soroban_sdk::Vec::<soroban_sdk::String>::new(&env),
-        &false,
-        &false,
-        &false,
     );
-
-    client.grant_accept(&grant_id, &owner);
 
     client.milestone_submit(
         &grant_id,
@@ -223,27 +150,12 @@ fn test_milestone_double_voting_panics() {
         &owner,
         &String::from_str(&env, "desc"),
         &String::from_str(&env, "proof"),
-        &None,
     );
 
     let ts = env.ledger().timestamp();
     env.ledger()
         .set_timestamp(ts.saturating_add(COMMUNITY_REVIEW_PERIOD).saturating_add(1));
 
-    let _ = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(0).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
-    let _ = client.milestone_vote(
-        &grant_id,
-        &0,
-        &reviewers.get(0).unwrap(),
-        &true,
-        &None,
-        &None,
-    );
+    let _ = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &true, &None);
+    let _ = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &true, &None);
 }

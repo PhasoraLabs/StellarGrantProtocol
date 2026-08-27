@@ -1,7 +1,12 @@
 use crate::errors::ContractError;
+use crate::events::Events;
 use crate::storage::keys::{DataKey, GrantKey};
 use crate::storage::Storage;
-use crate::types::{BatchResult, GrantPortfolio, GrantStatus, PortfolioFilter, PortfolioStats};
+use crate::types::{
+    GrantPortfolio, GrantStatus, MultiGrantBatchResult, PortfolioFilter, PortfolioStats,
+    WhitelistScope,
+};
+use crate::whitelist;
 use soroban_sdk::{Address, Env, Vec};
 
 /// Return portfolio stats for an owner address.
@@ -143,8 +148,8 @@ pub fn batch_add_reviewer(
     owner: &Address,
     grant_ids: Vec<u64>,
     reviewer: &Address,
-) -> Result<BatchResult, ContractError> {
-    let mut result = BatchResult {
+) -> Result<MultiGrantBatchResult, ContractError> {
+    let mut result = MultiGrantBatchResult {
         successful: 0,
         failed: 0,
         total: grant_ids.len() as u32,
@@ -172,8 +177,8 @@ pub fn batch_remove_reviewer(
     owner: &Address,
     grant_ids: Vec<u64>,
     reviewer: &Address,
-) -> Result<BatchResult, ContractError> {
-    let mut result = BatchResult {
+) -> Result<MultiGrantBatchResult, ContractError> {
+    let mut result = MultiGrantBatchResult {
         successful: 0,
         failed: 0,
         total: grant_ids.len() as u32,
@@ -307,9 +312,17 @@ fn add_reviewer_to_grant(
         return Ok(());
     }
 
+    // Issue #815: enforce the same GlobalReviewer whitelist gate that
+    // internal_grant_create applies at grant-creation time, so a reviewer
+    // excluded from the whitelist can't be added post-creation instead.
+    if !whitelist::is_allowed(env, reviewer, &WhitelistScope::GlobalReviewer) {
+        return Err(ContractError::AddressNotWhitelisted);
+    }
+
     // Add reviewer
     grant.reviewers.push_back(reviewer.clone());
     Storage::set_grant(env, grant_id, &grant);
+    Events::emit_reviewer_added_to_grant(env, grant_id, reviewer.clone());
 
     Ok(())
 }
@@ -346,6 +359,7 @@ fn remove_reviewer_from_grant(
 
     grant.reviewers = new_reviewers;
     Storage::set_grant(env, grant_id, &grant);
+    Events::emit_reviewer_removed_from_grant(env, grant_id, reviewer.clone());
 
     Ok(())
 }
@@ -409,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_batch_result_structure() {
-        let result = BatchResult {
+        let result = MultiGrantBatchResult {
             successful: 5,
             failed: 2,
             total: 7,
@@ -444,5 +458,252 @@ mod tests {
         let portfolio = get_portfolio(&env, &owner);
         assert_eq!(portfolio.owner, owner);
         assert_eq!(portfolio.stats.owner, owner);
+    }
+
+    use crate::types::{Grant, GrantFund, GrantStatus};
+    use soroban_sdk::String;
+
+    fn create_grant(
+        env: &soroban_sdk::Env,
+        id: u64,
+        owner: &Address,
+        reviewers: Vec<Address>,
+        status: GrantStatus,
+        escrow: i128,
+    ) {
+        let grant = Grant {
+            id,
+            owner: owner.clone(),
+            title: String::from_str(env, "test"),
+            description: String::from_str(env, "desc"),
+            token: Address::generate(env),
+            status,
+            total_amount: 1000,
+            milestone_amount: 100,
+            reviewers,
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: escrow,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        Storage::set_grant(env, id, &grant);
+        // Register in owner index
+        let key = DataKey::Grant(GrantKey::OwnerIndex(owner.clone()));
+        let mut ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+        ids.push_back(id);
+        env.storage().persistent().set(&key, &ids);
+    }
+
+    #[test]
+    fn test_batch_add_reviewer_across_grants() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+
+        create_grant(
+            &env,
+            1,
+            &owner,
+            reviewers.clone(),
+            GrantStatus::Active,
+            1000,
+        );
+        reviewers.push_back(Address::generate(&env));
+        create_grant(
+            &env,
+            2,
+            &owner,
+            reviewers.clone(),
+            GrantStatus::Active,
+            2000,
+        );
+
+        let mut grant_ids = Vec::new(&env);
+        grant_ids.push_back(1);
+        grant_ids.push_back(2);
+
+        let result = batch_add_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
+        assert_eq!(result.successful, 2);
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.total, 2);
+    }
+
+    #[test]
+    fn test_batch_add_reviewer_partial_failure() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        create_grant(&env, 1, &owner, Vec::new(&env), GrantStatus::Active, 1000);
+        // grant 99 doesn't exist
+
+        let mut grant_ids = Vec::new(&env);
+        grant_ids.push_back(1);
+        grant_ids.push_back(99);
+
+        let result = batch_add_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
+        assert_eq!(result.successful, 1);
+        assert_eq!(result.failed, 1);
+        assert_eq!(result.total, 2);
+    }
+
+    #[test]
+    fn test_batch_remove_reviewer() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+        create_grant(
+            &env,
+            1,
+            &owner,
+            reviewers.clone(),
+            GrantStatus::Active,
+            1000,
+        );
+        create_grant(
+            &env,
+            2,
+            &owner,
+            reviewers.clone(),
+            GrantStatus::Active,
+            2000,
+        );
+
+        let mut grant_ids = Vec::new(&env);
+        grant_ids.push_back(1);
+        grant_ids.push_back(2);
+
+        let result = batch_remove_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
+        assert_eq!(result.successful, 2);
+        assert_eq!(result.failed, 0);
+    }
+
+    #[test]
+    fn test_batch_remove_reviewer_not_found() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        create_grant(&env, 1, &owner, Vec::new(&env), GrantStatus::Active, 1000);
+
+        let mut grant_ids = Vec::new(&env);
+        grant_ids.push_back(1);
+
+        let result = batch_remove_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
+        assert_eq!(result.successful, 0);
+        assert_eq!(result.failed, 1);
+    }
+
+    #[test]
+    fn test_portfolio_stats_with_grants() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+        create_grant(&env, 1, &owner, reviewers.clone(), GrantStatus::Active, 500);
+        create_grant(
+            &env,
+            2,
+            &owner,
+            reviewers.clone(),
+            GrantStatus::Completed,
+            0,
+        );
+
+        let stats = get_portfolio_stats(&env, &owner);
+        assert_eq!(stats.total_grants, 2);
+        assert_eq!(stats.active_grants, 1);
+        assert_eq!(stats.completed_grants, 1);
+        assert_eq!(stats.total_funded, 2000);
+        assert_eq!(stats.unique_reviewers, 1);
+    }
+
+    #[test]
+    fn test_total_escrow_balance_with_grants() {
+        let env = soroban_sdk::Env::default();
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        // Create grants with specific tokens to test balance aggregation
+        let grant1 = Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: String::from_str(&env, "t"),
+            description: String::from_str(&env, "d"),
+            token: token.clone(),
+            status: GrantStatus::Active,
+            total_amount: 1000,
+            milestone_amount: 100,
+            reviewers: Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 300,
+            funders: Vec::new(&env),
+            reason: None,
+            timestamp: 0,
+            require_compliance: None,
+        };
+        Storage::set_grant(&env, 1, &grant1);
+
+        let owner_key = DataKey::Grant(GrantKey::OwnerIndex(owner.clone()));
+        let mut ids: Vec<u64> = Vec::new(&env);
+        ids.push_back(1);
+        env.storage().persistent().set(&owner_key, &ids);
+
+        let balance = total_escrow_balance(&env, &owner, &token);
+        assert_eq!(balance, 300);
+    }
+
+    #[test]
+    fn test_batch_add_reviewer_enforces_global_whitelist() {
+        use crate::types::WhitelistMode;
+
+        let env = soroban_sdk::Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        create_grant(&env, 1, &owner, Vec::new(&env), GrantStatus::Active, 1000);
+
+        Storage::set_global_admin(&env, &admin);
+        whitelist::set_mode(
+            &env,
+            &admin,
+            &WhitelistScope::GlobalReviewer,
+            WhitelistMode::Restricted,
+        )
+        .unwrap();
+
+        let mut grant_ids = Vec::new(&env);
+        grant_ids.push_back(1);
+
+        // Not whitelisted: batch_add_reviewer should fail for this grant.
+        let result = batch_add_reviewer(&env, &owner, grant_ids.clone(), &reviewer).unwrap();
+        assert_eq!(result.successful, 0);
+        assert_eq!(result.failed, 1);
+        let grant = Storage::get_grant(&env, 1).unwrap();
+        assert!(!grant.reviewers.contains(reviewer.clone()));
+
+        // Whitelist the reviewer; the same call should now succeed.
+        whitelist::add(&env, &admin, &reviewer, &WhitelistScope::GlobalReviewer).unwrap();
+        let result = batch_add_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
+        assert_eq!(result.successful, 1);
+        assert_eq!(result.failed, 0);
+        let grant = Storage::get_grant(&env, 1).unwrap();
+        assert!(grant.reviewers.contains(reviewer));
     }
 }

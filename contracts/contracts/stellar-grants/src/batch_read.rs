@@ -149,6 +149,7 @@ pub fn reviewer_dashboard(env: &Env, reviewer: &Address) -> ReviewerView {
     let reputation = Storage::get_reviewer_reputation(env, reviewer.clone());
 
     let mut pending_votes = soroban_sdk::Vec::new(env);
+    let mut sla_breach_count: u32 = 0;
 
     let active_grants = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 101);
     let mut truncated = false;
@@ -162,6 +163,13 @@ pub fn reviewer_dashboard(env: &Env, reviewer: &Address) -> ReviewerView {
                 continue;
             }
             for idx in 0..grant.total_milestones {
+                // Issue #611: surface SLA breaches this reviewer has accrued.
+                let sla_id = crate::reviewer_sla::milestone_sla_id(grant_id, idx);
+                if let Some(sla) = crate::reviewer_sla::get_sla(env, reviewer, sla_id) {
+                    if sla.breached {
+                        sla_breach_count = sla_breach_count.saturating_add(1);
+                    }
+                }
                 if let Some(ms) = Storage::get_milestone(env, grant_id, idx) {
                     if ms.state == MilestoneState::Submitted
                         && !ms.votes.contains_key(reviewer.clone())
@@ -178,7 +186,7 @@ pub fn reviewer_dashboard(env: &Env, reviewer: &Address) -> ReviewerView {
         profile,
         reputation,
         pending_votes,
-        sla_breach_count: 0,
+        sla_breach_count,
         pending_rewards: 0,
         truncated,
     }

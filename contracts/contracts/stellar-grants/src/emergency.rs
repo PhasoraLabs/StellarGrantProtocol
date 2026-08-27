@@ -37,7 +37,6 @@ pub fn pause(env: &Env, admin: &Address, reason: String) -> Result<(), ContractE
         ProtocolModule::Dao,
         ProtocolModule::Staking,
         ProtocolModule::Vesting,
-        ProtocolModule::YieldEscrow,
         ProtocolModule::MatchingPool,
         ProtocolModule::Crowdfund,
         ProtocolModule::Insurance,
@@ -88,4 +87,116 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
 /// Return the full history of pause/unpause events.
 pub fn pause_history(env: &Env) -> Vec<PauseRecord> {
     Storage::get_pause_history(env)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::storage::Storage;
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::{Address, Env, String};
+
+    #[test]
+    fn test_pause_and_unpause() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        // Initially not paused
+        assert!(!is_paused(&env));
+        assert_eq!(require_not_paused(&env), Ok(()));
+
+        // Pause by admin
+        let reason = String::from_str(&env, "Critical bug");
+        let result = pause(&env, &admin, reason.clone());
+        assert_eq!(result, Ok(()));
+
+        // Verify paused state
+        assert!(is_paused(&env));
+        assert_eq!(require_not_paused(&env), Err(ContractError::ContractPaused));
+
+        let history = pause_history(&env);
+        assert_eq!(history.len(), 1);
+        let record = history.get(0).unwrap();
+        assert_eq!(record.paused_by, admin);
+        assert_eq!(record.reason, reason);
+        assert!(record.unpaused_at.is_none());
+
+        // Unpause by admin
+        let result = unpause(&env, &admin);
+        assert_eq!(result, Ok(()));
+
+        // Verify unpaused state
+        assert!(!is_paused(&env));
+        assert_eq!(require_not_paused(&env), Ok(()));
+
+        let history = pause_history(&env);
+        let updated_record = history.get(0).unwrap();
+        assert!(updated_record.unpaused_at.is_some());
+    }
+
+    #[test]
+    fn test_pause_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let random_caller = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        // Random caller attempts to pause
+        let reason = String::from_str(&env, "Trying to pause");
+        let result = pause(&env, &random_caller, reason);
+        assert_eq!(result, Err(ContractError::Unauthorized));
+
+        // Verify still not paused
+        assert!(!is_paused(&env));
+    }
+
+    #[test]
+    fn test_unpause_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let random_caller = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        pause(&env, &admin, String::from_str(&env, "Reason")).unwrap();
+
+        // Random caller attempts to unpause
+        let result = unpause(&env, &random_caller);
+        assert_eq!(result, Err(ContractError::Unauthorized));
+
+        // Verify still paused
+        assert!(is_paused(&env));
+    }
+
+    #[test]
+    fn test_pause_already_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        pause(&env, &admin, String::from_str(&env, "First reason")).unwrap();
+
+        let result = pause(&env, &admin, String::from_str(&env, "Second reason"));
+        assert_eq!(result, Err(ContractError::InvalidState));
+    }
+
+    #[test]
+    fn test_unpause_not_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        let result = unpause(&env, &admin);
+        assert_eq!(result, Err(ContractError::InvalidState));
+    }
 }

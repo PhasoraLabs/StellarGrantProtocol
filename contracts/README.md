@@ -168,26 +168,29 @@ stellar contract build --package stellar-grants --locked --optimize
 
 ### WASM Size Benchmark
 
-Measured on this branch with `stellar contract build`:
+Measured on this branch with `stellar contract build` (see [`BENCHMARK.md`](./BENCHMARK.md) for methodology and caveats):
 
 | Build | Size |
 |------|------|
-| Initial release baseline before final size pass | `100,772` bytes |
-| Final release WASM | `87,305` bytes |
-| Final optimized WASM (`--optimize`) | `75,924` bytes |
-| End-to-end delta | `24,848` bytes smaller (`24.7%`) |
+| Release (`--optimize=false`, with spec shaking) | `511,030` bytes |
+| Optimized (`--optimize`) | `447,150` bytes |
+| Optimizer delta | `63,880` bytes smaller (`12.5%`) |
 
-The last size pass combined Soroban spec shaking with trimming embedded rustdoc/spec text from exported contract items. On the current code, the optimizer still removes an additional `11,381` bytes (`13.0%`) from the release WASM.
+`stellar contract build` enables Soroban SDK spec shaking (`SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2`). On the current code, `--optimize` still removes an additional `63,880` bytes (`12.5%`) from the release WASM.
 
 The workspace release profile already uses size-focused settings:
 
 ```toml
 [profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
+opt-level = "s"
+overflow-checks = false
+debug = 0
+strip = true
+debug-assertions = false
 panic = "abort"
-strip = "symbols"
+codegen-units = 1
+lto = "fat"
+incremental = false
 ```
 
 ### Run Tests

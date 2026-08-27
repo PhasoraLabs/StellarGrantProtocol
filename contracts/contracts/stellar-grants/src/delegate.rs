@@ -23,18 +23,17 @@ pub struct DelegationRevoked {
     pub revoked_at: u64,
 }
 
-fn is_registered_reviewer(env: &Env, reviewer: &Address) -> bool {
-    let count = Storage::get_grant_count(env);
-    let mut id = 1u64;
-    while id <= count {
-        if let Some(grant) = Storage::get_grant(env, id) {
-            if grant.reviewers.contains(reviewer.clone()) {
-                return true;
-            }
-        }
-        id += 1;
+fn is_registered_reviewer(env: &Env, reviewer: &Address, scope: &DelegationScope) -> bool {
+    match scope {
+        DelegationScope::PerGrant(grant_id) => Storage::get_grant(env, *grant_id)
+            .map(|g| g.reviewers.contains(reviewer.clone()))
+            .unwrap_or(false),
+        // Global scope has no single grant to check at creation time; the real
+        // authorization boundary is enforced per-grant at vote time in
+        // resolve_delegator/is_authorized_proxy, which only ever iterate one
+        // grant's reviewer list.
+        DelegationScope::Global => true,
     }
-    false
 }
 
 fn get_raw(env: &Env, delegator: &Address, scope: &DelegationScope) -> Option<Delegation> {
@@ -71,7 +70,12 @@ fn active_matching(env: &Env, delegator: &Address, grant_id: u64) -> Option<Dele
         .or_else(|| active_for_scope(env, delegator, &DelegationScope::Global))
 }
 
-fn would_create_cycle(env: &Env, delegator: &Address, delegate: &Address, scope: &DelegationScope) -> bool {
+fn would_create_cycle(
+    env: &Env,
+    delegator: &Address,
+    delegate: &Address,
+    scope: &DelegationScope,
+) -> bool {
     if delegator == delegate {
         return true;
     }
@@ -109,7 +113,7 @@ pub fn delegate_vote(
     max_uses: Option<u32>,
 ) -> Result<(), ContractError> {
     delegator.require_auth();
-    if !is_registered_reviewer(env, delegator) {
+    if !is_registered_reviewer(env, delegator, &scope) {
         return Err(ContractError::Unauthorized);
     }
     if max_uses == Some(0) || would_create_cycle(env, delegator, delegate, &scope) {
@@ -202,6 +206,10 @@ pub fn consume_delegation_for_vote(
     Err(ContractError::Unauthorized)
 }
 
-pub fn get_delegation(env: &Env, delegator: &Address, scope: &DelegationScope) -> Option<Delegation> {
+pub fn get_delegation(
+    env: &Env,
+    delegator: &Address,
+    scope: &DelegationScope,
+) -> Option<Delegation> {
     active_for_scope(env, delegator, scope)
 }

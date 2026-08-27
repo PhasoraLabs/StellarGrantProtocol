@@ -20,6 +20,10 @@ pub fn set_config(
         return Err(ContractError::Unauthorized);
     }
 
+    if config.grace_period_seconds == 0 && config.min_votes_required == 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
     Storage::set_auto_approve_config(env, grant_id, &config);
     Ok(())
 }
@@ -79,8 +83,9 @@ pub fn try_auto_approve(
     let mut grant = Storage::get_grant_v(env, grant_id);
     let mut milestone = Storage::get_milestone_v(env, grant_id, milestone_idx);
 
+    let approved = milestone.approvals > 0 && milestone.approvals > milestone.rejections;
     let vote_result = VoteResult {
-        approved: true,
+        approved,
         quorum_reached: true,
         approval_pct: 100,
     };

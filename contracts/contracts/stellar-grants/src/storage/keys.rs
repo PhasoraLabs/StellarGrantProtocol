@@ -1,5 +1,5 @@
-use crate::types::{ProtocolModule, RateLimitAction, Role, WhitelistScope};
-use soroban_sdk::{contracttype, Address, Bytes, Symbol};
+use crate::types::{ProtocolModule, RateLimitAction, Role, TransferableRole, WhitelistScope};
+use soroban_sdk::{contracttype, Address, Bytes, String, Symbol};
 
 // ── Domain sub-enums ─────────────────────────────────────────────────────────
 
@@ -13,11 +13,12 @@ pub enum GrantKey {
     Tags(u64),
     TagIndex(u32),
     CategoryList,
+    CategoryIndex(u32),
     SpecVersion(u64, u32),
     CurrentVersion(u64),
     Amendment(u64, u32),
     AmendmentHistory(u64),
-    Transfer(u64),
+    Transfer(u64, TransferableRole),
     Renewal(u64),
     RenewalHistory(u64),
     Fork(u64),
@@ -31,6 +32,7 @@ pub enum GrantKey {
     TokenIndex(Address),
     ContribIndex(Address),
     GlobalOrder,
+    SafetyFlags(u64),
 }
 
 #[contracttype]
@@ -76,6 +78,8 @@ pub enum UserKey {
     GrantIds(Address),
     ReviewerProfile(Address),
     ReviewerRequest(u64, Address),
+    /// Reviewers registered under a given expertise tag (exact match).
+    ReviewerTagIndex(String),
     ReviewerRep(Address),
     ReviewerStake(u64, Address),
     ReviewerAllowlist,
@@ -148,6 +152,7 @@ pub enum CollateralKey {
 pub enum WaitlistKey {
     Config(u64),
     Entries(u64),
+    PromotedCount(u64),
 }
 
 #[contracttype]
@@ -165,6 +170,7 @@ pub enum ReviewerRewardKey {
     Pool(Address),
     Participation(Address, u64),
     RewardRecord(Address, Address),
+    ParticipationIndex(Address),
 }
 
 #[contracttype]
@@ -174,6 +180,7 @@ pub enum MatchingKey {
     Contribution(u32, Address, u64),
     Pool(u32),
     Counter,
+    GrantContributors(u32, u64),
 }
 
 #[contracttype]
@@ -204,6 +211,26 @@ pub enum BountyKey {
     Submitters(u64),
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub enum DaoKey {
+    Proposal(u64),
+    Counter,
+    Vote(u64, Address),
+    ModeEnabled,
+    VotingPeriod,
+    QuorumVotes,
+}
+
+/// Separate from the legacy singleton `DataKey::Treasury` (a single payout
+/// address) — this backs the per-token spendable ledger in `treasury.rs`.
+#[contracttype]
+#[derive(Clone)]
+pub enum TreasuryKey {
+    ManagerAddress,
+    Balance(Address),
+}
+
 // ── Structured DataKey ────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -228,6 +255,8 @@ pub enum DataKey {
     Matching(MatchingKey),
     Provenance(ProvenanceKey),
     ReviewerReward(ReviewerRewardKey),
+    Dao(DaoKey),
+    TreasuryLedger(TreasuryKey),
 
     // Streaming
     Stream(u32),
@@ -253,6 +282,10 @@ pub enum DataKey {
     ScoringRubricCounter,
     DexConfig,
     RelayConfig,
+    /// Per-action dispatch audit trail (#694).
+    /// Keyed by (sender, relayed_at, nonce) so the storage layer can keep an
+    /// append-only log of every actually-dispatched relay action.
+    RelayRecord(Address, u64, u32),
 
     // Per-address
     TokenMetrics(Address),
@@ -281,7 +314,7 @@ pub enum DataKey {
 
     // Notifications
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 
     // Issue #609: Lockup
     Lockup(u64, u32),
@@ -450,5 +483,5 @@ pub enum LegacyDataKey {
     ForkRecord(u64),
     ForkChildren(u64),
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 }

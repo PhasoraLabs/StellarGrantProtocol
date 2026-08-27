@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, Vec};
+use soroban_sdk::{Address, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::storage::Storage;
@@ -88,20 +88,15 @@ pub fn trigger_timers(env: &Env, caller: &Address, grant_id: u64) -> u32 {
             continue;
         }
 
-        execute_timer_action(env, &grant, &timer);
+        let success = execute_timer_action(env, &grant, &timer);
 
-        timer.fired = true;
-        timer.fired_at = Some(now);
-        timer.triggered_by = Some(caller.clone());
-        timers.set(i, timer.clone());
-        fired_count += 1;
-
-        crate::events::Events::milestone_status_changed(
-            env,
-            grant_id,
-            0,
-            crate::types::MilestoneState::Pending,
-        );
+        if success {
+            timer.fired = true;
+            timer.fired_at = Some(now);
+            timer.triggered_by = Some(caller.clone());
+            timers.set(i, timer.clone());
+            fired_count += 1;
+        }
     }
 
     if fired_count > 0 {
@@ -168,35 +163,71 @@ pub fn cancel_timer(
     Ok(())
 }
 
-fn execute_timer_action(env: &Env, grant: &crate::types::Grant, timer: &TimerRecord) {
+/// Returns `true` when the action was actually performed, `false` for
+/// unimplemented trigger types that should not be marked as fired.
+fn execute_timer_action(env: &Env, grant: &crate::types::Grant, timer: &TimerRecord) -> bool {
     match timer.trigger_type {
         TimerTriggerType::AutoExpire => {
-            if let Some(mut g) = Storage::get_grant(env, grant.id) {
-                g.status = GrantStatus::Cancelled;
-                g.reason = Some(soroban_sdk::String::from_str(env, "auto-expired by timer"));
-                g.timestamp = env.ledger().timestamp();
-                Storage::set_grant(env, grant.id, &g);
-            }
+            let reason = String::from_str(env, "auto-expired by timer");
+            let _ = cancel_grant_internal(env, grant.id, &reason);
+            true
         }
         TimerTriggerType::AutoCancel => {
-            if let Some(mut g) = Storage::get_grant(env, grant.id) {
-                g.status = GrantStatus::Cancelled;
-                g.reason = Some(soroban_sdk::String::from_str(
-                    env,
-                    "auto-cancelled: not funded by deadline",
-                ));
-                g.timestamp = env.ledger().timestamp();
-                Storage::set_grant(env, grant.id, &g);
-            }
+            let reason = String::from_str(env, "auto-cancelled: not funded by deadline");
+            let _ = cancel_grant_internal(env, grant.id, &reason);
+            true
         }
-        TimerTriggerType::AutoActivate => {
-            // Grant is already Active; this is a no-op marker
-        }
-        TimerTriggerType::AutoReleaseLockup => {
-            // Release lockup logic placeholder
-        }
-        TimerTriggerType::CustomCallback => {
-            // Custom callback placeholder
+        TimerTriggerType::AutoActivate | TimerTriggerType::AutoReleaseLockup | TimerTriggerType::CustomCallback => {
+            // Not yet implemented — don't claim success.
+            false
         }
     }
+}
+
+/// Internal cancellation helper that performs full escrow/index cleanup.
+/// Called by both cancel_grant (with auth) and timer triggers (permissionless).
+fn cancel_grant_internal(env: &Env, grant_id: u64, reason: &String) -> Result<(), ContractError> {
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+
+    if grant.status != GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
+
+    // Forfeit collateral if applicable.
+    if let Some(req) = crate::collateral::get_requirement(env, grant_id) {
+        let forfeit_reason = String::from_str(env, "grant cancelled by timer");
+        let _ = crate::collateral::forfeit(
+            env,
+            &grant.owner,
+            grant_id,
+            &grant.owner,
+            req.forfeit_on_abandon_bps,
+            forfeit_reason,
+        );
+    }
+
+    let total_refundable = grant.escrow_balance;
+    if total_refundable > 0 {
+        // Use the configured refund policy if set, otherwise refund all.
+        if crate::refund::has_policy(env, grant_id) {
+            let _ = crate::refund::execute_refund(env, grant_id, &grant.owner);
+        } else {
+            let _ = crate::escrow::refund_all(env, grant_id);
+        }
+    }
+
+    let mut g = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    let old_status = g.status;
+    g.status = GrantStatus::Cancelled;
+    g.escrow_balance = 0;
+    g.reason = Some(reason.clone());
+    g.timestamp = env.ledger().timestamp();
+
+    // Move grant out of Active index and into Cancelled index.
+    crate::grant_index::on_status_changed(env, grant_id, old_status, GrantStatus::Cancelled);
+
+    Storage::set_grant(env, grant_id, &g);
+    crate::data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
+
+    Ok(())
 }

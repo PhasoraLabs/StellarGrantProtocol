@@ -54,7 +54,9 @@ cargo tarpaulin --workspace --lib --target x86_64-unknown-linux-gnu --engine llv
 | File | Included |
 |---|---|
 | `contracts/stellar-grants/src/lib.rs` | ✅ Yes |
-| `contracts/stellar-grants/src/storage.rs` | ✅ Yes |
+| `contracts/stellar-grants/src/storage/mod.rs` | ✅ Yes |
+| `contracts/stellar-grants/src/storage/helpers.rs` | ✅ Yes |
+| `contracts/stellar-grants/src/storage/keys.rs` | ✅ Yes |
 | `contracts/stellar-grants/src/types.rs` | ✅ Yes |
 | `contracts/stellar-grants/src/events.rs` | ✅ Yes |
 | `contracts/stellar-grants/src/test.rs` | ❌ Excluded |

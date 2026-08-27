@@ -9,7 +9,6 @@ Only the `main` branch receives active security updates. We do not backport secu
 | `main` | Yes |
 | Previous release tags | No |
 
----
 
 ## Reporting a Vulnerability
 
@@ -30,7 +29,6 @@ You will receive an acknowledgment within 72 hours and a full response within 7 
 
 We ask that you keep the vulnerability confidential until a fix has been released.
 
----
 
 ## Scope
 
@@ -50,7 +48,6 @@ We ask that you keep the vulnerability confidential until a fix has been release
 - Bugs in Stellar infrastructure itself (report those to [SDF](https://stellar.org/bug-bounty))
 - Low-severity information disclosures with no practical attack path
 
----
 
 ## Automated Security Measures
 

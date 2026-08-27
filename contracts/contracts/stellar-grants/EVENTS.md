@@ -34,6 +34,9 @@ This contract emits typed Soroban `#[contractevent]` events with a consistent sc
 - **GrantFunded**: Grant funded.
   - Topics: `[contract_id, "GrantFunded", grant_id]`
   - Payload: `event_version`, `grant_id`, `funder`, `amount`, `new_balance`, `timestamp`
+- **PayerReceipt**: Receipt for funder contribution.
+  - Topics: `[contract_id, "PayerReceipt", grant_id]`
+  - Payload: `event_version`, `grant_id`, `funder`, `token`, `amount`, `memo`, `timestamp`
 - **GrantMetadataUpdated**: Grant metadata updated.
   - Topics: `[contract_id, "GrantMetadataUpdated", grant_id]`
   - Payload: `event_version`, `grant_id`, `owner`, `title`, `description`, `timestamp`
@@ -60,6 +63,9 @@ This contract emits typed Soroban `#[contractevent]` events with a consistent sc
 - **MilestonePaid**: Milestone payout executed.
   - Topics: `[contract_id, "MilestonePaid", grant_id, milestone_idx]`
   - Payload: `event_version`, `grant_id`, `milestone_idx`, `amount`, `timestamp`
+- **PayeeReceipt**: Receipt for payout to recipient.
+  - Topics: `[contract_id, "PayeeReceipt", grant_id]`
+  - Payload: `event_version`, `grant_id`, `recipient`, `token`, `amount`, `milestone_idx`, `timestamp`
 - **QuorumReached**: Milestone voting quorum reached.
   - Topics: `[contract_id, "QuorumReached", grant_id, milestone_idx]`
   - Payload: `event_version`, `grant_id`, `milestone_idx`, `approvals`, `quorum`, `timestamp`
@@ -68,15 +74,12 @@ This contract emits typed Soroban `#[contractevent]` events with a consistent sc
 - **RefundIssued**: Refund issued to funder.
   - Topics: `[contract_id, "RefundIssued", grant_id]`
   - Payload: `event_version`, `grant_id`, `funder`, `amount`, `timestamp`
-- **FinalRefund**: Final refund issued.
-  - Topics: `[contract_id, "FinalRefund", grant_id]`
-  - Payload: `event_version`, `grant_id`, `funder`, `amount`, `timestamp`
 - **ContributorRegistered**: Contributor registered.
   - Topics: `[contract_id, "ContributorRegistered", 0]`
   - Payload: `event_version`, `grant_id`, `contributor`, `name`, `timestamp`
-- **ReputationIncreased**: Contributor reputation increased.
-  - Topics: `[contract_id, "ReputationIncreased", grant_id]`
-  - Payload: `event_version`, `grant_id`, `contributor`, `new_reputation_score`, `total_earned`, `timestamp`
+- **ReputationUpdated**: Contributor reputation updated.
+  - Topics: `[contract_id, "ReputationUpdated", grant_id]`
+  - Payload: `event_version`, `grant_id`, `milestone_idx`, `contributor`, `new_reputation_score`, `total_earned`, `timestamp`
 
 ## Indexing Guidance
 

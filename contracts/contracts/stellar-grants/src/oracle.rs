@@ -1,8 +1,8 @@
-use soroban_sdk::{Address, Env, IntoVal, Symbol, Val, Vec};
+use soroban_sdk::{Address, Env};
 
 use crate::errors::ContractError;
 use crate::storage::Storage;
-use crate::types::{OracleConfig, PriceQuote};
+use crate::types::{OracleConfig, PriceQuote, ProtocolModule};
 
 /// Seven-decimal fixed-point scale for oracle prices.
 pub const PRICE_SCALE: i128 = 10_000_000;
@@ -39,12 +39,10 @@ fn fetch_oracle_price(
     oracle: &Address,
     token: &Address,
 ) -> Result<(i128, u64), ContractError> {
-    let mut args: Vec<Val> = Vec::new(env);
-    args.push_back(token.clone().into_val(env));
-
-    let result: Option<(i128, u64)> = env.invoke_contract(oracle, &Symbol::new(env, "price"), args);
-
-    result.ok_or(ContractError::InvalidInput)
+    // #692: route through the safe-call helper in `cross_contract` so a
+    // misbehaving oracle returns `Err(ContractError::InvalidInput)` instead
+    // of aborting the caller's transaction.
+    crate::cross_contract::read_oracle_price(env, oracle, token)
 }
 
 /// Return the stored oracle config. Returns Err if not configured.
@@ -65,6 +63,7 @@ pub fn is_price_fresh(env: &Env, quote: &PriceQuote) -> bool {
 pub fn set_oracle(env: &Env, admin: &Address, config: OracleConfig) -> Result<(), ContractError> {
     admin.require_auth();
     require_global_admin(env, admin)?;
+    crate::circuit_breaker::require_open(env, ProtocolModule::Oracle)?;
 
     if config.staleness_threshold == 0 {
         return Err(ContractError::InvalidInput);
@@ -77,6 +76,7 @@ pub fn set_oracle(env: &Env, admin: &Address, config: OracleConfig) -> Result<()
 /// Fetch the current price of `token` from the oracle contract.
 /// Returns Err if oracle is not configured or price is stale.
 pub fn get_price(env: &Env, token: &Address) -> Result<PriceQuote, ContractError> {
+    crate::circuit_breaker::require_open(env, ProtocolModule::Oracle)?;
     let config = get_oracle_config(env)?;
     let (price_in_base, fetched_at) = fetch_oracle_price(env, &config.oracle_address, token)?;
 
@@ -110,6 +110,7 @@ pub fn convert_amount(
     from_token: &Address,
     to_token: &Address,
 ) -> Result<i128, ContractError> {
+    crate::circuit_breaker::require_open(env, ProtocolModule::Oracle)?;
     if amount < 0 {
         return Err(ContractError::InvalidInput);
     }
@@ -250,5 +251,118 @@ mod tests {
 
         let xlm_back = convert_amount(&env, usdc_amount, &usdc_token, &xlm_token).unwrap();
         assert_eq!(xlm_back, xlm_amount);
+    }
+
+    // A deliberately broken oracle contract whose `price` method panics.
+    // Used by `test_panicking_oracle_returns_clean_err` below to satisfy
+    // AC #692 — verifying that a misbehaving oracle surfaces as a clean
+    // `Err(ContractError::InvalidInput)` instead of aborting the caller.
+    #[contract]
+    struct PanickingOracle;
+
+    #[contractimpl]
+    impl PanickingOracle {
+        pub fn price(_env: Env, _token: Address) -> (i128, u64) {
+            panic!("deliberately broken oracle (AC #692)")
+        }
+    }
+
+    /// #692: a panicking oracle must NOT abort the caller's transaction —
+    /// the safe-call wrapper must convert the underlying trap into a
+    /// `ContractError`, propagated cleanly through `get_price` AND
+    /// `convert_amount`.
+    #[test]
+    fn test_panicking_oracle_returns_clean_err() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+
+        let panicking_id = env.register(PanickingOracle, ());
+        let base_token = Address::generate(&env);
+
+        set_oracle(
+            &env,
+            &admin,
+            OracleConfig {
+                oracle_address: panicking_id,
+                base_token: base_token.clone(),
+                staleness_threshold: 3_600,
+            },
+        )
+        .unwrap();
+
+        // Under the pre-#692 implementation, `env.invoke_contract` would
+        // panic and abort the whole transaction. With the safe-call fix
+        // routed through `cross_contract::read_oracle_price`, the panic is
+        // converted into `Err(ContractError::InvalidInput)`.
+        assert_eq!(
+            get_price(&env, &base_token),
+            Err(ContractError::InvalidInput)
+        );
+        assert_eq!(
+            convert_amount(&env, 100, &base_token, &Address::generate(&env)),
+            Err(ContractError::InvalidInput)
+        );
+    }
+
+    /// #693: tripping the Oracle circuit breaker must block both
+    /// `get_price` and `convert_amount` with `ContractError::ModuleTripped`,
+    /// and resetting the breaker must restore them.
+    ///
+    /// Note: `circuit_breaker::trip` and `circuit_breaker::reset` publish
+    /// contract events, so we wrap each call in `env.as_contract(&oracle_addr, ...)`
+    /// to give the publisher a valid contract context without forcing the
+    /// test to register the full `StellarGrantsContract`.
+    #[test]
+    fn test_oracle_breaker_blocks_then_unblocks() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (oracle_addr, base_token, xlm_token) = setup_oracle(&env);
+        let oracle_client = MockOracleClient::new(&env, &oracle_addr);
+        let admin = Storage::get_global_admin(&env).unwrap();
+
+        let now = 2_000u64;
+        env.ledger().set_timestamp(now);
+
+        // Seed both tokens so convert_amount works pre-trip.
+        oracle_client.set_price(&xlm_token, &12_000_000i128, &now);
+        oracle_client.set_price(&base_token, &PRICE_SCALE, &now);
+
+        // Sanity: reads succeed while the breaker is open.
+        assert!(get_price(&env, &xlm_token).is_ok());
+        assert!(convert_amount(&env, 10_000_000, &xlm_token, &base_token).is_ok());
+
+        // Trip the Oracle breaker.
+        env.as_contract(&oracle_addr, || {
+            crate::circuit_breaker::trip(
+                &env,
+                &admin,
+                ProtocolModule::Oracle,
+                soroban_sdk::String::from_str(&env, "test: oracle breaker"),
+                None,
+            )
+            .unwrap();
+        });
+
+        // Both reads must now return ModuleTripped.
+        assert_eq!(
+            get_price(&env, &xlm_token),
+            Err(ContractError::ModuleTripped)
+        );
+        assert_eq!(
+            convert_amount(&env, 10_000_000, &xlm_token, &base_token),
+            Err(ContractError::ModuleTripped)
+        );
+
+        // Reset the Oracle breaker.
+        env.as_contract(&oracle_addr, || {
+            crate::circuit_breaker::reset(&env, &admin, ProtocolModule::Oracle).unwrap();
+        });
+
+        // Both reads must work again post-reset.
+        assert!(get_price(&env, &xlm_token).is_ok());
+        assert!(convert_amount(&env, 10_000_000, &xlm_token, &base_token).is_ok());
     }
 }

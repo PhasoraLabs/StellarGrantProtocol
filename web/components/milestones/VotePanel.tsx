@@ -1,42 +1,23 @@
 "use client";
 
-/**
- * VotePanel Component
- *
- * Displays the reviewer vote tally for a milestone and, when the
- * connected wallet is an eligible reviewer, surfaces Approve / Reject
- * action buttons.
- *
- * Consumes useVoting for all state management — optimistic updates,
- * Freighter signing, and success/error toasts are handled there.
- */
-
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useVoting } from "@/hooks/useVoting";
 import { useWalletStore } from "@/lib/store/walletStore";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import type { MilestoneVote } from "@/types";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import type { ConnectionStatus } from "@/hooks/useContractEvents";
 
 export interface VotePanelProps {
   grantId: string;
   milestoneIdx: number;
-  /** Full reviewer address list so we can mark non-voters as "pending" */
   reviewers: string[];
-  /** Required approve count for the milestone to pass */
   quorum: number;
-  /**
-   * Fraction of approvals needed (e.g. 0.67).
-   * Not used for gating the button — that's the contract's job — but
-   * shown in the UI as a threshold hint.
-   */
   threshold?: number;
+  connectionStatus?: ConnectionStatus;
 }
-
-// ─── Small helpers ────────────────────────────────────────────────────────────
 
 function shortenAddress(addr: string, chars = 6): string {
   if (addr.length <= chars * 2 + 2) return addr;
@@ -46,24 +27,30 @@ function shortenAddress(addr: string, chars = 6): string {
 function ReviewerRow({
   reviewer,
   vote,
+  isPending,
 }: {
   reviewer: string;
   vote: MilestoneVote["vote"];
+  isPending?: boolean;
 }) {
-  const icon =
-    vote === "approve" ? (
-      <Badge variant="success" size="sm">
-        ✓ Approved
-      </Badge>
-    ) : vote === "reject" ? (
-      <Badge variant="danger" size="sm">
-        ✗ Rejected
-      </Badge>
-    ) : (
-      <Badge variant="muted" size="sm">
-        — Pending
-      </Badge>
-    );
+  const icon = isPending ? (
+    <span className="inline-flex items-center gap-1 font-mono text-[9px] uppercase tracking-widest text-warning">
+      <span className="inline-block w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
+      Pending
+    </span>
+  ) : vote === "approve" ? (
+    <Badge variant="success" size="sm">
+      ✓ Approved
+    </Badge>
+  ) : vote === "reject" ? (
+    <Badge variant="danger" size="sm">
+      ✗ Rejected
+    </Badge>
+  ) : (
+    <Badge variant="muted" size="sm">
+      — Pending
+    </Badge>
+  );
 
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-border-color/30 last:border-b-0">
@@ -75,21 +62,17 @@ function ReviewerRow({
   );
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export function VotePanel({
   grantId,
   milestoneIdx,
   reviewers,
   quorum,
   threshold = 0.67,
+  connectionStatus,
 }: VotePanelProps) {
   const { address: walletAddress } = useWalletStore();
   const { hasVoted, currentVote, votes, voteCount, isSubmitting, vote, error } =
-    useVoting({
-      grantId,
-      milestoneIdx,
-    });
+    useVoting({ grantId, milestoneIdx });
 
   const [confirmVoteType, setConfirmVoteType] = useState<"approve" | "reject" | null>(null);
 
@@ -100,8 +83,36 @@ export function VotePanel({
       : 0;
   const quorumReached = voteCount.approved >= quorum;
 
-  // Build a lookup: reviewer address → their cast vote (null = not yet voted).
-  // Seed every known reviewer as null first, then overwrite with actual votes.
+  const prevQuorumRef = useRef(quorumReached);
+  const [showQuorumBanner, setShowQuorumBanner] = useState(false);
+  const [prevApprovalCount, setPrevApprovalCount] = useState(
+    voteCount.approved,
+  );
+
+  useEffect(() => {
+    if (quorumReached && !prevQuorumRef.current) {
+      setShowQuorumBanner(true);
+      const timer = setTimeout(() => setShowQuorumBanner(false), 6000);
+      window.dispatchEvent(
+        new CustomEvent("stellar:toast", {
+          detail: {
+            type: "vote_recorded",
+            title: "Quorum reached",
+            message: "Milestone approved by quorum! Payout will be processed.",
+          },
+        }),
+      );
+      return () => clearTimeout(timer);
+    }
+    prevQuorumRef.current = quorumReached;
+  }, [quorumReached]);
+
+  useEffect(() => {
+    if (voteCount.approved !== prevApprovalCount) {
+      setPrevApprovalCount(voteCount.approved);
+    }
+  }, [voteCount.approved, prevApprovalCount]);
+
   const voteByReviewer = new Map<string, MilestoneVote["vote"]>();
   reviewers.forEach((r) => voteByReviewer.set(r, null));
   votes.forEach((v) => {
@@ -131,19 +142,56 @@ export function VotePanel({
     },
   ]);
 
+  const liveColor =
+    connectionStatus === "connected"
+      ? "text-success"
+      : connectionStatus === "connecting"
+        ? "text-warning"
+        : "text-danger";
+
   return (
     <div className="space-y-5">
-      {/* ── Tally header ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showQuorumBanner && (
+          <motion.div
+            initial={{ y: -40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -40, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="bg-success/10 border border-success/40 px-4 py-2 text-center"
+          >
+            <span className="font-orbitron text-sm font-bold text-success">
+              ✓ Quorum reached
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between">
         <h3 className="font-orbitron text-sm uppercase tracking-widest">
           Reviewer Votes
         </h3>
-        <Badge variant={quorumReached ? "success" : "muted"}>
-          {voteCount.approved} / {quorum} approved
-        </Badge>
+        <div className="flex items-center gap-3">
+          {connectionStatus && (
+            <span
+              className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider ${liveColor}`}
+            >
+              <span
+                className={`inline-block w-1.5 h-1.5 rounded-full ${liveColor === "text-success" ? "bg-success" : liveColor === "text-warning" ? "bg-warning" : "bg-danger"}`}
+              />
+              LIVE
+            </span>
+          )}
+          <Badge variant={quorumReached ? "success" : "muted"}>
+            {voteCount.approved} / {quorum} approved
+          </Badge>
+        </div>
       </div>
 
-      {/* ── Quorum progress bar ─────────────────────────────────────────── */}
+      <div aria-live="polite" className="sr-only">
+        {`Vote updated: ${voteCount.approved} of ${quorum} approvals`}
+      </div>
+
       <div>
         <div className="h-1.5 w-full bg-surface rounded-none overflow-hidden">
           <div
@@ -156,16 +204,20 @@ export function VotePanel({
         </p>
       </div>
 
-      {/* ── Reviewer list ───────────────────────────────────────────────── */}
       {reviewers.length > 0 ? (
         <div className="rounded-none border border-border-color/40 px-3 py-1">
-          {reviewers.map((r) => (
-            <ReviewerRow
-              key={r}
-              reviewer={r}
-              vote={voteByReviewer.get(r) ?? null}
-            />
-          ))}
+          {reviewers.map((r) => {
+            const isWalletPending =
+              isSubmitting && r === walletAddress && !voteByReviewer.get(r);
+            return (
+              <ReviewerRow
+                key={r}
+                reviewer={r}
+                vote={voteByReviewer.get(r) ?? null}
+                isPending={isWalletPending}
+              />
+            );
+          })}
         </div>
       ) : (
         <p className="font-mono text-xs text-text-muted">
@@ -173,7 +225,6 @@ export function VotePanel({
         </p>
       )}
 
-      {/* ── Action buttons (reviewer-only) ──────────────────────────────── */}
       {isReviewer && (
         <div className="space-y-3 pt-1">
           {hasVoted ? (
@@ -206,7 +257,6 @@ export function VotePanel({
         </div>
       )}
 
-      {/* ── Error message ───────────────────────────────────────────────── */}
       {error && (
         <p className="rounded-none border border-danger/40 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
           {error}
