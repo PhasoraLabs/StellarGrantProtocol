@@ -1,7 +1,7 @@
 use soroban_sdk::{Address, Env, String};
 
 use crate::errors::ContractError;
-use crate::events::{ComplianceAttested, ComplianceRevoked};
+use crate::events::{ComplianceAttested, ComplianceRevoked, VerifierChanged};
 use crate::storage::Storage;
 use crate::types::{ComplianceAttestation, ComplianceLevel, ComplianceStatus};
 
@@ -12,7 +12,13 @@ pub fn set_verifier(env: &Env, admin: &Address, verifier: &Address) -> Result<()
     if Storage::get_global_admin(env) != Some(admin.clone()) {
         return Err(ContractError::Unauthorized);
     }
+    let old_verifier = Storage::get_compliance_verifier(env);
     Storage::set_compliance_verifier(env, verifier);
+    VerifierChanged {
+        old_verifier,
+        new_verifier: verifier.clone(),
+    }
+    .publish(env);
     Ok(())
 }
 
@@ -65,6 +71,10 @@ pub fn revoke(env: &Env, revoker: &Address, subject: &Address) -> Result<(), Con
     let is_verifier = Storage::get_compliance_verifier(env) == Some(revoker.clone());
     if !is_admin && !is_verifier {
         return Err(ContractError::Unauthorized);
+    }
+
+    if Storage::get_compliance_attestation(env, subject).is_none() {
+        return Err(ContractError::InvalidState);
     }
 
     Storage::remove_compliance_attestation(env, subject);
@@ -718,6 +728,48 @@ mod tests {
             require_compliant(&env, &subj, ComplianceLevel::Basic),
             Err(ContractError::ComplianceNotVerified)
         );
+    }
+
+    #[test]
+    fn test_revoke_never_attested_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let admin = Address::generate(&env);
+        let verifier = Address::generate(&env);
+        let subj = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+            Storage::set_compliance_verifier(&env, &verifier);
+
+            assert_eq!(
+                revoke(&env, &verifier, &subj),
+                Err(ContractError::InvalidState)
+            );
+            assert_eq!(
+                revoke(&env, &admin, &subj),
+                Err(ContractError::InvalidState)
+            );
+        });
+    }
+
+    #[test]
+    fn test_set_verifier_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let admin = Address::generate(&env);
+        let verifier = Address::generate(&env);
+        let new_verifier = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+            Storage::set_compliance_verifier(&env, &verifier);
+
+            set_verifier(&env, &admin, &new_verifier).unwrap();
+            assert_eq!(Storage::get_compliance_verifier(&env), Some(new_verifier));
+        });
     }
 
     // ── is_valid ──────────────────────────────────────────────────────────
