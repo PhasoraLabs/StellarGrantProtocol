@@ -96,8 +96,9 @@ pub fn grant_detail(env: &Env, grant_id: u64) -> Result<GrantDetailView, Contrac
 
 /// Return all data needed for the protocol dashboard. Single RPC call.
 pub fn dashboard(env: &Env) -> DashboardView {
-    let active_grant_ids = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 1000);
-    let active_grants = active_grant_ids.len();
+    let active_grant_ids = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 1001);
+    let truncated = active_grant_ids.len() > 1000;
+    let active_grants = if truncated { 1000 } else { active_grant_ids.len() as u32 };
 
     let protocol_metrics = get_or_default_metrics(env);
 
@@ -106,7 +107,10 @@ pub fn dashboard(env: &Env) -> DashboardView {
     let mut total_funded_usd: i128 = 0;
     let mut total_paid_out_usd: i128 = 0;
 
-    for grant_id in active_grant_ids.iter() {
+    for (i, grant_id) in active_grant_ids.iter().enumerate() {
+        if i >= 1000 {
+            break;
+        }
         if let Some(grant) = Storage::get_grant(env, grant_id) {
             total_funded_usd += grant.escrow_balance;
             total_paid_out_usd += grant.milestone_amount * grant.milestones_paid_out as i128;
@@ -124,6 +128,7 @@ pub fn dashboard(env: &Env) -> DashboardView {
         total_reviewers: reviewer_count,
         recent_grant_ids,
         protocol_metrics,
+        truncated,
     }
 }
 
@@ -146,8 +151,13 @@ pub fn reviewer_dashboard(env: &Env, reviewer: &Address) -> ReviewerView {
     let mut pending_votes = soroban_sdk::Vec::new(env);
     let mut sla_breach_count: u32 = 0;
 
-    let active_grants = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 100);
-    for grant_id in active_grants.iter() {
+    let active_grants = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 101);
+    let mut truncated = false;
+    for (i, grant_id) in active_grants.iter().enumerate() {
+        if i >= 100 {
+            truncated = true;
+            break;
+        }
         if let Some(grant) = Storage::get_grant(env, grant_id) {
             if !grant.reviewers.contains(reviewer.clone()) {
                 continue;
@@ -178,6 +188,7 @@ pub fn reviewer_dashboard(env: &Env, reviewer: &Address) -> ReviewerView {
         pending_votes,
         sla_breach_count,
         pending_rewards: 0,
+        truncated,
     }
 }
 

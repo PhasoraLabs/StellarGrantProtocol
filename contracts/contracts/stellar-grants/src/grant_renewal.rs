@@ -18,6 +18,10 @@ pub fn propose_renewal(
 
     let grant = Storage::get_grant_v(env, original_grant_id);
 
+    if grant.owner != *proposer && !grant.reviewers.contains(proposer.clone()) {
+        return Err(ContractError::Unauthorized);
+    }
+
     if grant.status != GrantStatus::Completed
         && grant.milestones_paid_out < grant.total_milestones - 1
     {
