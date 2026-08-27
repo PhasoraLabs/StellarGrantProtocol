@@ -88,20 +88,15 @@ pub fn trigger_timers(env: &Env, caller: &Address, grant_id: u64) -> u32 {
             continue;
         }
 
-        execute_timer_action(env, &grant, &timer);
+        let success = execute_timer_action(env, &grant, &timer);
 
-        timer.fired = true;
-        timer.fired_at = Some(now);
-        timer.triggered_by = Some(caller.clone());
-        timers.set(i, timer.clone());
-        fired_count += 1;
-
-        crate::events::Events::milestone_status_changed(
-            env,
-            grant_id,
-            0,
-            crate::types::MilestoneState::Pending,
-        );
+        if success {
+            timer.fired = true;
+            timer.fired_at = Some(now);
+            timer.triggered_by = Some(caller.clone());
+            timers.set(i, timer.clone());
+            fired_count += 1;
+        }
     }
 
     if fired_count > 0 {
@@ -168,24 +163,23 @@ pub fn cancel_timer(
     Ok(())
 }
 
-fn execute_timer_action(env: &Env, grant: &crate::types::Grant, timer: &TimerRecord) {
+/// Returns `true` when the action was actually performed, `false` for
+/// unimplemented trigger types that should not be marked as fired.
+fn execute_timer_action(env: &Env, grant: &crate::types::Grant, timer: &TimerRecord) -> bool {
     match timer.trigger_type {
         TimerTriggerType::AutoExpire => {
             let reason = String::from_str(env, "auto-expired by timer");
             let _ = cancel_grant_internal(env, grant.id, &reason);
+            true
         }
         TimerTriggerType::AutoCancel => {
             let reason = String::from_str(env, "auto-cancelled: not funded by deadline");
             let _ = cancel_grant_internal(env, grant.id, &reason);
+            true
         }
-        TimerTriggerType::AutoActivate => {
-            // Grant is already Active; this is a no-op marker
-        }
-        TimerTriggerType::AutoReleaseLockup => {
-            // Release lockup logic placeholder
-        }
-        TimerTriggerType::CustomCallback => {
-            // Custom callback placeholder
+        TimerTriggerType::AutoActivate | TimerTriggerType::AutoReleaseLockup | TimerTriggerType::CustomCallback => {
+            // Not yet implemented — don't claim success.
+            false
         }
     }
 }
