@@ -1180,6 +1180,24 @@ pub struct ComplianceRevoked {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifierChanged {
+    pub old_verifier: Option<Address>,
+    pub new_verifier: Address,
+}
+
+// ── Issue #923: License events ────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LicenseAttached {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub spdx_id: String,
+    pub attached_by: Address,
+}
+
 // ── Issue #566: Invoice events ────────────────────────────────────────────────
 
 #[contractevent]
