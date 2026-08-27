@@ -79,6 +79,12 @@ pub fn accept_transfer(
             let to_replace = proposal
                 .reviewer_to_replace
                 .ok_or(ContractError::InvalidInput)?;
+            // Re-validate that the reviewer being replaced is still present.
+            // If they were removed between proposal and acceptance, fail
+            // rather than silently succeeding with no substitution.
+            if !grant.reviewers.contains(to_replace.clone()) {
+                return Err(ContractError::InvalidState);
+            }
             for i in 0..grant.reviewers.len() {
                 if grant.reviewers.get(i).unwrap() == to_replace {
                     grant.reviewers.set(i, new_holder.clone());
