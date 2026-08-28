@@ -72,7 +72,7 @@ pub fn export_grants(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total_filtered;
+    let has_more = offset.saturating_add(capped) < total_filtered;
 
     ExportGrantPage {
         items: page_items,
