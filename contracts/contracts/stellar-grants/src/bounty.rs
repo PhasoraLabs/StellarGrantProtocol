@@ -371,7 +371,8 @@ mod tests {
             }
 
             let late_submitter = Address::generate(&env);
-            let result = submit_solution(&env, id, &late_submitter, String::from_str(&env, "proof"));
+            let result =
+                submit_solution(&env, id, &late_submitter, String::from_str(&env, "proof"));
             assert_eq!(result, Err(ContractError::BountySubmissionLimitExceeded));
         });
     }

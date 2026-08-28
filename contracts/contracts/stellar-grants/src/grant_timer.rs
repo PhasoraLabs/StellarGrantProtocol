@@ -177,7 +177,9 @@ fn execute_timer_action(env: &Env, grant: &crate::types::Grant, timer: &TimerRec
             let _ = cancel_grant_internal(env, grant.id, &reason);
             true
         }
-        TimerTriggerType::AutoActivate | TimerTriggerType::AutoReleaseLockup | TimerTriggerType::CustomCallback => {
+        TimerTriggerType::AutoActivate
+        | TimerTriggerType::AutoReleaseLockup
+        | TimerTriggerType::CustomCallback => {
             // Not yet implemented — don't claim success.
             false
         }

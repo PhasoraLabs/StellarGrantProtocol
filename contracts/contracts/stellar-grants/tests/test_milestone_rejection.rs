@@ -52,9 +52,21 @@ fn test_milestone_voting_rejection_and_events() {
     env.ledger()
         .set_timestamp(ts.saturating_add(COMMUNITY_REVIEW_PERIOD).saturating_add(1));
 
-    let res1 = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &false, &Some(String::from_str(&env, "no")));
-    assert!(!res1); 
-    let res2 = client.milestone_vote(&grant_id, &0, &reviewers.get(1).unwrap(), &false, &Some(String::from_str(&env, "no2")));
+    let res1 = client.milestone_vote(
+        &grant_id,
+        &0,
+        &reviewers.get(0).unwrap(),
+        &false,
+        &Some(String::from_str(&env, "no")),
+    );
+    assert!(!res1);
+    let res2 = client.milestone_vote(
+        &grant_id,
+        &0,
+        &reviewers.get(1).unwrap(),
+        &false,
+        &Some(String::from_str(&env, "no2")),
+    );
     assert!(res2);
 
     let milestone = client.get_milestone(&grant_id, &0);

@@ -139,7 +139,11 @@ pub fn leave(env: &Env, applicant: &Address, grant_id: u64) -> Result<(), Contra
 
 /// Promote the top-ranked entry. Called when a slot opens.
 /// Returns the promoted address if successful, None if waitlist is empty.
-pub fn promote_next(env: &Env, caller: &Address, grant_id: u64) -> Result<Option<Address>, ContractError> {
+pub fn promote_next(
+    env: &Env,
+    caller: &Address,
+    grant_id: u64,
+) -> Result<Option<Address>, ContractError> {
     caller.require_auth();
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     if grant.owner != *caller {
