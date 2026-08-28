@@ -98,7 +98,11 @@ pub fn grant_detail(env: &Env, grant_id: u64) -> Result<GrantDetailView, Contrac
 pub fn dashboard(env: &Env) -> DashboardView {
     let active_grant_ids = grant_index::by_status(env, crate::types::GrantStatus::Active, 0, 1001);
     let truncated = active_grant_ids.len() > 1000;
-    let active_grants = if truncated { 1000 } else { active_grant_ids.len() as u32 };
+    let active_grants = if truncated {
+        1000
+    } else {
+        active_grant_ids.len() as u32
+    };
 
     let protocol_metrics = get_or_default_metrics(env);
 

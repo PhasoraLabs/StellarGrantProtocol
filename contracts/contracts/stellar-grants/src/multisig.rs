@@ -17,10 +17,7 @@ pub fn create_proposal(
     threshold: u32,
     ttl_ledgers: u32,
 ) -> Result<u32, ContractError> {
-    if signer_addresses.is_empty()
-        || threshold == 0
-        || threshold > signer_addresses.len()
-    {
+    if signer_addresses.is_empty() || threshold == 0 || threshold > signer_addresses.len() {
         return Err(ContractError::InvalidInput);
     }
 
@@ -258,15 +255,7 @@ mod test {
             signers.push_back(signer);
 
             assert_eq!(
-                create_proposal(
-                    &env,
-                    &creator,
-                    1,
-                    Bytes::new(&env),
-                    signers,
-                    2,
-                    100,
-                ),
+                create_proposal(&env, &creator, 1, Bytes::new(&env), signers, 2, 100,),
                 Err(ContractError::InvalidInput)
             );
         });

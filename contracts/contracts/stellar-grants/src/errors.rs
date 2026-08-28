@@ -185,4 +185,5 @@ pub enum ContractError {
     LockupAlreadyRevoked = 144,
     // Delegation (#907)
     DelegationChainTooLong = 145,
+    BountySubmissionLimitExceeded = 146,
 }
