@@ -555,6 +555,7 @@ pub struct ReviewerRewardPool {
     pub balance: i128,
     pub total_deposited: i128,
     pub total_paid_out: i128,
+    pub total_votes_recorded: i128,
 }
 
 // ── Issue #533: Bounty-Mode Grants ────────────────────────────────────────────

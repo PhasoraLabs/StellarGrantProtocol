@@ -97,6 +97,7 @@ pub enum VotingKey {
     ReleaseApproval(u64, Address),
     Proposal(u32),
     ProposalCounter,
+    CumulativeVotes(u64, u32, Address),
 }
 
 #[contracttype]

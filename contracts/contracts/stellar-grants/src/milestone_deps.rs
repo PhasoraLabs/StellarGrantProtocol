@@ -5,6 +5,23 @@ use soroban_sdk::{Address, Env, Vec as SorobanVec};
 /// Check if a milestone can be submitted by verifying all dependencies are satisfied.
 /// A milestone can be submitted if all previous milestones have been approved.
 pub fn can_submit(env: &Env, grant_id: u64, milestone_idx: u32) -> Result<(), ContractError> {
+    if let Some(dag) = Storage::get_milestone_dag(env, grant_id) {
+        for dep in dag.dependencies.iter() {
+            if dep.milestone_idx == milestone_idx {
+                for parent in dep.depends_on.iter() {
+                    if let Some(m) = Storage::get_milestone(env, grant_id, parent) {
+                        if m.state != MilestoneState::Approved {
+                            return Err(ContractError::DependencyNotSatisfied);
+                        }
+                    } else {
+                        return Err(ContractError::DependencyNotSatisfied);
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+    // Fallback: sequential ordering when no DAG entry covers this milestone.
     if milestone_idx == 0 {
         return Ok(());
     }

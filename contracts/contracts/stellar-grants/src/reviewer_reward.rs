@@ -23,6 +23,7 @@ pub fn fund_pool(env: &Env, token: &Address, amount: i128) {
                 balance: 0,
                 total_deposited: 0,
                 total_paid_out: 0,
+                total_votes_recorded: 0,
             });
 
     pool.balance = pool.balance.saturating_add(amount);
@@ -99,6 +100,28 @@ pub fn record_participation(
             PERSISTENT_TTL_EXTEND_TO,
         );
     }
+    
+    if let Some(grant) = crate::storage::Storage::get_grant(env, grant_id) {
+        let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(grant.token.clone()));
+        let mut pool: ReviewerRewardPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| ReviewerRewardPool {
+                token: grant.token.clone(),
+                balance: 0,
+                total_deposited: 0,
+                total_paid_out: 0,
+                total_votes_recorded: 0,
+            });
+        pool.total_votes_recorded = pool.total_votes_recorded.saturating_add(1);
+        env.storage().persistent().set(&pool_key, &pool);
+        env.storage().persistent().extend_ttl(
+            &pool_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
 }
 
 /// Compute reward entitlement for a reviewer based on participation.
@@ -136,6 +159,7 @@ pub fn accrue_reward(
             balance: 0,
             total_deposited: 0,
             total_paid_out: 0,
+            total_votes_recorded: 0,
         });
 
     if pool.balance <= 0 {
@@ -207,7 +231,7 @@ fn compute_reviewer_share(
         }
     }
 
-    total_reviewer_votes = reviewer_votes;
+    total_reviewer_votes = pool.total_votes_recorded;
 
     if total_reviewer_votes <= 0 {
         return Ok(0);
