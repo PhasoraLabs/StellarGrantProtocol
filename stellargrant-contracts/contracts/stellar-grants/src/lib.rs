@@ -1,16 +1,17 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
+pub mod audit;
+pub mod batch;
 mod events;
 mod reentrancy;
-mod storage;
+pub mod snapshot;
+pub mod split_payment;
+pub mod storage;
 mod types;
 
 pub use events::Events;
 pub use storage::Storage;
-pub use types::{
-    ContractError, EscrowLifecycleState, EscrowMode, EscrowState, Grant, GrantFund, GrantStatus,
-    Milestone, MilestoneState, MilestoneSubmission,
-};
+pub use types::*;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env, String, Vec};
 
@@ -175,7 +176,7 @@ impl StellarGrantsContract {
             return Err(ContractError::AlreadyRegistered);
         }
 
-        let profile = crate::types::ContributorProfile {
+        let profile = ContributorProfile {
             contributor: contributor.clone(),
             name: name.clone(),
             bio,
@@ -210,86 +211,7 @@ impl StellarGrantsContract {
         caller: Address,
         reason: String,
     ) -> Result<(), ContractError> {
-        caller.require_auth();
-        reentrancy::with_non_reentrant(&env, || {
-            let mut grant =
-                Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
-
-            let caller_is_owner = grant.owner == caller;
-            let caller_is_admin = Storage::get_global_admin(&env) == Some(caller.clone());
-            if !caller_is_owner && !caller_is_admin {
-                return Err(ContractError::Unauthorized);
-            }
-
-            if grant.status != GrantStatus::Active {
-                return Err(ContractError::InvalidState);
-            }
-
-            // Cannot cancel if all milestones are approved/paid out
-            if grant.milestones_paid_out >= grant.total_milestones {
-                return Err(ContractError::InvalidState);
-            }
-
-            let total_refundable = grant.escrow_balance;
-            if total_refundable > 0 {
-                let mut total_contributions: i128 = 0;
-                for fund_entry in grant.funders.iter() {
-                    total_contributions += fund_entry.amount;
-                }
-
-                if total_contributions <= 0 {
-                    return Err(ContractError::InvalidInput);
-                }
-
-                let token_client = token::Client::new(&env, &grant.token);
-                let funders_len = grant.funders.len();
-                let mut distributed = 0i128;
-
-                for i in 0..funders_len {
-                    let fund_entry = grant.funders.get(i).unwrap();
-                    let is_last = i + 1 == funders_len;
-                    let refund_amount = if is_last {
-                        total_refundable - distributed
-                    } else {
-                        let amount = fund_entry
-                            .amount
-                            .checked_mul(total_refundable)
-                            .ok_or(ContractError::InvalidInput)?
-                            .checked_div(total_contributions)
-                            .ok_or(ContractError::InvalidInput)?;
-                        distributed += amount;
-                        amount
-                    };
-
-                    if refund_amount > 0 {
-                        token_client.transfer(
-                            &env.current_contract_address(),
-                            &fund_entry.funder,
-                            &refund_amount,
-                        );
-                        Events::emit_refund_issued(
-                            &env,
-                            grant_id,
-                            fund_entry.funder.clone(),
-                            refund_amount,
-                        );
-                    }
-                }
-            }
-
-            // Update state
-            grant.status = GrantStatus::Cancelled;
-            grant.escrow_balance = 0;
-            grant.reason = Some(reason.clone());
-            grant.timestamp = env.ledger().timestamp();
-
-            Storage::set_grant(&env, grant_id, &grant);
-
-            // Emit cancellation event
-            Events::emit_grant_cancelled(&env, grant_id, caller, reason, total_refundable);
-
-            Ok(())
-        })
+        batch::try_cancel_grant(&env, grant_id, &caller, reason)
     }
 
     /// Mark a grant as completed when all milestones are approved and refund the remaining balance
@@ -408,7 +330,9 @@ impl StellarGrantsContract {
         if remaining_balance > 0 {
             let mut total_contributions: i128 = 0;
             for fund_entry in grant.funders.iter() {
-                total_contributions += fund_entry.amount;
+                total_contributions = total_contributions
+                    .checked_add(fund_entry.amount)
+                    .ok_or(ContractError::InvalidInput)?;
             }
 
             if total_contributions > 0 {
@@ -948,6 +872,29 @@ impl StellarGrantsContract {
         }
 
         Ok(())
+    }
+
+    pub fn snapshot_capture(
+        env: Env,
+        grant_id: u64,
+        trigger: SnapshotTrigger,
+        captured_by: Address,
+    ) -> Result<u32, ContractError> {
+        snapshot::capture(&env, grant_id, trigger, &captured_by)
+    }
+
+    pub fn register_split(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+        recipients: Vec<SplitRecipient>,
+    ) -> Result<(), ContractError> {
+        split_payment::register_split(&env, &caller, grant_id, milestone_idx, recipients)
+    }
+
+    pub fn get_audit_log(env: Env, grant_id: u64) -> Vec<AuditEntry> {
+        audit::get_audit_log(&env, grant_id)
     }
 }
 

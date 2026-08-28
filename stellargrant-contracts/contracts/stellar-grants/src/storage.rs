@@ -1,4 +1,10 @@
-use crate::types::{ContractError, ContributorProfile, EscrowState, Grant, Milestone};
+pub mod helpers;
+
+use crate::types::{
+    AuditEntry, ContractError, ContributorProfile, EscrowState, Grant, Milestone, Snapshot,
+    SplitRecipient,
+};
+pub use helpers::GrantKey;
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
 #[contracttype]
@@ -18,11 +24,20 @@ pub enum DataKey {
     MultisigSigners(u64),
     ReleaseApproval(u64, Address),
     ReviewerReputation(Address),
+    GrantKey(GrantKey),
+    Snapshot(u64, u32),
+    SnapshotList(u64),
+    SplitRecipients(u64, u32),
 }
 
 pub struct Storage;
 
 impl Storage {
+    pub const AUDIT_TTL_THRESHOLD: u32 = helpers::AUDIT_TTL_THRESHOLD;
+    pub const AUDIT_TTL_EXTEND_TO: u32 = helpers::AUDIT_TTL_EXTEND_TO;
+    pub const SNAPSHOT_TTL_THRESHOLD: u32 = helpers::SNAPSHOT_TTL_THRESHOLD;
+    pub const SNAPSHOT_TTL_EXTEND_TO: u32 = helpers::SNAPSHOT_TTL_EXTEND_TO;
+
     pub fn increment_grant_counter(env: &Env) -> u64 {
         let mut count: u64 = env
             .storage()
@@ -148,7 +163,7 @@ impl Storage {
         env.storage()
             .persistent()
             .get(&DataKey::ReviewerReputation(reviewer))
-            .unwrap_or(1) // Default reputation is 1
+            .unwrap_or(1)
     }
 
     pub fn set_reviewer_reputation(env: &Env, reviewer: Address, reputation: u32) {
@@ -183,5 +198,47 @@ impl Storage {
 
     pub fn get_identity_oracle(env: &Env) -> Option<Address> {
         env.storage().persistent().get(&DataKey::IdentityOracle)
+    }
+
+    // Helpers wrapper methods
+    pub fn append_audit_entry(env: &Env, grant_id: u64, entry: &AuditEntry) {
+        helpers::append_audit_entry(env, grant_id, entry);
+    }
+
+    pub fn get_audit_log(env: &Env, grant_id: u64) -> Vec<AuditEntry> {
+        helpers::get_audit_log(env, grant_id)
+    }
+
+    pub fn set_snapshot(env: &Env, grant_id: u64, snapshot_id: u32, snapshot: &Snapshot) {
+        helpers::set_snapshot(env, grant_id, snapshot_id, snapshot);
+    }
+
+    pub fn get_snapshot(env: &Env, grant_id: u64, snapshot_id: u32) -> Option<Snapshot> {
+        helpers::get_snapshot(env, grant_id, snapshot_id)
+    }
+
+    pub fn set_snapshot_list(env: &Env, grant_id: u64, snapshots: &Vec<u32>) {
+        helpers::set_snapshot_list(env, grant_id, snapshots);
+    }
+
+    pub fn get_snapshot_list(env: &Env, grant_id: u64) -> Vec<u32> {
+        helpers::get_snapshot_list(env, grant_id)
+    }
+
+    pub fn set_split_recipients(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        recipients: &Vec<SplitRecipient>,
+    ) {
+        helpers::set_split_recipients(env, grant_id, milestone_idx, recipients);
+    }
+
+    pub fn get_split_recipients(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<Vec<SplitRecipient>> {
+        helpers::get_split_recipients(env, grant_id, milestone_idx)
     }
 }

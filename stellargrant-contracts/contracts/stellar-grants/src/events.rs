@@ -120,6 +120,15 @@ pub struct MilestonePaid {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SplitRegistered {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub recipient_count: u32,
+    pub timestamp: u64,
+}
+
 pub struct Events;
 
 impl Events {
@@ -296,6 +305,21 @@ impl Events {
             grant_id,
             milestone_idx,
             amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_split_registered(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        recipient_count: u32,
+    ) {
+        let event = SplitRegistered {
+            grant_id,
+            milestone_idx,
+            recipient_count,
             timestamp: env.ledger().timestamp(),
         };
         event.publish(env);

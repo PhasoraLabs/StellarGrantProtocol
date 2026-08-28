@@ -137,3 +137,42 @@ pub struct MilestoneSubmission {
     pub description: String,
     pub proof: String,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuditEntry {
+    pub grant_id: u64,
+    pub action: String,
+    pub actor: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SnapshotTrigger {
+    Manual = 1,
+    MilestoneSubmitted = 2,
+    MilestoneApproved = 3,
+    MilestoneRejected = 4,
+    GrantCancelled = 5,
+    DisputeRaised = 6,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Snapshot {
+    pub snapshot_id: u32,
+    pub grant_id: u64,
+    pub trigger: SnapshotTrigger,
+    pub captured_by: Address,
+    pub timestamp: u64,
+    pub grant_state: Grant,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SplitRecipient {
+    pub recipient: Address,
+    pub basis_points: u32,
+}
