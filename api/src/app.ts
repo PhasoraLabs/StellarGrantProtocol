@@ -38,10 +38,15 @@ import { MilestoneApproval } from "./entities/MilestoneApproval";
 import { Milestone } from "./entities/Milestone";
 import { MilestoneComment } from "./entities/MilestoneComment";
 import { WebhookDispatcher } from "./services/webhook-dispatcher";
+import { notificationService } from "./services/notification-service";
 import { buildUserRouter } from "./routes/users";
 import { buildGrantReviewerRouter } from "./routes/grant-reviewers";
 import { buildMilestoneApprovalNotifyRouter } from "./routes/milestone-approvals-notify";
 import { buildMilestoneCommentsRouter } from "./routes/milestone-comments";
+import { buildDisputesRouter, buildGrantDisputesRouter } from "./routes/disputes";
+import { buildMilestoneAppealsRouter } from "./routes/milestone-appeals";
+import { buildGrantDraftsRouter } from "./routes/grant-drafts";
+import { buildContributorsRouter } from "./routes/contributors";
 
 export const createApp = (dataSource: DataSource, sorobanClient: SorobanContractClient) => {
   const app = express();
@@ -75,6 +80,7 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
   app.use("/grants", buildGrantRouter(grantRepo, grantSyncService));
+  app.use("/grants", buildGrantDraftsRouter(dataSource, webhookDispatcher));
   app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, grantRepo, userRepo));
   app.use("/search", buildSearchRouter(dataSource));
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
@@ -82,9 +88,13 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   app.use("/my-donations", buildMyDonationsRouter(dataSource));
   app.use("/communities", buildCommunitiesRouter(communityRepo, grantRepo, activityRepo, rbacService, webhookDispatcher));
   app.use("/notifications", buildNotificationsRouter(contributorRepo));
+  app.use("/contributors", buildContributorsRouter(contributorRepo, grantRepo, proofRepo, activityRepo));
   app.use("/users", buildUserRouter(userRepo));
   app.use("/grant_reviewers", buildGrantReviewerRouter(reviewerRepo));
   app.use("/milestone_approvals_notify", buildMilestoneApprovalNotifyRouter(approvalRepo, grantRepo, userRepo, webhookDispatcher));
+  app.use("/disputes", buildDisputesRouter(dataSource, rbacService, webhookDispatcher));
+  app.use("/", buildGrantDisputesRouter(dataSource));
+  app.use("/", buildMilestoneAppealsRouter(dataSource, webhookDispatcher, notificationService));
   app.use("/", buildMilestoneCommentsRouter(milestoneRepo, commentsRepo, reviewerRepo));
   app.get("/metrics", async (req, res, next) => {
     try {

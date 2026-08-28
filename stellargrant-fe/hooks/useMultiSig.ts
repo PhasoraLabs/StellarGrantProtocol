@@ -16,7 +16,7 @@
  * ```
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   MultiSigTracker,
   submitSignedXdr,
@@ -50,12 +50,9 @@ export interface UseMultiSigResult {
 }
 
 export function useMultiSig(options: UseMultiSigOptions): UseMultiSigResult {
-  const trackerRef = useRef<MultiSigTracker>(
-    new MultiSigTracker(options)
-  );
-
+  const [tracker] = useState(() => new MultiSigTracker(options));
   const [status, setStatus] = useState<MultiSigStatus>(
-    trackerRef.current.snapshot
+    () => tracker.snapshot
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -63,29 +60,28 @@ export function useMultiSig(options: UseMultiSigOptions): UseMultiSigResult {
 
   // Subscribe to tracker updates
   useEffect(() => {
-    return trackerRef.current.onChange((s) => setStatus(s));
-  }, []);
+    return tracker.onChange((s) => setStatus(s));
+  }, [tracker]);
 
   const addSignature = useCallback((publicKey: string, signedXdr: TransactionXdr) => {
     try {
-      trackerRef.current.addSignature(publicKey, signedXdr);
+      tracker.addSignature(publicKey, signedXdr);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [tracker]);
 
   const markDeclined = useCallback((publicKey: string) => {
     try {
-      trackerRef.current.markDeclined(publicKey);
+      tracker.markDeclined(publicKey);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [tracker]);
 
   const submitWhenReady = useCallback(async () => {
-    const tracker = trackerRef.current;
     if (!tracker.isReady) {
       setError(`Not enough signatures yet (${status.collectedCount}/${status.requiredSignatures})`);
       return;
@@ -102,7 +98,7 @@ export function useMultiSig(options: UseMultiSigOptions): UseMultiSigResult {
     } finally {
       setIsSubmitting(false);
     }
-  }, [status.collectedCount, status.requiredSignatures]);
+  }, [status.collectedCount, status.requiredSignatures, tracker]);
 
   return {
     status,

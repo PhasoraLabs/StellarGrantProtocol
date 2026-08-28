@@ -25,6 +25,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-base": "^13.1.0",
     "@stellar/stellar-sdk": "^13.3.0",
     "axios": "^1.16.1",

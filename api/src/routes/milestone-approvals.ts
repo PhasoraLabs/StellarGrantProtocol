@@ -2,12 +2,13 @@ import { Router } from "express";
 import { Repository } from "typeorm";
 import { MilestoneApproval } from "../entities/MilestoneApproval";
 import { notificationService } from "../services/notification-service";
+import { walletLimiters } from "../middlewares/rate-limiter";
 
 export const buildMilestoneApprovalRouter = (approvalRepo: Repository<MilestoneApproval>) => {
   const router = Router();
 
   // Reviewer approves or rejects a milestone
-  router.post("/", async (req, res) => {
+  router.post("/", walletLimiters.milestoneApproval, async (req, res) => {
     const { grantId, milestoneIdx, reviewerStellarAddress, approved } = req.body;
     if (!grantId || milestoneIdx === undefined || !reviewerStellarAddress || approved === undefined) {
       return res.status(400).json({ error: "grantId, milestoneIdx, reviewerStellarAddress, and approved are required" });

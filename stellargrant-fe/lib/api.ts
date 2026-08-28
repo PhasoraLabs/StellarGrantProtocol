@@ -14,13 +14,16 @@
  */
 
 import axios, { AxiosError } from "axios";
-import { StellarGrantsError } from "@/lib/errors";
+import { StellarGrantsNetworkError } from "@/lib/errors/StellarGrantsError";
 import { useWalletStore } from "@/lib/store/walletStore";
 
 // ── Instance ──────────────────────────────────────────────────────────────────
 
+const IS_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+const DEFAULT_URL = IS_MOCK ? "http://localhost:4001" : "http://localhost:4000";
+
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000",
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_URL,
   timeout: 15_000,
   headers: { "Content-Type": "application/json" },
 });
@@ -62,15 +65,13 @@ api.interceptors.response.use(
       error.message ??
       "An unexpected error occurred";
 
-    const stellarError = new StellarGrantsError(serverMsg, {
-      cause: error,
-    });
+    // Detect if it's a network failure or a server error
+    const type = !error.response ? "network" : "api";
 
-    // Attach HTTP status for callers that want to branch on it
-    Object.defineProperty(stellarError, "statusCode", {
-      value: status,
-      writable: false,
-      enumerable: true,
+    const stellarError = new StellarGrantsNetworkError(serverMsg, {
+      cause: error,
+      statusCode: status,
+      type,
     });
 
     return Promise.reject(stellarError);

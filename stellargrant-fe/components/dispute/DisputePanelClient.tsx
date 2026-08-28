@@ -85,12 +85,12 @@ export default function DisputePanelClient() {
   // 1. Check council membership on mount/wallet change
   useEffect(() => {
     if (!address) {
-      setIsCouncil(null);
+      queueMicrotask(() => setIsCouncil(null));
       return;
     }
 
     const checkMember = async () => {
-      setCheckingCouncil(true);
+      queueMicrotask(() => setCheckingCouncil(true));
       try {
         const member = await contractClient.isCouncilMember({ address });
         setIsCouncil(member);
@@ -112,8 +112,10 @@ export default function DisputePanelClient() {
     let cancelled = false;
 
     const fetchData = async () => {
-      setLoadingData(true);
-      setErrorMsg(null);
+      queueMicrotask(() => {
+        setLoadingData(true);
+        setErrorMsg(null);
+      });
       try {
         // Fetch Open Disputes
         let openDisputes: DisputeItem[] = [];

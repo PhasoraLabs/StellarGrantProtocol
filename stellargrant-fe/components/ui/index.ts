@@ -17,6 +17,7 @@ export { default as RichTextRenderer } from "./RichTextRenderer";
 export { StatBadge } from "./StatBadge";
 export { StatusDot } from "./StatusDot";
 export { PageTransition } from "./PageTransition";
+export { SearchInput } from "./SearchInput";
 
 export { AddressInput, addressToColor } from "./AddressInput";
 export type { AddressInputProps } from "./AddressInput";
@@ -40,3 +41,6 @@ export type { ConfirmationDialogProps } from "./ConfirmationDialog";
 
 export { DatePicker, computeRelativeDateLabel, todayIso } from "./DatePicker";
 export type { DatePickerProps, RelativeDateLabel, RelativeDateTone } from "./DatePicker";
+
+export { KeyboardShortcutsOverlay } from "./KeyboardShortcutsOverlay";
+export type { KeyboardShortcutsOverlayProps } from "./KeyboardShortcutsOverlay";

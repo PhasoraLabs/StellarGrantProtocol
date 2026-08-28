@@ -198,4 +198,4 @@ Report vulnerabilities via [GitHub Security Advisories](https://docs.github.com/
 
 ## License
 
-MIT License.
+MIT License...

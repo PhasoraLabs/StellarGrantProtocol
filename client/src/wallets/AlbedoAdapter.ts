@@ -2,9 +2,31 @@ import { WalletAdapter } from "../types";
 
 type AlbedoNetwork = "testnet" | "public";
 
+/**
+ * Adapter for the Albedo web-based Stellar signer.
+ *
+ * Albedo injects `window.albedo` when loaded. Unlike browser extensions,
+ * Albedo works via popup windows — ensure popups are not blocked for your site.
+ *
+ * @example
+ * ```typescript
+ * const adapter = new AlbedoAdapter();
+ * const sdk = new StellarGrantsSDK({ wallet: adapter, ... });
+ * ```
+ */
 export class AlbedoAdapter implements WalletAdapter {
+  readonly name = "Albedo";
+  readonly icon = "https://albedo.link/img/albedo-logo.svg";
+
   private publicKeyCache: string | null = null;
   private network: AlbedoNetwork = "testnet";
+
+  /**
+   * Returns true when the Albedo global is available in the current environment.
+   */
+  isAvailable(): boolean {
+    return typeof window !== "undefined" && Boolean((window as any).albedo);
+  }
 
   constructor(networkPassphrase?: string) {
     this.network = this.resolveNetwork(networkPassphrase ?? "");

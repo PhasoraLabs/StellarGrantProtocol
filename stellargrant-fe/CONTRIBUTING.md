@@ -63,9 +63,10 @@ Before you begin, ensure you have:
    git remote add upstream https://github.com/your-org/stellargrant-fe.git
    ```
 
-3. **Install dependencies**
+3. **Install frontend dependencies**
 
    ```bash
+   cd stellargrant-fe
    pnpm install
    ```
 
@@ -76,19 +77,152 @@ Before you begin, ensure you have:
    # Edit .env.local with your testnet contract ID and API keys
    ```
 
-5. **Start development server**
+5. **(Optional) Set up the mock API server**
+
+   The project includes a mock API server for development and testing. It provides endpoints for caching grant state and validating signed writes.
 
    ```bash
+   cd api
+   npm install
+   npm run dev
+   ```
+
+   The mock server runs on port 4000 by default. You can configure this via the `PORT` environment variable.
+
+6. **Start development server**
+
+   ```bash
+   cd stellargrant-fe
    pnpm dev
    ```
 
-6. **Verify setup**
+7. **Verify setup**
 
    - Open [http://localhost:3000](http://localhost:3000)
    - Check that the app loads without errors
    - Run `pnpm lint` and `pnpm type-check` to ensure everything passes
+   - If using the mock server, verify it's running at [http://localhost:4000/health](http://localhost:4000/health)
 
-## 🔄 Development Workflow
+## � Project Structure
+
+Understanding the folder structure is essential for navigating the codebase and making contributions.
+
+### Frontend Structure (stellargrant-fe/)
+
+```
+stellargrant-fe/
+├── app/                          # Next.js App Router pages
+│   ├── layout.tsx                # Root layout with fonts and providers
+│   ├── page.tsx                  # Homepage / landing page
+│   ├── grants/                   # Grant-related pages
+│   │   ├── page.tsx              # Grant listing page
+│   │   ├── [id]/
+│   │   │   ├── page.tsx          # Grant detail view
+│   │   │   ├── fund/page.tsx     # Fund grant flow
+│   │   │   └── milestones/
+│   │   │       ├── page.tsx      # Milestone list
+│   │   │       └── [idx]/page.tsx # Milestone detail + vote
+│   │   └── create/page.tsx       # Create grant form
+│   ├── profile/page.tsx          # Contributor profile
+│   ├── leaderboard/page.tsx      # Contributor reputation board
+│   └── api/                      # API routes (if any)
+├── components/
+│   ├── ui/                       # shadcn/ui base components
+│   ├── grants/                   # Grant-specific components
+│   ├── milestones/               # Milestone-related components
+│   ├── wallet/                   # Wallet connection components
+│   └── layout/                   # Header, Footer, Sidebar
+├── hooks/                        # Custom React hooks
+│   ├── useWallet.ts              # Wallet connection and state
+│   ├── useGrants.ts              # Grant data fetching
+│   ├── useGrant.ts               # Single grant operations
+│   ├── useMilestone.ts           # Milestone operations
+│   ├── useContractTransaction.ts # Contract transaction handling
+│   ├── useContractEvents.ts      # Event streaming
+│   └── useIPFS.ts                # IPFS file upload
+├── lib/
+│   ├── stellar/                  # Stellar SDK wrappers
+│   │   ├── client.ts             # RPC client singleton
+│   │   ├── contract.ts           # Contract call helpers
+│   │   └── events.ts             # Event streaming
+│   ├── store/                    # Zustand global state
+│   │   ├── walletStore.ts        # Wallet state management
+│   │   └── index.ts              # Store exports
+│   ├── utils/                    # Shared utility functions
+│   │   └── index.ts              # Utility exports
+│   └── config/                   # Configuration files
+│       └── env-validation.ts     # Environment variable validation
+├── types/                        # Global TypeScript types
+│   └── index.ts                  # Type definitions
+├── public/                       # Static assets
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── tests/                        # Vitest unit tests
+├── e2e/                          # Playwright end-to-end tests
+├── .env.local                    # Environment variables (not committed)
+├── .env.example                  # Environment variable template
+├── next.config.ts                # Next.js configuration
+├── tailwind.config.ts            # Tailwind CSS configuration
+├── tsconfig.json                # TypeScript configuration
+└── package.json                  # Dependencies and scripts
+```
+
+### API Structure (api/)
+
+```
+api/
+├── src/
+│   ├── index.ts                  # API entry point and bootstrap
+│   ├── app.ts                    # Express app configuration
+│   ├── config/
+│   │   ├── env.ts                # Environment configuration
+│   │   └── env-validation.ts     # Environment variable validation
+│   ├── db/
+│   │   └── data-source.ts        # TypeORM data source
+│   ├── entities/                 # Database entities
+│   │   ├── Grant.ts
+│   │   ├── Milestone.ts
+│   │   └── Contributor.ts
+│   ├── middlewares/              # Express middleware
+│   ├── routes/                   # API route handlers
+│   │   ├── grants.ts
+│   │   └── milestones.ts
+│   ├── scripts/                  # Utility scripts
+│   │   └── sync-db.ts            # Database synchronization
+│   ├── services/                 # Business logic
+│   │   ├── grantService.ts
+│   │   └── milestoneService.ts
+│   └── soroban/                  # Stellar contract integration
+│       ├── mock-client.ts        # Mock Soroban contract client
+│       └── contract-client.ts    # Real contract client
+├── tests/
+│   └── e2e/                      # End-to-end tests
+├── Dockerfile                    # Docker configuration
+├── tsconfig.json                # TypeScript configuration
+├── vitest.config.ts             # Vitest configuration
+└── package.json                  # Dependencies and scripts
+```
+
+### Key Directories Explained
+
+- **app/**: Next.js App Router pages. Each file corresponds to a route. Dynamic routes use `[param]` syntax.
+- **components/**: Reusable React components. Organized by feature (grants, milestones, wallet) and by type (ui, layout).
+- **hooks/**: Custom React hooks that encapsulate reusable logic. Hooks are the primary way to share stateful logic.
+- **lib/**: Core library code including Stellar SDK wrappers, state management, and utilities.
+- **types/**: Shared TypeScript type definitions used across the application.
+- **api/**: Backend API server (optional for development). Provides caching and validation endpoints.
+
+### File Naming Conventions
+
+- **Components**: PascalCase (e.g., `GrantCard.tsx`, `WalletConnect.tsx`)
+- **Hooks**: camelCase with `use` prefix (e.g., `useWallet.ts`, `useGrants.ts`)
+- **Utilities**: camelCase (e.g., `formatAddress.ts`, `validateForm.ts`)
+- **Types**: PascalCase (e.g., `Grant.ts`, `Milestone.ts`)
+- **Pages**: `page.tsx` (Next.js App Router convention)
+- **Layouts**: `layout.tsx` (Next.js App Router convention)
+
+## �🔄 Development Workflow
 
 ### Branch Naming
 

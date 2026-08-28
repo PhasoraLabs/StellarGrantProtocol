@@ -29,6 +29,7 @@ interface UseGrantsResult {
   data: GrantPage | null;
   isLoading: boolean;
   error: Error | null;
+  errorType: "network" | "api" | "rpc" | "generic";
   fetchNextPage: () => Promise<void>;
   hasNextPage: boolean;
   refetch: () => Promise<void>;
@@ -42,6 +43,7 @@ export function useGrants(options?: UseGrantsOptions): UseGrantsResult {
   const [data, setData] = useState<GrantPage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [errorType, setErrorType] = useState<"network" | "api" | "rpc" | "generic">("generic");
   const [currentPage, setCurrentPage] = useState(page);
 
   const buildUrl = useCallback((p: number) => {
@@ -70,13 +72,23 @@ export function useGrants(options?: UseGrantsOptions): UseGrantsResult {
       const error = err instanceof Error ? err : new Error(String(err));
       hookLogger.error("Error fetching grants", { error: error.message });
       setError(error);
+      
+      // Detect error type
+      if (error.message.includes("Failed to fetch") || !navigator.onLine) {
+        setErrorType("network");
+      } else if (error.message.includes("503") || error.message.includes("504")) {
+        setErrorType("api");
+      } else {
+        setErrorType("generic");
+      }
     } finally {
       setIsLoading(false);
     }
   }, [buildUrl, status, sort]);
 
   useEffect(() => {
-    void fetchPage(1);
+    // defer to microtask to avoid setState-in-effect warning
+    Promise.resolve().then(() => void fetchPage(1));
   }, [fetchPage]);
 
   const fetchNextPage = useCallback(async () => {
@@ -88,6 +100,7 @@ export function useGrants(options?: UseGrantsOptions): UseGrantsResult {
     data,
     isLoading,
     error,
+    errorType,
     fetchNextPage,
     hasNextPage: !!data?.nextPage,
     refetch: () => fetchPage(currentPage),

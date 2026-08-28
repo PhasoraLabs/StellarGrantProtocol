@@ -45,19 +45,59 @@ The frontend communicates directly with Soroban smart contracts via the Stellar 
 ```bash
 # Clone the repository
 git clone https://github.com/your-org/stellargrant-fe.git
-cd stellargrant-fe
+cd StellarGrant-fe
 
-# Install dependencies
+# Install frontend dependencies
+cd stellargrant-fe
 pnpm install
 
 # Copy environment variables
 cp .env.example .env.local
+# Edit .env.local with your testnet contract ID and API keys
+
+# (Optional) Set up the mock API server
+cd ../api
+npm install
+cd ../stellargrant-fe
 
 # Start development server
 pnpm dev
 ```
 
-The application will be available at [http://localhost:3000](http://localhost:3000).
+The frontend application will be available at [http://localhost:3000](http://localhost:3000).
+
+### Running the Mock API Server
+
+The project includes a mock API server for development and testing. It provides endpoints for caching grant state and validating signed writes.
+
+```bash
+# From the repository root
+cd api
+npm install
+npm run dev
+```
+
+The mock server runs on port 4000 by default. You can configure this via the `PORT` environment variable.
+
+**API Endpoints:**
+- `GET /health` - Health check endpoint
+- `GET /grants` - List all grants
+- `GET /grants/:id` - Get grant by ID
+- `POST /milestone_proof` - Submit milestone proof with signature validation
+
+**Running Both Services:**
+
+For full development with the mock API, run both services in separate terminals:
+
+```bash
+# Terminal 1 - API Server
+cd api
+npm run dev
+
+# Terminal 2 - Frontend
+cd stellargrant-fe
+pnpm dev
+```
 
 ### Environment Variables
 
@@ -117,47 +157,74 @@ NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
 ## 📁 Project Structure
 
 ```
-stellargrant-fe/
-├── app/                          # Next.js App Router
-│   ├── layout.tsx                # Root layout (wallet provider, fonts)
-│   ├── page.tsx                  # Homepage / grant discovery
-│   ├── grants/
-│   │   ├── page.tsx              # Grant listing page
-│   │   ├── [id]/
-│   │   │   ├── page.tsx          # Grant detail view
-│   │   │   ├── fund/page.tsx     # Fund grant flow
-│   │   │   └── milestones/
-│   │   │       ├── page.tsx      # Milestone list
-│   │   │       └── [idx]/page.tsx # Milestone detail + vote
-│   │   └── create/page.tsx       # Create grant form
-│   ├── profile/page.tsx          # Contributor profile
-│   ├── leaderboard/page.tsx      # Contributor reputation board
-│   └── api/
-│       └── events/route.ts       # SSE endpoint for contract events
-├── components/
-│   ├── ui/                       # shadcn/ui base components
-│   ├── grants/                   # Grant-specific components
-│   ├── milestones/               # Milestone components
-│   ├── wallet/                   # Wallet connect components
-│   └── layout/                   # Header, Footer, Sidebar
-├── hooks/                        # Custom React hooks
-├── lib/
-│   ├── stellar/                  # Stellar SDK wrappers
-│   │   ├── client.ts             # RPC client singleton
-│   │   ├── contract.ts           # Contract call helpers
-│   │   └── events.ts             # Event streaming
-│   ├── store/                    # Zustand stores
-│   └── utils/                    # Shared utilities
-├── types/                        # Global TypeScript types
-├── public/                       # Static assets
-├── tests/                        # Vitest unit tests
-├── e2e/                          # Playwright e2e tests
-├── next.config.ts
-├── tailwind.config.ts
-└── tsconfig.json
+StellarGrant-fe/
+├── api/                          # Mock API server (optional for development)
+│   ├── src/
+│   │   ├── index.ts              # API entry point and bootstrap
+│   │   ├── app.ts                # Express app configuration
+│   │   ├── config/               # Environment configuration
+│   │   ├── db/                   # TypeORM data source
+│   │   ├── entities/             # Database entities
+│   │   ├── routes/               # API route handlers
+│   │   ├── services/             # Business logic
+│   │   └── soroban/              # Stellar contract integration
+│   ├── tests/                   # E2E tests
+│   ├── Dockerfile
+│   └── package.json
+├── stellargrant-fe/              # Next.js frontend application
+│   ├── app/                      # Next.js App Router
+│   │   ├── layout.tsx            # Root layout (wallet provider, fonts)
+│   │   ├── page.tsx              # Homepage / grant discovery
+│   │   ├── grants/
+│   │   │   ├── page.tsx          # Grant listing page
+│   │   │   ├── [id]/
+│   │   │   │   ├── page.tsx      # Grant detail view
+│   │   │   │   ├── fund/page.tsx # Fund grant flow
+│   │   │   │   └── milestones/
+│   │   │   │       ├── page.tsx  # Milestone list
+│   │   │   │       └── [idx]/page.tsx # Milestone detail + vote
+│   │   │   └── create/page.tsx   # Create grant form
+│   │   ├── profile/page.tsx      # Contributor profile
+│   │   ├── leaderboard/page.tsx  # Contributor reputation board
+│   │   └── api/                  # API routes (if any)
+│   ├── components/
+│   │   ├── ui/                   # shadcn/ui base components
+│   │   ├── grants/               # Grant-specific components
+│   │   ├── milestones/           # Milestone components
+│   │   ├── wallet/               # Wallet connect components
+│   │   └── layout/               # Header, Footer, Sidebar
+│   ├── hooks/                    # Custom React hooks
+│   │   ├── useWallet.ts          # Wallet connection and state
+│   │   ├── useGrants.ts          # Grant data fetching
+│   │   ├── useGrant.ts           # Single grant operations
+│   │   ├── useMilestone.ts       # Milestone operations
+│   │   ├── useContractTransaction.ts # Contract transaction handling
+│   │   ├── useContractEvents.ts  # Event streaming
+│   │   └── useIPFS.ts            # IPFS file upload
+│   ├── lib/
+│   │   ├── stellar/              # Stellar SDK wrappers
+│   │   │   ├── client.ts         # RPC client singleton
+│   │   │   ├── contract.ts       # Contract call helpers
+│   │   │   └── events.ts         # Event streaming
+│   │   ├── store/                # Zustand stores
+│   │   ├── utils/                # Shared utilities
+│   │   └── config/               # Configuration files
+│   ├── types/                    # Global TypeScript types
+│   ├── public/                   # Static assets
+│   ├── tests/                    # Vitest unit tests
+│   ├── e2e/                      # Playwright e2e tests
+│   ├── .env.local                # Environment variables (not committed)
+│   ├── .env.example              # Environment variable template
+│   ├── next.config.ts
+│   ├── tailwind.config.ts
+│   └── package.json
+├── client/                       # StellarGrants SDK (if applicable)
+└── docker-compose.yml            # Docker compose configuration
 ```
 
 ## 🛠️ Available Scripts
+
+### Frontend Scripts (stellargrant-fe/)
 
 | Command | Description |
 |---------|-------------|
@@ -171,6 +238,16 @@ stellargrant-fe/
 | `pnpm test:coverage` | Generate Vitest coverage report |
 | `pnpm format` | Run Prettier on all files |
 | `pnpm analyze` | Bundle analyzer (@next/bundle-analyzer) |
+
+### API Scripts (api/)
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start API development server with hot reload |
+| `npm run build` | Build TypeScript to JavaScript |
+| `npm start` | Start production API server |
+| `npm run test:e2e` | Run API end-to-end tests |
+| `npm run typeorm:sync` | Synchronize database schema |
 
 ## 🏗️ Architecture
 

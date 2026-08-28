@@ -28,9 +28,16 @@ export class StellarGrantsError extends Error {
   /** Discriminator tag for easy type-narrowing */
   readonly _tag = "StellarGrantsError" as const;
 
-  constructor(message: string, options?: ErrorOptions) {
+  /** Classification for UI messaging */
+  readonly type: "network" | "api" | "rpc" | "generic";
+
+  constructor(
+    message: string,
+    options?: ErrorOptions & { type?: "network" | "api" | "rpc" | "generic" }
+  ) {
     super(message, options);
     this.name = "StellarGrantsError";
+    this.type = options?.type ?? "generic";
     // Maintain a proper prototype chain in transpiled ES5 environments
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -73,7 +80,7 @@ export class SorobanContractError extends StellarGrantsError {
       ERROR_MESSAGES[code] ??
       `Unknown contract error (code ${code}).`;
 
-    super(message, { cause: sorobanDetails });
+    super(message, { cause: sorobanDetails, type: "rpc" });
     this.name = "SorobanContractError";
     this.code = code;
     this.sorobanDetails = sorobanDetails;
@@ -91,8 +98,17 @@ export class StellarGrantsNetworkError extends StellarGrantsError {
   /** HTTP status code, if available */
   readonly statusCode?: number;
 
-  constructor(message: string, options?: ErrorOptions & { statusCode?: number }) {
-    super(message, options);
+  constructor(
+    message: string,
+    options?: ErrorOptions & {
+      statusCode?: number;
+      type?: "network" | "api" | "rpc" | "generic";
+    }
+  ) {
+    super(message, {
+      ...options,
+      type: options?.type ?? (options?.statusCode ? "api" : "network"),
+    });
     this.name = "StellarGrantsNetworkError";
     this.statusCode = options?.statusCode;
     Object.setPrototypeOf(this, new.target.prototype);

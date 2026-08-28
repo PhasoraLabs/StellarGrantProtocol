@@ -17,10 +17,15 @@ type CliConfig = {
 };
 
 class SecretKeySigner implements WalletAdapter {
+  readonly name = "SecretKey";
   private readonly keypair: Keypair;
 
   constructor(secret: string) {
     this.keypair = Keypair.fromSecret(secret);
+  }
+
+  isAvailable(): boolean {
+    return true;
   }
 
   async getPublicKey(): Promise<string> {

@@ -37,6 +37,13 @@ class MetricsService {
     registers: [this.registry],
   });
 
+  private readonly walletRateLimitHitsTotal = new Counter({
+    name: "rate_limit_wallet_hits_total",
+    help: "Total number of wallet-based rate limit hits",
+    labelNames: ["endpoint"],
+    registers: [this.registry],
+  });
+
   constructor() {
     collectDefaultMetrics({
       prefix: "stellargrant_",
@@ -52,6 +59,10 @@ class MetricsService {
 
   incrementGrantCreated(): void {
     this.grantsCreatedTotal.inc();
+  }
+
+  recordWalletRateLimitHit(endpoint: string): void {
+    this.walletRateLimitHitsTotal.inc({ endpoint });
   }
 
   recordReconciliationRun(status: "success" | "failure", gapsFound = 0): void {

@@ -51,9 +51,10 @@ export function useGrantHistory(grantId: string): UseGrantHistoryResult {
       if (!grantId) return;
       const { showLoading = true, mergeNew = false } = options ?? {};
 
-      if (showLoading) setIsLoading(true);
-      setError(null);
+      if (showLoading) queueMicrotask(() => setIsLoading(true));
+      queueMicrotask(() => setError(null));
 
+      await Promise.resolve();
       try {
         const { records: page, nextCursor } = await getGrantHistory(parseGrantId(grantId));
         cursorRef.current = nextCursor;
@@ -104,7 +105,9 @@ export function useGrantHistory(grantId: string): UseGrantHistoryResult {
 
   useEffect(() => {
     cursorRef.current = undefined;
-    void fetchFirstPage();
+    queueMicrotask(() => {
+      void fetchFirstPage();
+    });
 
     const pollId = setInterval(() => {
       void fetchFirstPage({ showLoading: false, mergeNew: true });

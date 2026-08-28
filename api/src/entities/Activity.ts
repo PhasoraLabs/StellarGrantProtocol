@@ -7,6 +7,7 @@ export type ActivityType =
   | "grant_completed"
   | "milestone_submitted"
   | "milestone_approved"
+  | "milestone_reactivated"
   | "reputation_gained"
   | "watchlist_added"
   | "watchlist_removed";

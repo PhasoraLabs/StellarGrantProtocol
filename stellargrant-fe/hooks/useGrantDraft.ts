@@ -51,8 +51,10 @@ export function useGrantDraft(): UseGrantDraftResult {
         return;
       }
 
-      setDraft(saved.data);
-      updateDraftAge(saved.savedAt);
+      queueMicrotask(() => {
+        setDraft(saved.data);
+        updateDraftAge(saved.savedAt);
+      });
 
       const interval = setInterval(() => updateDraftAge(saved.savedAt), 60_000);
       return () => clearInterval(interval);

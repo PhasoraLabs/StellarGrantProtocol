@@ -1,8 +1,9 @@
 "use client";
 
-import { use, Suspense, useEffect, useMemo, useState, useCallback } from "react";
+import { use, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ExternalLink, Download, ChevronDown } from "lucide-react";
 import { FundingProgress } from "@/components/grants/FundingProgress";
 import { GrantStatusBadge } from "@/components/grants/GrantStatusBadge";
 import { WalletAddress } from "@/components/wallet/WalletAddress";
@@ -15,13 +16,101 @@ import RichTextRenderer from "@/components/ui/RichTextRenderer";
 import { formatDate } from "@/lib/utils";
 import { formatTokenAmount, getTokenMetadata } from "@/lib/tokens";
 import { stellarExplorerAccount } from "@/lib/constants";
+import { exportGrantAsJSON, exportGrantAsCSV, exportFundersAsCSV } from "@/lib/utils/export";
+import type { FunderRecord } from "@/lib/utils/export";
 import { useGrant } from "@/hooks/useGrant";
 import { useFunders } from "@/hooks/useFunders";
 import { useGrantBalances } from "@/hooks/useGrantBalances";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { useContractEvents } from "@/hooks/useContractEvents";
+import { useOptimisticGrant } from "@/hooks/useOptimisticGrant";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { toast } from "@/lib/toast";
-import type { TokenMetadata } from "@/types";
+import { ErrorCard } from "@/components/ui/ErrorCard";
+import type { TokenMetadata, Grant, Milestone } from "@/types";
 import type { GrantBalances } from "@/lib/stellar/balances";
+
+function ExportDropdown({
+  grant,
+  milestones,
+  funders,
+}: {
+  grant: Grant;
+  milestones: Milestone[];
+  funders: FunderRecord[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const items: { label: string; action: () => void }[] = [
+    {
+      label: "Export as JSON",
+      action: () => {
+        exportGrantAsJSON(grant, milestones);
+        setOpen(false);
+      },
+    },
+    {
+      label: "Export milestones as CSV",
+      action: () => {
+        exportGrantAsCSV(grant, milestones);
+        setOpen(false);
+      },
+    },
+    {
+      label: "Export funders as CSV",
+      action: () => {
+        exportFundersAsCSV(funders);
+        setOpen(false);
+      },
+    },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider border border-border-color text-text-muted px-3 py-1.5 hover:border-accent-primary hover:text-accent-primary transition-colors"
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <Download size={12} />
+        Export
+        <ChevronDown size={12} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 z-50 min-w-[200px] border border-border-color bg-surface shadow-lg"
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={item.action}
+              className="block w-full text-left font-mono text-xs text-text-primary px-4 py-2.5 hover:bg-bg-secondary transition-colors"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function daysUntilDeadline(deadlineTs: bigint): number {
   const ms = Number(deadlineTs) * 1000 - Date.now();
@@ -59,29 +148,65 @@ function GrantDetailSkeleton() {
   );
 }
 
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
-      <div className="rounded-none border border-danger/40 bg-danger/10 p-6">
-        <p className="text-sm text-danger mb-4">{message}</p>
-        <button
-          onClick={onRetry}
-          className="px-4 py-2 text-sm font-medium rounded-none border border-accent-secondary text-accent-secondary hover:bg-accent-secondary/10 transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function GrantDetailContent({ grantId }: { grantId: string }) {
-  const { data, isLoading, error, refetch } = useGrant(grantId);
+  const router = useRouter();
+  const { data, isLoading, error, errorType, refetch } = useGrant(grantId);
+  const { 
+    events, 
+    connectionStatus 
+  } = useContractEvents({ grantId });
+  
+  const { 
+    grant: optimisticGrant, 
+    applyMutation
+  } = useOptimisticGrant(data?.grant ?? {} as Grant, data?.milestones ?? []);
+
   const { funders, isLoading: fundersLoading, refetch: refetchFunders } = useFunders(grantId);
   const [fundModalOpen, setFundModalOpen] = useState(false);
   const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
-  const grant = data?.grant;
+  useKeyboardShortcuts([
+    {
+      key: "F",
+      description: "Fund Grant",
+      action: (e) => {
+        e?.preventDefault();
+        if (!optimisticGrant) return;
+        const statusLabel = ["Pending", "Active", "In Progress", "Completed", "Cancelled"][optimisticGrant.status] ?? "Pending";
+        if (statusLabel !== "Completed" && statusLabel !== "Cancelled") {
+          setFundModalOpen(true);
+        }
+      },
+    },
+    {
+      key: "h",
+      description: "Grant History",
+      action: (e) => {
+        e?.preventDefault();
+        router.push(`/grants/${grantId}/history`);
+      },
+    },
+  ]);
+
+  // Handle incoming GrantFunded events
+  useEffect(() => {
+    const latestEvent = events[events.length - 1];
+    if (latestEvent?.type === "GrantFunded") {
+      // 1. apply optimistic update
+      if (latestEvent.data.amount) {
+        applyMutation({ 
+          type: "fund", 
+          amount: BigInt(latestEvent.data.amount as string)
+        });
+      }
+      // 2. refetch confirmed data
+      void refetch();
+      void refetchFunders();
+    }
+  }, [events, applyMutation, refetch, refetchFunders]);
+
+  const grant = optimisticGrant;
   const milestones = data?.milestones ?? [];
 
   const handleBalanceChange = useCallback(
@@ -154,10 +279,14 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
 
   if (error || !grant || !data) {
     return (
-      <ErrorCard
-        message={error?.message ?? "Grant not found."}
-        onRetry={() => void refetch()}
-      />
+      <div className="container mx-auto max-w-6xl px-4 py-8">
+        <ErrorCard
+          type={errorType}
+          message={error?.message}
+          onRetry={() => void refetch()}
+          title={!grant && !error ? "Grant Not Found" : undefined}
+        />
+      </div>
     );
   }
 
@@ -193,6 +322,16 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
             grantId={grant.id}
             grantTitle={grant.title}
             fundedPercent={fundedPercent}
+          />
+          <ExportDropdown
+            grant={grant}
+            milestones={milestones}
+            funders={funders.map((f) => ({
+              address: f.address,
+              amount: f.amount,
+              token: grant.token ?? "native",
+              timestamp: new Date().toISOString(),
+            }))}
           />
         </div>
       </div>
@@ -301,6 +440,13 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
                 Fund This Grant
               </button>
             )}
+            
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${connectionStatus === 'connected' ? 'bg-success animate-pulse' : 'bg-text-muted'}`} />
+              <span className={`font-mono text-[10px] uppercase tracking-widest ${connectionStatus === 'connected' ? 'text-success' : 'text-text-muted'}`}>
+                {connectionStatus === 'connected' ? 'Live' : 'Offline'}
+              </span>
+            </div>
           </section>
 
           <section className="border border-border-color bg-surface p-5 ring-1 ring-border-color">

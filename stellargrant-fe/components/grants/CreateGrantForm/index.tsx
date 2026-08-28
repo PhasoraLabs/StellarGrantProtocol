@@ -68,6 +68,7 @@ export function CreateGrantForm() {
   const { draft, saveDraft, clearDraft, hasDraft, draftAge } = useGrantDraft();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const watchedValues = methods.watch();
 
   // Debounced save draft

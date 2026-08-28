@@ -8,6 +8,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { formatTokenAmount, getTokenMetadata, TokenMetadata } from "@/lib/tokens";
 
 interface TokenBreakdown {
@@ -100,10 +101,12 @@ export function FundingProgress({
         </span>
         <span>{safePercentage.toFixed(1)}%</span>
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-2">
-        <div
-          className="bg-stellar-cyan h-2 rounded-full transition-all duration-300"
-          style={{ width: `${safePercentage}%` }}
+      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+        <motion.div
+          className="bg-stellar-cyan h-full rounded-full"
+          initial={false}
+          animate={{ width: `${safePercentage}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
         />
       </div>
 

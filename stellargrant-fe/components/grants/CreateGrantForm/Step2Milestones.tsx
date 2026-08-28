@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useFormContext, useFieldArray } from "react-hook-form";
 import type { GrantFormData } from "@/lib/schemas/grant";
+
+import { RewardCalculator } from "./RewardCalculator";
+import { BudgetDistributionChart } from "./BudgetDistributionChart";
 
 export function Step2Milestones() {
   const {
     register,
     control,
     watch,
+    setValue,
     formState: { errors },
   } = useFormContext<GrantFormData>();
 
@@ -19,13 +23,13 @@ export function Step2Milestones() {
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
 
-  const milestones = watch("milestones") || [];
+  const milestones = watch("milestones") as GrantFormData["milestones"] || [];
   const totalBudget = watch("totalBudget") || 0;
   const budgetToken = watch("budgetToken") === "native" ? "XLM" : "USDC";
 
   // Calculate allocations
   const totalAllocated = milestones.reduce(
-    (sum, m) => sum + (Number(m?.reward) || 0),
+    (sum: number, m: { reward?: string | number }) => sum + (Number(m?.reward) || 0),
     0
   );
   const isBalanced = Math.abs(totalAllocated - totalBudget) < 0.0001;
@@ -51,6 +55,16 @@ export function Step2Milestones() {
     append({ title: "", description: "", reward: 0 });
   };
 
+  const handleDistribute = (rewards: number[]) => {
+    rewards.forEach((reward, index) => {
+      setValue(`milestones.${index}.reward`, reward, {
+        shouldValidate: true,
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="border-b border-border-color/20 pb-4">
@@ -60,6 +74,24 @@ export function Step2Milestones() {
         <p className="font-mono text-xs text-text-muted">
           Add up to 10 milestones defining key phases. Drag and drop rows to reorder them.
         </p>
+      </div>
+
+      <div className="space-y-4 bg-bg-secondary/20 p-4 border border-border-color/10">
+        <h3 className="font-orbitron text-[10px] font-bold text-text-muted uppercase tracking-[0.2em] mb-2">
+          Budget Distribution Visualization
+        </h3>
+        <BudgetDistributionChart
+          totalBudget={totalBudget}
+          milestones={milestones}
+          token={budgetToken}
+        />
+        
+        <RewardCalculator
+          totalBudget={totalBudget}
+          milestoneCount={fields.length}
+          onDistribute={handleDistribute}
+          currentRewards={milestones.map(m => m.reward)}
+        />
       </div>
 
       {/* Warning Banner if unbalanced */}

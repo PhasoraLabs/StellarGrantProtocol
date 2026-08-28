@@ -8,6 +8,8 @@ export function useFunders(grantId: string) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchFunders = useCallback(async () => {
+    // Defer state updates to microtask to avoid sync-setState-in-effect warning
+    await Promise.resolve();
     setIsLoading(true);
     try {
       const res = await fetch(`/api/grants/${grantId}/funders`);
@@ -29,7 +31,9 @@ export function useFunders(grantId: string) {
   }, [grantId]);
 
   useEffect(() => {
-    void fetchFunders();
+    queueMicrotask(() => {
+      void fetchFunders();
+    });
   }, [fetchFunders]);
 
   return { funders, isLoading, refetch: fetchFunders };

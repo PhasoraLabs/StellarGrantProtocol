@@ -40,9 +40,10 @@ export function useMilestone(grantId: string, milestoneIdx: number): UseMileston
   const fetchMilestone = useCallback(async () => {
     if (!grantId) return;
 
-    setIsLoading(true);
-    setError(null);
+    queueMicrotask(() => setIsLoading(true));
+    queueMicrotask(() => setError(null));
 
+    await Promise.resolve();
     try {
       // Fetch grant data from API
       const response = await fetch(`${API_URL}/grants/${grantId}`);
@@ -78,7 +79,9 @@ export function useMilestone(grantId: string, milestoneIdx: number): UseMileston
 
   // Initial fetch
   useEffect(() => {
-    fetchMilestone();
+    queueMicrotask(() => {
+      fetchMilestone();
+    });
   }, [fetchMilestone]);
 
   // Polling every 15 seconds

@@ -71,7 +71,7 @@ export function useContractEvents({
 
     // Fallback: poll when EventSource is unavailable (old browsers).
     if (typeof EventSource === "undefined") {
-      setConnectionStatus("connected");
+      queueMicrotask(() => setConnectionStatus("connected"));
       const pollInterval = setInterval(() => {
         const currentGrantId = grantIdRef.current;
         if (!currentGrantId) return;
@@ -117,7 +117,7 @@ export function useContractEvents({
         : "/api/events";
 
       const source = new EventSource(url);
-      setConnectionStatus("connecting");
+      queueMicrotask(() => setConnectionStatus("connecting"));
 
       source.onopen = () => {
         if (!active) {

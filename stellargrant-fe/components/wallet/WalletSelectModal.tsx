@@ -1,19 +1,23 @@
+"use client";
+
 /**
  * WalletSelectModal Component
  *
  * Modal overlay for wallet selection.
- * - Freighter: fully functional — triggers extension prompt
+ * - Freighter: active when extension is installed
+ * - Albedo:    active when window.albedo is present
  * - xBull / Passkey: disabled with "Coming soon" label
- * - Shows spinner while connecting
- * - Shows error + Retry on failure
- * - Auto-closes on successful connection
+ *
+ * Uses adapter.isAvailable() to gate each option at render time.
+ * Shows a spinner while connecting and an error + Retry on failure.
+ * Auto-closes on successful connection.
  */
 
-"use client";
-
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet, type SupportedWalletType } from "@/hooks/useWallet";
+import { FreighterAdapter } from "@/lib/wallets/FreighterAdapter";
+import { AlbedoAdapter } from "@/lib/wallets/AlbedoAdapter";
 
 // ── Spinner ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,21 @@ function FreighterIcon() {
   );
 }
 
+function AlbedoIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <circle cx="24" cy="24" r="24" fill="#6c47ff" />
+      <path
+        d="M24 12 L34 36 H14 Z"
+        fill="none"
+        stroke="white"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function XBullIcon() {
   return (
     <svg width="28" height="28" viewBox="0 0 48 48" fill="none" aria-hidden="true">
@@ -65,6 +84,45 @@ function PasskeyIcon() {
   );
 }
 
+// ── Wallet option config ───────────────────────────────────────────────────────
+
+interface WalletOption {
+  id: SupportedWalletType;
+  name: string;
+  desc: string;
+  icon: React.ReactNode;
+  available: boolean;
+}
+
+function buildWalletOptions(): WalletOption[] {
+  // isAvailable() is synchronous — safe to call at render time
+  const freighterAvailable =
+    typeof window !== "undefined" && new FreighterAdapter().isAvailable();
+  const albedoAvailable =
+    typeof window !== "undefined" && new AlbedoAdapter().isAvailable();
+
+  return [
+    {
+      id: "freighter",
+      name: "Freighter",
+      desc: freighterAvailable
+        ? "Stellar official browser extension"
+        : "Not installed — visit freighter.app",
+      icon: <FreighterIcon />,
+      available: freighterAvailable,
+    },
+    {
+      id: "albedo",
+      name: "Albedo",
+      desc: albedoAvailable
+        ? "Web-based Stellar signer"
+        : "Not detected — visit albedo.link",
+      icon: <AlbedoIcon />,
+      available: albedoAvailable,
+    },
+  ];
+}
+
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 interface WalletSelectModalProps {
@@ -76,6 +134,13 @@ interface WalletSelectModalProps {
 
 export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
   const { connect, isConnecting, isConnected, error } = useWallet();
+  const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
+  const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
+
+  // Build wallet options on the client only (window access)
+  useEffect(() => {
+    setWalletOptions(buildWalletOptions());
+  }, [open]);
 
   // Auto-close when connection succeeds
   useEffect(() => {
@@ -94,15 +159,23 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
 
-  const handleFreighter = useCallback(async () => {
-    await connect("freighter");
-  }, [connect]);
+  const handleConnect = useCallback(
+    async (type: SupportedWalletType, name: string) => {
+      setSelectedWallet(name);
+      await connect(type);
+    },
+    [connect],
+  );
+
+  const handleRetry = useCallback(async () => {
+    if (!selectedWallet) return;
+    const option = walletOptions.find((o) => o.name === selectedWallet);
+    if (option) await connect(option.id);
+  }, [connect, selectedWallet, walletOptions]);
 
   return (
     <AnimatePresence>
       {open && (
-        /* Single backdrop — flex-centered so framer-motion y animation
-           does not conflict with a CSS translate(-50%,-50%) centering trick */
         <motion.div
           className="wallet-modal-backdrop"
           initial={{ opacity: 0 }}
@@ -112,7 +185,6 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
           onClick={onClose}
           aria-hidden="true"
         >
-          {/* Panel sits inside the flex container — stop click propagating to backdrop */}
           <motion.div
             className="wallet-modal-panel"
             role="dialog"
@@ -130,6 +202,7 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
                 Connect Wallet
               </h2>
               <button
+                type="button"
                 className="wallet-modal-close"
                 onClick={onClose}
                 aria-label="Close modal"
@@ -146,7 +219,7 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
             {isConnecting && (
               <div className="wallet-modal-connecting">
                 <Spinner />
-                <span>Connecting to Freighter…</span>
+                <span>Connecting to {selectedWallet ?? "wallet"}…</span>
               </div>
             )}
 
@@ -155,9 +228,10 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
               <div className="wallet-modal-error" role="alert">
                 <span>{error}</span>
                 <button
+                  type="button"
                   id="wallet-modal-retry"
                   className="wallet-modal-retry-btn"
-                  onClick={() => void handleFreighter()}
+                  onClick={() => void handleRetry()}
                 >
                   Retry
                 </button>
@@ -167,24 +241,31 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
             {/* Wallet options */}
             {!isConnecting && (
               <div className="wallet-modal-options">
-                {/* Freighter — active */}
-                <button
-                  id="wallet-option-freighter"
-                  className="wallet-option wallet-option--active"
-                  onClick={() => void handleFreighter()}
-                  disabled={isConnecting}
-                  aria-label="Connect with Freighter"
-                >
-                  <FreighterIcon />
-                  <div className="wallet-option-info">
-                    <span className="wallet-option-name">Freighter</span>
-                    <span className="wallet-option-desc">Stellar official browser extension</span>
-                  </div>
-                </button>
+                {/* Freighter and Albedo — enabled/disabled based on isAvailable() */}
+                {walletOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    id={`wallet-option-${option.id}`}
+                    type="button"
+                    className={`wallet-option ${option.available ? "wallet-option--active" : "wallet-option--unavailable"}`}
+                    onClick={option.available ? () => void handleConnect(option.id, option.name) : undefined}
+                    disabled={!option.available || isConnecting}
+                    aria-label={`Connect with ${option.name}${option.available ? "" : " — not installed"}`}
+                  >
+                    {option.icon}
+                    <div className="wallet-option-info">
+                      <span className="wallet-option-name">{option.name}</span>
+                      <span className={`wallet-option-desc${option.available ? "" : " wallet-option-unavailable"}`}>
+                        {option.desc}
+                      </span>
+                    </div>
+                  </button>
+                ))}
 
                 {/* xBull — coming soon */}
                 <button
                   id="wallet-option-xbull"
+                  type="button"
                   className="wallet-option wallet-option--disabled"
                   disabled
                   aria-label="xBull — coming soon"
@@ -199,6 +280,7 @@ export function WalletSelectModal({ open, onClose }: WalletSelectModalProps) {
                 {/* Passkey — coming soon */}
                 <button
                   id="wallet-option-passkey"
+                  type="button"
                   className="wallet-option wallet-option--disabled"
                   disabled
                   aria-label="Passkey — coming soon"

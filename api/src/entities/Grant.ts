@@ -37,6 +37,12 @@ export class Grant {
   @Column({ type: "text", nullable: true })
   tags?: string;
 
+  @Column({ type: "boolean", default: false })
+  isDraft!: boolean;
+
+  @Column({ type: "simple-json", nullable: true })
+  draftData!: Record<string, unknown> | null;
+
   @OneToMany(() => GrantReviewer, (reviewer) => reviewer.grant)
   reviewers?: GrantReviewer[];
 

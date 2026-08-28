@@ -11,7 +11,9 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "mock": "tsx mock-server/index.ts",
+    "dev:mock": "concurrently \"npm run mock\" \"npm run dev\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -23,13 +25,13 @@
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.8.0",
     "marked": "^18.0.2",
-    "next": "16.2.6",
+    "next": "16.1.6",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.76.1",
     "socket.io-client": "^4.8.3",
     "zod": "^4.4.3",
-    "qrcode": "^1.5.4",
     "zustand": "^5.0.3"
   },
   "optionalDependencies": {
@@ -44,17 +46,23 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/cors": "^2.8.19",
     "@types/dompurify": "^3.2.0",
-    "@types/qrcode": "^1.5.5",
+    "@types/express": "^5.0.6",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/socket.io-client": "^1.4.36",
     "@vitejs/plugin-react": "^6.0.2",
+    "concurrently": "^10.0.0",
+    "cors": "^2.8.6",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.1.6",
+    "express": "^5.2.1",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.22.3",
     "typescript": "^5",
     "vitest": "^1.6.0"
   }

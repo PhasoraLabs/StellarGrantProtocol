@@ -15,4 +15,5 @@ export const env = {
   contractId: process.env.CONTRACT_ID ?? "",
   rpcUrl: process.env.RPC_URL ?? "https://rpc-futurenet.stellar.org",
   networkPassphrase: process.env.NETWORK_PASSPHRASE ?? "Test SDF Network ; September 2015",
+  redisUrl: process.env.REDIS_URL ?? "",
 };

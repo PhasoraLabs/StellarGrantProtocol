@@ -163,11 +163,13 @@ export const NotificationToast: React.FC = () => {
   useEffect(() => {
     if (!lastNotification) return;
     const detail = toastDetailFromNotification(lastNotification);
-    addToast({
-      title: detail.title,
-      description: detail.message,
-      variant: "info",
-      action: detail.href ? { label: "View", href: detail.href } : undefined,
+    queueMicrotask(() => {
+      addToast({
+        title: detail.title,
+        description: detail.message,
+        variant: "info",
+        action: detail.href ? { label: "View", href: detail.href } : undefined,
+      });
     });
   }, [lastNotification, addToast]);
 
@@ -208,8 +210,9 @@ export const NotificationToast: React.FC = () => {
 
   // Cleanup all timers on unmount
   useEffect(() => {
+    const timers = timersRef.current;
     return () => {
-      timersRef.current.forEach((timer) => clearTimeout(timer));
+      timers.forEach((timer) => clearTimeout(timer));
     };
   }, []);
 

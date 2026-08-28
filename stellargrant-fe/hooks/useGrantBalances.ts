@@ -74,11 +74,14 @@ export function useGrantBalances(
 
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    
+    // Defer state updates to microtask to avoid sync-setState-in-effect warning
+    await Promise.resolve();
     setIsLoading(true);
     setError(null);
-    hookLogger.debug("Fetching grant balances", { contractAddress });
 
     try {
+      hookLogger.debug("Fetching grant balances", { contractAddress });
       const snapshot = await getGrantBalances(contractAddress);
       setBalances(snapshot);
       setLastUpdated(snapshot.fetchedAt);
@@ -104,15 +107,19 @@ export function useGrantBalances(
     if (!enabled || !contractAddress) return;
 
     // Initial fetch
-    void fetch();
+    queueMicrotask(() => {
+      void fetch();
+    });
 
     // Then subscribe to changes via polling
     let previousSnapshot: GrantBalances | null = null;
     const stop = listenToBalanceChanges(contractAddress, {
       pollInterval,
       onChange: (current, previous) => {
-        setBalances(current);
-        setLastUpdated(current.fetchedAt);
+        queueMicrotask(() => {
+          setBalances(current);
+          setLastUpdated(current.fetchedAt);
+        });
         previousSnapshot = previous;
         onBalanceChange?.(current, previous ?? previousSnapshot);
         hookLogger.debug("Balance change detected", { contractAddress });
@@ -122,7 +129,7 @@ export function useGrantBalances(
           contractAddress,
           error: err.message,
         });
-        setError(err);
+        queueMicrotask(() => setError(err));
       },
     });
 

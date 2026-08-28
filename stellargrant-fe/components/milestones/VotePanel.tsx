@@ -11,9 +11,12 @@
  * Freighter signing, and success/error toasts are handled there.
  */
 
+import { useState } from "react";
 import { useVoting } from "@/hooks/useVoting";
 import { useWalletStore } from "@/lib/store/walletStore";
 import { Badge } from "@/components/ui/Badge";
+import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import type { MilestoneVote } from "@/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -88,6 +91,8 @@ export function VotePanel({
       milestoneIdx,
     });
 
+  const [confirmVoteType, setConfirmVoteType] = useState<"approve" | "reject" | null>(null);
+
   const isReviewer = !!walletAddress && reviewers.includes(walletAddress);
   const approvalPct =
     voteCount.total > 0
@@ -104,6 +109,27 @@ export function VotePanel({
       voteByReviewer.set(v.reviewer, v.vote);
     }
   });
+
+  useKeyboardShortcuts([
+    {
+      key: "a",
+      description: "Approve Milestone",
+      condition: () => isReviewer && !hasVoted && !isSubmitting && confirmVoteType === null,
+      action: (e) => {
+        e?.preventDefault();
+        setConfirmVoteType("approve");
+      },
+    },
+    {
+      key: "r",
+      description: "Reject Milestone",
+      condition: () => isReviewer && !hasVoted && !isSubmitting && confirmVoteType === null,
+      action: (e) => {
+        e?.preventDefault();
+        setConfirmVoteType("reject");
+      },
+    },
+  ]);
 
   return (
     <div className="space-y-5">
@@ -162,18 +188,18 @@ export function VotePanel({
           ) : (
             <div className="flex gap-3">
               <button
-                onClick={() => void vote(true)}
+                onClick={() => setConfirmVoteType("approve")}
                 disabled={isSubmitting}
                 className="flex-1 rounded-none border border-success/40 bg-success/10 py-2 font-mono text-xs uppercase tracking-widest text-success transition-colors hover:bg-success/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? "Submitting…" : "✓ Approve"}
+                {isSubmitting && confirmVoteType === "approve" ? "Submitting…" : "✓ Approve"}
               </button>
               <button
-                onClick={() => void vote(false)}
+                onClick={() => setConfirmVoteType("reject")}
                 disabled={isSubmitting}
                 className="flex-1 rounded-none border border-danger/40 bg-danger/10 py-2 font-mono text-xs uppercase tracking-widest text-danger transition-colors hover:bg-danger/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? "Submitting…" : "✗ Reject"}
+                {isSubmitting && confirmVoteType === "reject" ? "Submitting…" : "✗ Reject"}
               </button>
             </div>
           )}
@@ -186,6 +212,28 @@ export function VotePanel({
           {error}
         </p>
       )}
+
+      <ConfirmationDialog
+        isOpen={confirmVoteType !== null}
+        title={confirmVoteType === "approve" ? "Approve Milestone" : "Reject Milestone"}
+        description={
+          confirmVoteType === "approve"
+            ? "Are you sure you want to approve this milestone? This action cannot be undone."
+            : "Are you sure you want to reject this milestone? This action cannot be undone."
+        }
+        confirmLabel={confirmVoteType === "approve" ? "Yes, Approve" : "Yes, Reject"}
+        variant={confirmVoteType === "approve" ? "default" : "danger"}
+        isLoading={isSubmitting}
+        onConfirm={async () => {
+          if (confirmVoteType === "approve") {
+            await vote(true);
+          } else if (confirmVoteType === "reject") {
+            await vote(false);
+          }
+          setConfirmVoteType(null);
+        }}
+        onCancel={() => setConfirmVoteType(null)}
+      />
     </div>
   );
 }

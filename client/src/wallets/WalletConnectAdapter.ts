@@ -28,10 +28,12 @@ import { WalletAdapter } from "../types";
  * console.log("Scan this URI:", uri);
  * await approval(); // resolves once the user approves in their wallet
  *
- * const sdk = new StellarGrantsSDK({ ..., signer: adapter });
+ * const sdk = new StellarGrantsSDK({ wallet: adapter, ... });
  * ```
  */
 export class WalletConnectAdapter implements WalletAdapter {
+  readonly name = "WalletConnect";
+
   private readonly signClient: any;
   private session: any | null = null;
 
@@ -44,6 +46,14 @@ export class WalletConnectAdapter implements WalletAdapter {
     }
     this.signClient = signClient;
     this._restoreSession();
+  }
+
+  /**
+   * WalletConnect is pairing-based and does not require a browser extension,
+   * so this always returns true.
+   */
+  isAvailable(): boolean {
+    return true;
   }
 
   /**

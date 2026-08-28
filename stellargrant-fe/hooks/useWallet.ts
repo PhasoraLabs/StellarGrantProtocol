@@ -1,90 +1,123 @@
-/**
- * useWallet Hook
- * 
- * Core hook for wallet state. Returns connected address, network,
- * signing functions, and connection status.
- */
-
 "use client";
 
+/**
+ * useWallet Hook
+ *
+ * Adapter-agnostic wallet state hook. Delegates all signing and key retrieval
+ * to the active WalletAdapter stored in walletStore, so switching wallet
+ * providers requires changing only the `connect(type)` call.
+ *
+ * Supported types: "freighter" | "albedo"
+ * Coming soon:     "xbull" | "passkey"
+ */
+
 import { useState, useEffect } from "react";
-import { useWalletStore } from "@/lib/store/walletStore";
+import { useWalletStore, type WalletType } from "@/lib/store/walletStore";
 import { networkPassphraseConfig } from "@/lib/stellar/client";
+
+export type SupportedWalletType = "freighter" | "albedo" | "xbull" | "passkey";
 
 export interface WalletState {
   address: string | null;
   isConnected: boolean;
   isConnecting: boolean;
   network: "testnet" | "mainnet" | "futurenet";
-  walletType: "freighter" | "xbull" | "passkey" | null;
-  connect: (type: "freighter" | "xbull" | "passkey") => Promise<void>;
+  walletType: WalletType;
+  connect: (type: SupportedWalletType) => Promise<void>;
   disconnect: () => void;
   signTransaction: (xdr: string) => Promise<string>;
   error: string | null;
 }
 
 export function useWallet(): WalletState {
-  const { address, network, walletType, setAddress, setNetwork, setWalletType, reset } = useWalletStore();
+  const {
+    address,
+    network,
+    walletType,
+    activeAdapter,
+    setAddress,
+    setNetwork,
+    setWalletType,
+    setActiveAdapter,
+    reset,
+  } = useWalletStore();
+
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // On mount: re-validate persisted session
+  // ── Session restore on mount ─────────────────────────────────────────────────
+  // Re-validate the persisted session. Freighter can be re-checked via the API;
+  // Albedo has no persistent session so we clear the address if it was persisted.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     async function restoreSession() {
       try {
-        const { isConnected, getAddress, getNetworkDetails } = await import("@stellar/freighter-api");
-        const connected = await isConnected();
-        if (connected) {
-          const addressResult = await getAddress();
-          if (addressResult.error) {
-            console.debug("Failed to get address:", addressResult.error);
-            return;
+        if (walletType === "freighter") {
+          const { isConnected, getAddress, getNetworkDetails } = await import(
+            "@stellar/freighter-api"
+          );
+          const connected = await isConnected();
+          if (connected) {
+            const addressResult = await getAddress();
+            if (addressResult.error) {
+              console.debug("Failed to restore Freighter session:", addressResult.error);
+              reset();
+              return;
+            }
+            const networkResult = await getNetworkDetails();
+            setAddress(addressResult.address);
+            setNetwork(networkResult.network as "testnet" | "mainnet" | "futurenet");
+
+            // Re-instantiate the adapter so signing works after a page reload
+            const { FreighterAdapter } = await import("@stellar/freighter-api").then(
+              () => import("@/lib/wallets/FreighterAdapter"),
+            );
+            setActiveAdapter(new FreighterAdapter());
+          } else {
+            reset();
           }
-          const networkResult = await getNetworkDetails();
-          setAddress(addressResult.address);
-          setNetwork(networkResult.network as "testnet" | "mainnet" | "futurenet");
-          setWalletType("freighter");
+        } else if (walletType === "albedo") {
+          // Albedo has no persistent session — clear the stale address
+          reset();
         }
       } catch (err) {
-        // Freighter not installed or unavailable — silently fail
-        console.debug("Freighter not available:", err);
+        console.debug("Session restore failed:", err);
       }
     }
-    restoreSession();
-  }, [setAddress, setNetwork, setWalletType]);
 
-  const connect = async (type: "freighter" | "xbull" | "passkey") => {
+    restoreSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount only
+
+  // ── connect ──────────────────────────────────────────────────────────────────
+
+  const connect = async (type: SupportedWalletType): Promise<void> => {
     setIsConnecting(true);
     setError(null);
 
     try {
       if (type === "freighter") {
-        if (typeof window === "undefined") {
-          throw new Error("Freighter is only available in the browser");
-        }
+        const { FreighterAdapter } = await import("@/lib/wallets/FreighterAdapter");
+        const adapter = new FreighterAdapter();
+        const pubkey = await adapter.getPublicKey();
 
-        const { getAddress, getNetworkDetails, isAllowed, setAllowed } = await import("@stellar/freighter-api");
-        
-        // Check and request permission
-        const access = await isAllowed();
-        if (!access.isAllowed) {
-          const permission = await setAllowed();
-          if (!permission.isAllowed) {
-            throw new Error("Freighter permission denied");
-          }
-        }
-
-        const addressResult = await getAddress();
-        if (addressResult.error) {
-          throw new Error(addressResult.error);
-        }
-        
+        const { getNetworkDetails } = await import("@stellar/freighter-api");
         const networkResult = await getNetworkDetails();
-        setAddress(addressResult.address);
+
+        setAddress(pubkey);
         setNetwork(networkResult.network as "testnet" | "mainnet" | "futurenet");
         setWalletType("freighter");
+        setActiveAdapter(adapter);
+      } else if (type === "albedo") {
+        const { AlbedoAdapter } = await import("@/lib/wallets/AlbedoAdapter");
+        const adapter = new AlbedoAdapter(networkPassphraseConfig);
+        // getPublicKey triggers the Albedo popup
+        const pubkey = await adapter.getPublicKey();
+
+        setAddress(pubkey);
+        setWalletType("albedo");
+        setActiveAdapter(adapter);
       } else {
         throw new Error(`${type} wallet is not supported yet`);
       }
@@ -97,27 +130,28 @@ export function useWallet(): WalletState {
     }
   };
 
-  const disconnect = () => {
+  // ── disconnect ───────────────────────────────────────────────────────────────
+
+  const disconnect = (): void => {
+    // Call optional adapter teardown (e.g. WalletConnect session close)
+    void activeAdapter?.disconnect?.();
     reset();
     setError(null);
   };
+
+  // ── signTransaction ──────────────────────────────────────────────────────────
 
   const sign = async (xdr: string): Promise<string> => {
     if (typeof window === "undefined") {
       throw new Error("Signing is only available in the browser");
     }
 
+    if (!activeAdapter) {
+      throw new Error("No wallet connected. Call connect() first.");
+    }
+
     try {
-      const { signTransaction } = await import("@stellar/freighter-api");
-      const result = await signTransaction(xdr, {
-        networkPassphrase: networkPassphraseConfig,
-      });
-      
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      
-      return result.signedTxXdr;
+      return await activeAdapter.signTransaction(xdr, networkPassphraseConfig);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to sign transaction";
       setError(message);

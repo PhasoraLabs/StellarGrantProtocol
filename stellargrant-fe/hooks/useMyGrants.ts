@@ -39,10 +39,10 @@ export function useMyGrants(): UseMyGrantsResult {
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    hookLogger.debug("Fetching my grants", { address });
+    queueMicrotask(() => setIsLoading(true));
+    queueMicrotask(() => setError(null));
 
+    await Promise.resolve();
     try {
       const [ownedRes, fundedRes] = await Promise.all([
         fetch(`/api/grants?owner=${address}`),
@@ -73,7 +73,9 @@ export function useMyGrants(): UseMyGrantsResult {
   }, [address]);
 
   useEffect(() => {
-    void fetch_();
+    queueMicrotask(() => {
+      void fetch_();
+    });
   }, [fetch_]);
 
   return { data, isLoading, error, refetch: fetch_ };

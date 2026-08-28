@@ -10,10 +10,19 @@ import { WalletAdapter } from "../types";
  * @example
  * ```typescript
  * const adapter = new XBullAdapter();
- * const sdk = new StellarGrantsSDK({ ..., signer: adapter });
+ * const sdk = new StellarGrantsSDK({ wallet: adapter, ... });
  * ```
  */
 export class XBullAdapter implements WalletAdapter {
+  readonly name = "xBull";
+  readonly icon = "https://xbull.app/assets/icons/icon-192x192.png";
+
+  /**
+   * Returns true when the xBull extension is installed and has injected its global.
+   */
+  isAvailable(): boolean {
+    return typeof window !== "undefined" && Boolean((window as any).xBull);
+  }
   async getPublicKey(): Promise<string> {
     const xBull = this._getExtension();
 

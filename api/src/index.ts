@@ -5,6 +5,8 @@ import { buildDataSource } from "./db/data-source";
 import { MockSorobanContractClient } from "./soroban/mock-client";
 
 const bootstrap = async () => {
+  validateEnvOnStartup();
+  
   const dataSource = buildDataSource();
   await dataSource.initialize();
 

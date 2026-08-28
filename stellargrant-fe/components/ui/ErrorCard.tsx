@@ -5,20 +5,46 @@ import { AlertTriangle } from "lucide-react";
 
 export interface ErrorCardProps {
   title?: string;
-  message: string;
+  message?: string;
   onRetry?: () => void;
   compact?: boolean;
+  type?: "network" | "api" | "rpc" | "generic";
 }
 
+const ERROR_MAP = {
+  network: {
+    title: "Network Connection Lost",
+    message: "You appear to be offline. Check your connection and try again.",
+  },
+  api: {
+    title: "API Unavailable",
+    message: "The StellarGrant API is temporarily unavailable.",
+  },
+  rpc: {
+    title: "Stellar Network Error",
+    message:
+      "Cannot reach the Stellar network. The Stellar testnet may be undergoing maintenance.",
+  },
+  generic: {
+    title: "Something went wrong",
+    message: "Something went wrong. Please try again.",
+  },
+};
+
 export function ErrorCard({
-  title = "Something went wrong",
+  title,
   message,
   onRetry,
   compact = false,
+  type = "generic",
 }: ErrorCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const needsTruncation = message.length > 200;
-  const displayMessage = needsTruncation && !expanded ? message.slice(0, 200) + "…" : message;
+  
+  const finalTitle = title || ERROR_MAP[type].title;
+  const finalMessage = message || ERROR_MAP[type].message;
+  
+  const needsTruncation = finalMessage.length > 200;
+  const displayMessage = needsTruncation && !expanded ? finalMessage.slice(0, 200) + "…" : finalMessage;
 
   if (compact) {
     return (
@@ -44,7 +70,7 @@ export function ErrorCard({
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
         <div className="min-w-0 flex-1">
-          <p className="font-orbitron text-sm font-bold text-danger">{title}</p>
+          <p className="font-orbitron text-sm font-bold text-danger">{finalTitle}</p>
           <p className="mt-1 font-mono text-xs text-text-muted">
             {displayMessage}
             {needsTruncation && (

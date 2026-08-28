@@ -122,9 +122,12 @@ export function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Sync input with URL param (render-time sync)
+  const [prevQ, setPrevQ] = useState(qParam);
+  if (qParam !== prevQ) {
+    setPrevQ(qParam);
     setInputValue(qParam);
-  }, [qParam]);
+  }
 
   const updateUrl = useCallback(
     (nextQ: string, tab: SearchTab = activeTab) => {

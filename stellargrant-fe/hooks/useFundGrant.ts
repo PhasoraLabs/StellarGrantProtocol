@@ -57,12 +57,12 @@ export function useFundGrant(): UseFundGrantReturn {
 
   // Load the connected wallet's own balance
   useEffect(() => {
-    if (!address) {
-      setWalletBalance(null);
-      return;
-    }
     const controller = new AbortController();
     const load = async () => {
+      if (!address) {
+        setWalletBalance(null);
+        return;
+      }
       setIsBalanceLoading(true);
       try {
         const horizon = getHorizonClient();

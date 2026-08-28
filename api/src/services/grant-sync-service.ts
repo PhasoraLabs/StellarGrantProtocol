@@ -3,6 +3,7 @@ import { Grant } from "../entities/Grant";
 import { Milestone } from "../entities/Milestone";
 import { Contributor } from "../entities/Contributor";
 import { ReputationLog } from "../entities/ReputationLog";
+import { Dispute } from "../entities/Dispute";
 import { SorobanContractClient, SorobanGrant } from "../soroban/types";
 
 export class GrantSyncService {
@@ -10,6 +11,7 @@ export class GrantSyncService {
   private readonly milestoneRepo: Repository<Milestone>;
   private readonly contributorRepo: Repository<Contributor>;
   private readonly reputationLogRepo: Repository<ReputationLog>;
+  private readonly disputeRepo: Repository<Dispute>;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -19,6 +21,7 @@ export class GrantSyncService {
     this.milestoneRepo = this.dataSource.getRepository(Milestone);
     this.contributorRepo = this.dataSource.getRepository(Contributor);
     this.reputationLogRepo = this.dataSource.getRepository(ReputationLog);
+    this.disputeRepo = this.dataSource.getRepository(Dispute);
   }
 
   async syncAllGrants(): Promise<void> {
@@ -27,6 +30,9 @@ export class GrantSyncService {
       const savedGrant = await this.syncGrantInternal(grant);
       await this.upsertMilestones(grant, savedGrant);
       await this.updateContributorReputation(savedGrant);
+      if (savedGrant.status === "disputed") {
+        await this.ensureDisputeRecord(savedGrant);
+      }
     }
   }
 
@@ -93,6 +99,17 @@ export class GrantSyncService {
         gain: reputationGain,
         timestamp: new Date(),
       });
+    }
+  }
+
+  private async ensureDisputeRecord(grant: Grant): Promise<void> {
+    const existing = await this.disputeRepo.findOne({
+      where: { grantId: grant.id, status: "open" },
+    });
+    if (!existing) {
+      await this.disputeRepo.save(
+        this.disputeRepo.create({ grantId: grant.id, milestoneIdx: 0, status: "open" })
+      );
     }
   }
 

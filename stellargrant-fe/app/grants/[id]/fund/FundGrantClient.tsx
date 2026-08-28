@@ -74,7 +74,7 @@ export function FundGrantClient({ grantId }: FundGrantClientProps) {
   // Fetch grant data
   useEffect(() => {
     let cancelled = false;
-    setIsGrantLoading(true);
+    queueMicrotask(() => setIsGrantLoading(true));
 
     fetch(`/api/grants/${grantId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))

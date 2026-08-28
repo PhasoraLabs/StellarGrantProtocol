@@ -6,6 +6,7 @@ import { SignatureService } from "../services/signature-service";
 import { getEmailTemplate, sendEmail } from "../services/email-service";
 import { Grant } from "../entities/Grant";
 import { User } from "../entities/User";
+import { walletLimiters } from "../middlewares/rate-limiter";
 
 const milestoneProofSchema = z.object({
   grantId: z.number().int().positive(),
@@ -25,7 +26,7 @@ export const buildMilestoneProofRouter = (
 ) => {
   const router = Router();
 
-  router.post("/", async (req, res, next) => {
+  router.post("/", walletLimiters.milestoneProof, async (req, res, next) => {
     try {
       const parsed = milestoneProofSchema.safeParse(req.body);
       if (!parsed.success) {

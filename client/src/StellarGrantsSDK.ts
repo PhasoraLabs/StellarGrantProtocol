@@ -33,7 +33,11 @@ export class StellarGrantsSDK {
       throw new Error("Either rpcUrl or proxyUrl must be provided.");
     }
 
-    this.config = config;
+    // `wallet` takes precedence over `signer` when both are provided
+    this.config = {
+      ...config,
+      signer: config.wallet ?? config.signer,
+    };
     this.contract = new Contract(config.contractId);
     const serverUrl = config.proxyUrl ?? config.rpcUrl!;
     this.server = new rpc.Server(serverUrl, {

@@ -51,9 +51,10 @@ export function useReputation(address: string | null): UseReputationResult {
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    queueMicrotask(() => setIsLoading(true));
+    queueMicrotask(() => setError(null));
 
+    await Promise.resolve();
     try {
       const [contributorResult, apiResult] = await Promise.allSettled([
         contractClient.contributorScore({ address }),
@@ -102,7 +103,9 @@ export function useReputation(address: string | null): UseReputationResult {
   }, [address]);
 
   useEffect(() => {
-    fetch();
+    queueMicrotask(() => {
+      fetch();
+    });
   }, [fetch]);
 
   return {

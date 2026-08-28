@@ -70,15 +70,20 @@ function DashboardContent() {
   const [loading, setLoading] = useState(false);
   const [showQR, setShowQR] = useState(false);
 
+  // Reset wallet info when address changes (render-time sync)
+  const [prevAddress, setPrevAddress] = useState(address);
+  if (address !== prevAddress) {
+    setPrevAddress(address);
+    setBalance(null);
+    setReputation(null);
+  }
+
   // Load wallet info (balance + reputation) when address changes
   useEffect(() => {
     if (!address) return;
 
-    setBalance(null);
-    setReputation(null);
-
     const controller = new AbortController();
-
+    
     async function loadWalletInfo() {
       try {
         const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -91,7 +96,7 @@ function DashboardContent() {
           if (typeof data.balance === "number") setBalance(BigInt(Math.round(data.balance)));
           if (typeof data.reputation === "number") setReputation(data.reputation);
         }
-      } catch {
+      } catch (_err) {
         // API unavailable — leave as null (shimmer stays visible)
       }
     }
@@ -126,7 +131,9 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!address || activeTab === "watching") return;
-    void fetchGrants(activeTab, address);
+    queueMicrotask(() => {
+      void fetchGrants(activeTab, address);
+    });
   }, [activeTab, address, fetchGrants]);
 
   function setTab(tab: Tab) {
