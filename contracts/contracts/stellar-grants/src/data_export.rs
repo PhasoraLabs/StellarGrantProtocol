@@ -188,7 +188,7 @@ pub fn export_milestones_since(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total;
+    let has_more = offset.saturating_add(capped) < total;
 
     ExportMilestonePage {
         items: page_items,
