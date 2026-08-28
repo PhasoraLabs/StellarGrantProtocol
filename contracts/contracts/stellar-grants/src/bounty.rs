@@ -78,7 +78,7 @@ pub fn submit_solution(
 
     let submitters = Storage::get_bounty_submitters(env, bounty_id);
     if submitters.len() >= MAX_BOUNTY_SUBMISSIONS {
-        return Err(ContractError::ReviewerLimitExceeded);
+        return Err(ContractError::BountySubmissionLimitExceeded);
     }
 
     let submission = BountySubmission {
