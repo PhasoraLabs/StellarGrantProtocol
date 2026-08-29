@@ -153,18 +153,33 @@ Before you begin, ensure you have the following installed:
 
 ### Build the Contract
 
+**Note:** `stellar contract build` requires `overflow-checks = true` in the release
+profile, but this workspace disables it for WASM size/perf reasons. Use `cargo build`
+directly instead:
+
 ```bash
 # From contracts/
-stellar contract build --package stellar-grants --locked
+cargo build --target wasm32v1-none --release --package stellar-grants
 ```
 
 The compiled WASM file will be in `target/wasm32v1-none/release/stellar_grants.wasm`.
 
+`stellar contract build --package stellar-grants --locked` fails out of the box with:
+
+```text
+error: invalid Cargo.toml configuration: 'overflow-checks' is not enabled for profile 'release'
+```
+
+See [`BENCHMARK.md`](./BENCHMARK.md) for the same caveat: those size numbers were
+produced with a temporary `overflow-checks = true` override so the CLI could run.
+There is no Stellar CLI flag to bypass this check.
+
 ### Optimized WASM Build
 
-```bash
-stellar contract build --package stellar-grants --locked --optimize
-```
+The Stellar CLI `--optimize` pass is also gated on `overflow-checks = true`, so
+the same `stellar contract build --optimize` command fails against the checked-in
+profile. Build the release WASM with Cargo as above. For the spec-shaking /
+optimizer methodology used in the table below, see [`BENCHMARK.md`](./BENCHMARK.md).
 
 ### WASM Size Benchmark
 

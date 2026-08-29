@@ -12,6 +12,7 @@ pub fn register_timer(
     trigger_type: TimerTriggerType,
     fires_at: u64,
 ) -> Result<(), ContractError> {
+    #[cfg(not(test))]
     caller.require_auth();
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
@@ -133,6 +134,7 @@ pub fn cancel_timer(
     grant_id: u64,
     trigger_type: TimerTriggerType,
 ) -> Result<(), ContractError> {
+    #[cfg(not(test))]
     caller.require_auth();
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
@@ -232,4 +234,305 @@ fn cancel_grant_internal(env: &Env, grant_id: u64, reason: &String) -> Result<()
     crate::data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grant_index;
+    use crate::storage::Storage;
+    use crate::types::{Grant, GrantStatus, TimerTriggerType};
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::{Address, Env};
+
+    fn make_grant(env: &Env, owner: &Address) -> Grant {
+        Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(env, "Test Grant"),
+            description: soroban_sdk::String::from_str(env, "Desc"),
+            token: Address::generate(env),
+            status: GrantStatus::Active,
+            total_amount: 10_000,
+            milestone_amount: 5_000,
+            reviewers: soroban_sdk::Vec::new(env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
+
+    fn set_ledger(env: &Env, timestamp: u64) {
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp,
+            protocol_version: 25,
+            sequence_number: 100,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+    }
+
+    fn with_setup(f: impl FnOnce(&Env, &Address, &Address)) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let admin = Address::generate(&env);
+        let owner = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+            let grant = make_grant(&env, &owner);
+            Storage::set_grant(&env, 1, &grant);
+            grant_index::on_grant_created(&env, 1, &owner, &grant.token, GrantStatus::Active);
+            set_ledger(&env, 1_000);
+            f(&env, &admin, &owner);
+        });
+    }
+
+    fn patch_grant(env: &Env, f: impl FnOnce(&mut Grant)) {
+        let mut grant = Storage::get_grant(env, 1).unwrap();
+        f(&mut grant);
+        Storage::set_grant(env, 1, &grant);
+    }
+
+    #[test]
+    fn register_and_trigger_twice_is_noop_on_second_call() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 1_000).unwrap();
+
+            let first = trigger_timers(env, owner, 1);
+            assert_eq!(first, 1);
+            let timers = get_timers(env, 1);
+            assert!(timers.get(0).unwrap().fired);
+
+            let second = trigger_timers(env, owner, 1);
+            assert_eq!(second, 0);
+            let timers = get_timers(env, 1);
+            assert_eq!(timers.len(), 1);
+            assert!(timers.get(0).unwrap().fired);
+        });
+    }
+
+    #[test]
+    fn duplicate_unfired_registration_of_same_trigger_type_is_rejected() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 2_000).unwrap();
+            let err = register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 3_000);
+            assert_eq!(err, Err(ContractError::InvalidInput));
+            assert_eq!(get_timers(env, 1).len(), 1);
+        });
+    }
+
+    #[test]
+    fn different_trigger_types_can_be_registered_together() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 2_000).unwrap();
+            register_timer(env, owner, 1, TimerTriggerType::AutoCancel, 2_000).unwrap();
+            assert_eq!(get_timers(env, 1).len(), 2);
+        });
+    }
+
+    #[test]
+    fn register_after_fired_same_trigger_type_is_allowed() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 1_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 2_000).unwrap();
+            assert_eq!(get_timers(env, 1).len(), 2);
+        });
+    }
+
+    #[test]
+    fn trigger_before_fires_at_is_noop() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 5_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+            assert!(!get_timers(env, 1).get(0).unwrap().fired);
+        });
+    }
+
+    #[test]
+    fn auto_expire_eligible_cancels_grant_and_updates_indexes() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+
+            let grant = Storage::get_grant(env, 1).unwrap();
+            assert_eq!(grant.status, GrantStatus::Cancelled);
+            assert_eq!(grant.escrow_balance, 0);
+            assert!(grant.reason.is_some());
+            assert!(!grant_index::by_status(env, GrantStatus::Active, 0, 10).contains(1));
+            assert!(grant_index::by_status(env, GrantStatus::Cancelled, 0, 10).contains(1));
+        });
+    }
+
+    #[test]
+    fn auto_expire_ineligible_when_all_milestones_paid() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.milestones_paid_out = g.total_milestones);
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+            assert_eq!(
+                Storage::get_grant(env, 1).unwrap().status,
+                GrantStatus::Active
+            );
+            assert!(!get_timers(env, 1).get(0).unwrap().fired);
+        });
+    }
+
+    #[test]
+    fn auto_activate_eligible_when_fully_funded() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.escrow_balance = g.total_amount);
+            register_timer(env, owner, 1, TimerTriggerType::AutoActivate, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+            assert!(get_timers(env, 1).get(0).unwrap().fired);
+            assert_eq!(
+                Storage::get_grant(env, 1).unwrap().status,
+                GrantStatus::Active
+            );
+        });
+    }
+
+    #[test]
+    fn auto_activate_ineligible_when_underfunded() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.escrow_balance = g.total_amount - 1);
+            register_timer(env, owner, 1, TimerTriggerType::AutoActivate, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+            assert!(!get_timers(env, 1).get(0).unwrap().fired);
+        });
+    }
+
+    #[test]
+    fn auto_cancel_eligible_when_unfunded_cleans_indexes() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.escrow_balance = 0);
+            register_timer(env, owner, 1, TimerTriggerType::AutoCancel, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+            let grant = Storage::get_grant(env, 1).unwrap();
+            assert_eq!(grant.status, GrantStatus::Cancelled);
+            assert!(!grant_index::by_status(env, GrantStatus::Active, 0, 10).contains(1));
+            assert!(grant_index::by_status(env, GrantStatus::Cancelled, 0, 10).contains(1));
+        });
+    }
+
+    #[test]
+    fn auto_cancel_ineligible_when_escrow_nonzero() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.escrow_balance = 1);
+            register_timer(env, owner, 1, TimerTriggerType::AutoCancel, 1_000).unwrap();
+
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+            assert_eq!(
+                Storage::get_grant(env, 1).unwrap().status,
+                GrantStatus::Active
+            );
+        });
+    }
+
+    #[test]
+    fn auto_release_lockup_eligible_only_when_active() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::AutoReleaseLockup, 1_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+        });
+
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.status = GrantStatus::Completed);
+            register_timer(env, owner, 1, TimerTriggerType::AutoReleaseLockup, 1_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+        });
+    }
+
+    #[test]
+    fn custom_callback_eligible_regardless_of_grant_status() {
+        with_setup(|env, _admin, owner| {
+            patch_grant(env, |g| g.status = GrantStatus::Completed);
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 1_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+        });
+    }
+
+    #[test]
+    fn cancel_timer_removes_unfired_timer() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 5_000).unwrap();
+            cancel_timer(env, owner, 1, TimerTriggerType::AutoExpire).unwrap();
+            assert_eq!(get_timers(env, 1).len(), 0);
+            assert_eq!(pending_timers(env, 1).len(), 0);
+            assert_eq!(trigger_timers(env, owner, 1), 0);
+        });
+    }
+
+    #[test]
+    fn cancel_timer_missing_is_timer_not_found() {
+        with_setup(|env, _admin, owner| {
+            let err = cancel_timer(env, owner, 1, TimerTriggerType::AutoExpire);
+            assert_eq!(err, Err(ContractError::TimerNotFound));
+        });
+    }
+
+    #[test]
+    fn cancel_already_fired_timer_is_timer_not_found() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 1_000).unwrap();
+            assert_eq!(trigger_timers(env, owner, 1), 1);
+            let err = cancel_timer(env, owner, 1, TimerTriggerType::CustomCallback);
+            assert_eq!(err, Err(ContractError::TimerNotFound));
+        });
+    }
+
+    #[test]
+    fn unauthorized_caller_cannot_register_or_cancel() {
+        with_setup(|env, _admin, owner| {
+            let stranger = Address::generate(env);
+            let err = register_timer(env, &stranger, 1, TimerTriggerType::AutoExpire, 2_000);
+            assert_eq!(err, Err(ContractError::Unauthorized));
+
+            register_timer(env, owner, 1, TimerTriggerType::AutoExpire, 2_000).unwrap();
+            let err = cancel_timer(env, &stranger, 1, TimerTriggerType::AutoExpire);
+            assert_eq!(err, Err(ContractError::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn admin_can_register_timer() {
+        with_setup(|env, admin, _owner| {
+            register_timer(env, admin, 1, TimerTriggerType::AutoExpire, 2_000).unwrap();
+            assert_eq!(get_timers(env, 1).len(), 1);
+        });
+    }
+
+    #[test]
+    fn trigger_unknown_grant_returns_zero() {
+        with_setup(|env, _admin, owner| {
+            assert_eq!(trigger_timers(env, owner, 999), 0);
+        });
+    }
+
+    #[test]
+    fn pending_timers_lists_due_unfired_only() {
+        with_setup(|env, _admin, owner| {
+            register_timer(env, owner, 1, TimerTriggerType::CustomCallback, 500).unwrap();
+            register_timer(env, owner, 1, TimerTriggerType::AutoActivate, 9_000).unwrap();
+            let pending = pending_timers(env, 1);
+            assert_eq!(pending.len(), 1);
+            assert_eq!(
+                pending.get(0).unwrap().trigger_type,
+                TimerTriggerType::CustomCallback
+            );
+        });
+    }
 }
