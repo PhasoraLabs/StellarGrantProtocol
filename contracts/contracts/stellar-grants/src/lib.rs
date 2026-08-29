@@ -1576,6 +1576,7 @@ impl StellarGrantsContract {
         claim_id: u32,
         payout_amount: i128,
     ) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
         if Storage::get_global_admin(&env) != Some(admin.clone()) {
             return Err(ContractError::Unauthorized);
         }
@@ -1588,6 +1589,7 @@ impl StellarGrantsContract {
         admin: Address,
         claim_id: u32,
     ) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
         if Storage::get_global_admin(&env) != Some(admin.clone()) {
             return Err(ContractError::Unauthorized);
         }
