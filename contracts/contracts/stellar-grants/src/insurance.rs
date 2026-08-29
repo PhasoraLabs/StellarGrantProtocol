@@ -130,6 +130,10 @@ pub fn file_claim(
     let policy =
         Storage::get_insurance_policy(env, grant_id).ok_or(ContractError::PolicyNotFound)?;
 
+    if *claimant != policy.policyholder {
+        return Err(ContractError::Unauthorized);
+    }
+
     if !policy.active {
         return Err(ContractError::PolicyInactive);
     }
