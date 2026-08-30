@@ -368,8 +368,14 @@ mod tests {
 
         // Grant EmergencyPauser role to non-admin
         env.as_contract(&contract_id, || {
-            crate::access_control::grant_role(&env, &admin, &emergency_pauser, Role::EmergencyPauser, None)
-                .unwrap();
+            crate::access_control::grant_role(
+                &env,
+                &admin,
+                &emergency_pauser,
+                Role::EmergencyPauser,
+                None,
+            )
+            .unwrap();
         });
 
         // Non-admin with EmergencyPauser role can trip
