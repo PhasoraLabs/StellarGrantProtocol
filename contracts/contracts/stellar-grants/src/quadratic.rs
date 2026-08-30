@@ -15,20 +15,43 @@ pub fn allocate_credits(
     let record = VoiceCredits {
         voter: voter.clone(),
         grant_id,
-        total_credits: existing.as_ref().map(|r| r.total_credits).unwrap_or(0).saturating_add(additional_credits),
+        total_credits: existing
+            .as_ref()
+            .map(|r| r.total_credits)
+            .unwrap_or(0)
+            .saturating_add(additional_credits),
         spent_credits: existing.map(|r| r.spent_credits).unwrap_or(0),
     };
     Storage::set_voice_credits(env, &record);
     Ok(())
 }
 
-fn get_voter_cumulative_votes(env: &Env, grant_id: u64, milestone_idx: u32, voter: &Address) -> u32 {
-    let key = DataKey::Voting(VotingKey::CumulativeVotes(grant_id, milestone_idx, voter.clone()));
+fn get_voter_cumulative_votes(
+    env: &Env,
+    grant_id: u64,
+    milestone_idx: u32,
+    voter: &Address,
+) -> u32 {
+    let key = DataKey::Voting(VotingKey::CumulativeVotes(
+        grant_id,
+        milestone_idx,
+        voter.clone(),
+    ));
     env.storage().persistent().get(&key).unwrap_or(0)
 }
 
-fn set_voter_cumulative_votes(env: &Env, grant_id: u64, milestone_idx: u32, voter: &Address, votes: u32) {
-    let key = DataKey::Voting(VotingKey::CumulativeVotes(grant_id, milestone_idx, voter.clone()));
+fn set_voter_cumulative_votes(
+    env: &Env,
+    grant_id: u64,
+    milestone_idx: u32,
+    voter: &Address,
+    votes: u32,
+) {
+    let key = DataKey::Voting(VotingKey::CumulativeVotes(
+        grant_id,
+        milestone_idx,
+        voter.clone(),
+    ));
     env.storage().persistent().set(&key, &votes);
 }
 
@@ -59,7 +82,7 @@ pub fn cast_qv_vote(
     let new_total_votes = prior_votes.saturating_add(additional_votes);
     let marginal_cost = credit_cost(new_total_votes).saturating_sub(credit_cost(prior_votes));
     let available = credits.total_credits.saturating_sub(credits.spent_credits);
-    
+
     if marginal_cost > available {
         return Err(ContractError::InsufficientVoiceCredits);
     }
