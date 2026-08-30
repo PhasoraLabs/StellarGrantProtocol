@@ -44,11 +44,11 @@ pub fn propose_transfer(
         grant_id,
         current_holder: caller.clone(),
         proposed_new_holder: new_holder,
-        role,
+        role: role.clone(),
         reviewer_to_replace,
         proposed_at: env.ledger().timestamp(),
     };
-    Storage::set_transfer_proposal(env, grant_id, &proposal);
+    Storage::set_transfer_proposal(env, grant_id, &role, &proposal);
     Ok(())
 }
 
@@ -61,8 +61,9 @@ pub fn accept_transfer(
 ) -> Result<(), ContractError> {
     new_holder.require_auth();
 
-    let proposal =
-        Storage::get_transfer_proposal(env, grant_id).ok_or(ContractError::InvalidState)?;
+    let proposal = Storage::get_transfer_proposal(env, grant_id, &TransferableRole::Owner)
+        .or_else(|| Storage::get_transfer_proposal(env, grant_id, &TransferableRole::Reviewer))
+        .ok_or(ContractError::InvalidState)?;
 
     if proposal.proposed_new_holder != *new_holder {
         return Err(ContractError::Unauthorized);
@@ -78,6 +79,12 @@ pub fn accept_transfer(
             let to_replace = proposal
                 .reviewer_to_replace
                 .ok_or(ContractError::InvalidInput)?;
+            // Re-validate that the reviewer being replaced is still present.
+            // If they were removed between proposal and acceptance, fail
+            // rather than silently succeeding with no substitution.
+            if !grant.reviewers.contains(to_replace.clone()) {
+                return Err(ContractError::InvalidState);
+            }
             for i in 0..grant.reviewers.len() {
                 if grant.reviewers.get(i).unwrap() == to_replace {
                     grant.reviewers.set(i, new_holder.clone());
@@ -88,12 +95,13 @@ pub fn accept_transfer(
     }
 
     Storage::set_grant(env, grant_id, &grant);
-    Storage::remove_transfer_proposal(env, grant_id);
+    Storage::remove_transfer_proposal(env, grant_id, &proposal.role);
     Ok(())
 }
 
 pub fn get_transfer_proposal(env: &Env, grant_id: u64) -> Option<TransferProposal> {
-    Storage::get_transfer_proposal(env, grant_id)
+    Storage::get_transfer_proposal(env, grant_id, &TransferableRole::Owner)
+        .or_else(|| Storage::get_transfer_proposal(env, grant_id, &TransferableRole::Reviewer))
 }
 
 #[cfg(test)]
@@ -241,5 +249,60 @@ mod test {
         let grant = Storage::get_grant(&env, grant_id).unwrap();
         assert_eq!(grant.reviewers.get(0).unwrap(), new_reviewer);
         assert!(get_transfer_proposal(&env, grant_id).is_none());
+    }
+
+    #[test]
+    fn test_owner_and_reviewer_proposals_coexist() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        let new_owner = Address::generate(&env);
+        let new_reviewer = Address::generate(&env);
+        let grant_id = create_test_grant(&env, &owner, &reviewer);
+
+        // Owner proposes ownership transfer
+        let owner_result = propose_transfer(
+            &env,
+            &owner,
+            grant_id,
+            new_owner.clone(),
+            TransferableRole::Owner,
+            None,
+        );
+        assert_eq!(owner_result, Ok(()));
+
+        // Reviewer proposes their replacement (should not overwrite owner's proposal)
+        let reviewer_result = propose_transfer(
+            &env,
+            &reviewer,
+            grant_id,
+            new_reviewer.clone(),
+            TransferableRole::Reviewer,
+            Some(reviewer.clone()),
+        );
+        assert_eq!(reviewer_result, Ok(()));
+
+        // Check both proposals exist independently
+        let owner_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Owner);
+        assert!(owner_proposal.is_some());
+        assert_eq!(owner_proposal.unwrap().proposed_new_holder, new_owner);
+
+        let reviewer_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+        assert!(reviewer_proposal.is_some());
+        assert_eq!(reviewer_proposal.unwrap().proposed_new_holder, new_reviewer);
+
+        // Accept owner transfer
+        accept_transfer(&env, &new_owner, grant_id).unwrap();
+        let grant = Storage::get_grant(&env, grant_id).unwrap();
+        assert_eq!(grant.owner, new_owner);
+
+        // Reviewer proposal should still exist
+        let reviewer_proposal =
+            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+        assert!(reviewer_proposal.is_some());
     }
 }

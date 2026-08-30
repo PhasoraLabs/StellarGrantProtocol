@@ -23,6 +23,7 @@ pub fn fund_pool(env: &Env, token: &Address, amount: i128) {
                 balance: 0,
                 total_deposited: 0,
                 total_paid_out: 0,
+                total_votes_recorded: 0,
             });
 
     pool.balance = pool.balance.saturating_add(amount);
@@ -81,6 +82,46 @@ pub fn record_participation(
         PERSISTENT_TTL_THRESHOLD,
         PERSISTENT_TTL_EXTEND_TO,
     );
+
+    let index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
+    let mut grant_ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    if !grant_ids.contains(grant_id) {
+        grant_ids.push_back(grant_id);
+        env.storage().persistent().set(&index_key, &grant_ids);
+        env.storage().persistent().extend_ttl(
+            &index_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
+    
+    if let Some(grant) = crate::storage::Storage::get_grant(env, grant_id) {
+        let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(grant.token.clone()));
+        let mut pool: ReviewerRewardPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| ReviewerRewardPool {
+                token: grant.token.clone(),
+                balance: 0,
+                total_deposited: 0,
+                total_paid_out: 0,
+                total_votes_recorded: 0,
+            });
+        pool.total_votes_recorded = pool.total_votes_recorded.saturating_add(1);
+        env.storage().persistent().set(&pool_key, &pool);
+        env.storage().persistent().extend_ttl(
+            &pool_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
 }
 
 /// Compute reward entitlement for a reviewer based on participation.
@@ -102,11 +143,29 @@ pub fn compute_reward(
 }
 
 /// Accrue computed reward into reviewer's pending balance.
+/// Computes fair share of the pool based on reviewer participation across all grants.
 pub fn accrue_reward(
     env: &Env,
     reviewer: &Address,
     token: &Address,
 ) -> Result<i128, ContractError> {
+    let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(token.clone()));
+    let pool: ReviewerRewardPool = env
+        .storage()
+        .persistent()
+        .get(&pool_key)
+        .unwrap_or_else(|| ReviewerRewardPool {
+            token: token.clone(),
+            balance: 0,
+            total_deposited: 0,
+            total_paid_out: 0,
+            total_votes_recorded: 0,
+        });
+
+    if pool.balance <= 0 {
+        return Ok(0);
+    }
+
     let reward_key = DataKey::ReviewerReward(ReviewerRewardKey::RewardRecord(
         reviewer.clone(),
         token.clone(),
@@ -124,13 +183,13 @@ pub fn accrue_reward(
             last_claimed_at: None,
         });
 
-    // In a real implementation, compute_reward would calculate based on actual participation
-    // For now, we'll just return the pending amount (this would be called periodically)
-    let accrued = reward_record.pending_amount;
+    let prior_pending = reward_record.pending_amount;
+    let accrued = compute_reviewer_share(env, reviewer, token, &pool)?;
 
+    reward_record.pending_amount = accrued;
     reward_record.total_earned = reward_record
         .total_earned
-        .checked_add(accrued)
+        .checked_add(accrued.saturating_sub(prior_pending))
         .ok_or(ContractError::InvalidInput)?;
 
     env.storage().persistent().set(&reward_key, &reward_record);
@@ -141,6 +200,51 @@ pub fn accrue_reward(
     );
 
     Ok(accrued)
+}
+
+/// Compute a reviewer's fair share of the pool based on their total participation.
+/// This aggregates votes across all grants and allocates proportionally from the pool.
+fn compute_reviewer_share(
+    env: &Env,
+    reviewer: &Address,
+    token: &Address,
+    pool: &ReviewerRewardPool,
+) -> Result<i128, ContractError> {
+    if pool.total_deposited <= 0 {
+        return Ok(0);
+    }
+
+    let mut reviewer_votes: i128 = 0;
+    let mut total_reviewer_votes: i128 = 0;
+
+    let reward_index_key =
+        DataKey::ReviewerReward(ReviewerRewardKey::ParticipationIndex(reviewer.clone()));
+    let grant_ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&reward_index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    for grant_id in grant_ids.iter() {
+        if let Some(participation) = get_participation(env, reviewer, grant_id) {
+            reviewer_votes = reviewer_votes.saturating_add(participation.votes_cast as i128);
+        }
+    }
+
+    total_reviewer_votes = pool.total_votes_recorded;
+
+    if total_reviewer_votes <= 0 {
+        return Ok(0);
+    }
+
+    let share = pool
+        .total_deposited
+        .saturating_mul(reviewer_votes)
+        .checked_div(total_reviewer_votes)
+        .unwrap_or(0)
+        .min(pool.balance);
+
+    Ok(share.max(0))
 }
 
 /// Reviewer claims all pending rewards.

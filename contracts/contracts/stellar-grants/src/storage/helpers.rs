@@ -9,16 +9,16 @@ use crate::types::{
     AutoApproveRecord, BountyGrant, BountySubmission, BreakerState, ChecklistSubmission,
     ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion, ContributorProfile,
     CrowdfundCampaign, CrowdfundPledge, DaoProposal, DexConfig, Dispute, EscrowAccount,
-    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion,
-    HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
-    MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft, MultisigProposal,
-    OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream, ProtocolConfig,
-    ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord, RateLimitAction,
-    RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition, RenewalProposal,
-    RevenueEpoch, ReviewerProfile, ReviewerRequest, Role, RoleAssignment, RollingWindow,
-    ScoringRubric, StakerEpochRecord, StructuredEvidence, SyndicateGrant, SyndicateMember,
-    TimerRecord, TokenMetric, TransferProposal, VerificationAttestation, VoiceCredits,
-    VotingMechanism, WaitlistConfig, WaitlistEntry,
+    EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantSafetyFlags, GrantTag,
+    GrantVersion, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice,
+    LicenseRecord, MerkleCommitment, MigrationRecord, Milestone, MilestoneDag, MilestoneNft,
+    MultisigProposal, OracleConfig, ParamRecord, PauseRecord, PaymentSplit, PaymentStream,
+    ProtocolConfig, ProtocolMetrics, ProtocolModule, PublicReview, QuadraticVoteRecord,
+    RateLimitAction, RateLimitRecord, RegistryEntry, RelayAllowance, RelayConfig, ReleaseCondition,
+    RenewalProposal, RevenueEpoch, ReviewerProfile, ReviewerRequest, Role, RoleAssignment,
+    RollingWindow, ScoringRubric, StakerEpochRecord, StructuredEvidence, SyndicateGrant,
+    SyndicateMember, TimerRecord, TokenMetric, TransferProposal, TransferableRole,
+    VerificationAttestation, VoiceCredits, VotingMechanism, WaitlistConfig, WaitlistEntry,
 };
 use crate::types::{
     Arbiter, ArbiterVote, ArbitrationCase, BondClaim, CollateralDeposit, CollateralRequirement,
@@ -66,9 +66,12 @@ impl Storage {
     }
 
     pub fn get_grant(env: &Env, grant_id: u64) -> Option<Grant> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Grant(GrantKey::Data(grant_id)))
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_grant_v(env: &Env, grant_id: u64) -> Grant {
@@ -78,15 +81,34 @@ impl Storage {
     }
 
     pub fn set_grant(env: &Env, grant_id: u64, grant: &Grant) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Grant(GrantKey::Data(grant_id)), grant);
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        env.storage().persistent().set(&key, grant);
+        Self::bump(env, &key);
     }
 
     pub fn has_grant(env: &Env, grant_id: u64) -> bool {
         env.storage()
             .persistent()
             .has(&DataKey::Grant(GrantKey::Data(grant_id)))
+    }
+
+    /// Archetype-derived safety flags for a grant (issue #912). Defaults to
+    /// all-false for grants not created via an archetype template.
+    pub fn get_grant_safety_flags(env: &Env, grant_id: u64) -> GrantSafetyFlags {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Grant(GrantKey::SafetyFlags(grant_id)))
+            .unwrap_or(GrantSafetyFlags {
+                requires_staking: false,
+                multisig_required: false,
+                insurance_opt_in: false,
+            })
+    }
+
+    pub fn set_grant_safety_flags(env: &Env, grant_id: u64, flags: &GrantSafetyFlags) {
+        let key = DataKey::Grant(GrantKey::SafetyFlags(grant_id));
+        env.storage().persistent().set(&key, flags);
+        Self::bump(env, &key);
     }
 
     /// Append a grant id to the owner's portfolio index (used by multi_grant queries).
@@ -133,12 +155,12 @@ impl Storage {
     }
 
     pub fn get_milestone(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Milestone> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Milestone(MilestoneKey::Data(
-                grant_id,
-                milestone_idx,
-            )))
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_milestone_v(env: &Env, grant_id: u64, milestone_idx: u32) -> Milestone {
@@ -148,37 +170,39 @@ impl Storage {
     }
 
     pub fn set_milestone(env: &Env, grant_id: u64, milestone_idx: u32, milestone: &Milestone) {
-        env.storage().persistent().set(
-            &DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx)),
-            milestone,
-        );
+        let key = DataKey::Milestone(MilestoneKey::Data(grant_id, milestone_idx));
+        env.storage().persistent().set(&key, milestone);
+        Self::bump(env, &key);
     }
 
     pub fn get_contributor(env: &Env, contributor: Address) -> Option<ContributorProfile> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::User(UserKey::Profile(contributor)))
+        let key = DataKey::User(UserKey::Profile(contributor));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_contributor(env: &Env, contributor: Address, profile: &ContributorProfile) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::User(UserKey::Profile(contributor)), profile);
+        let key = DataKey::User(UserKey::Profile(contributor));
+        env.storage().persistent().set(&key, profile);
+        Self::bump(env, &key);
     }
 
-    pub fn get_escrow_state(env: &Env, grant_id: u64) -> EscrowState {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Escrow(EscrowKey::State(grant_id)))
-            .unwrap_or_else(|| {
-                env.panic_with_error(ContractError::InvalidState);
-            })
+    pub fn get_escrow_state(env: &Env, grant_id: u64) -> Option<EscrowState> {
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn set_escrow_state(env: &Env, grant_id: u64, state: &EscrowState) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(EscrowKey::State(grant_id)), state);
+        let key = DataKey::Escrow(EscrowKey::State(grant_id));
+        env.storage().persistent().set(&key, state);
+        Self::bump(env, &key);
     }
 
     pub fn get_multisig_signers(env: &Env, grant_id: u64) -> Vec<Address> {
@@ -1442,6 +1466,18 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    pub fn get_syndicate_payouts(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
+        let key = DataKey::Grant(GrantKey::SyndicatePayouts(grant_id, milestone_idx));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(Vec::new(env))
+    }
+
     // ── Issue #591: Grant Specification Versioning ───────────────────────────
 
     pub fn get_grant_version(env: &Env, grant_id: u64, version: u32) -> Option<GrantVersion> {
@@ -1499,8 +1535,12 @@ impl Storage {
 
     // ── Issue #568: Grant Transfer ────────────────────────────────────────────
 
-    pub fn get_transfer_proposal(env: &Env, grant_id: u64) -> Option<TransferProposal> {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn get_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+    ) -> Option<TransferProposal> {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         let v = env.storage().persistent().get(&key);
         if v.is_some() {
             Self::bump(env, &key);
@@ -1508,16 +1548,21 @@ impl Storage {
         v
     }
 
-    pub fn set_transfer_proposal(env: &Env, grant_id: u64, proposal: &TransferProposal) {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn set_transfer_proposal(
+        env: &Env,
+        grant_id: u64,
+        role: &TransferableRole,
+        proposal: &TransferProposal,
+    ) {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         env.storage().persistent().set(&key, proposal);
         Self::bump(env, &key);
     }
 
-    pub fn remove_transfer_proposal(env: &Env, grant_id: u64) {
+    pub fn remove_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole) {
         env.storage()
             .persistent()
-            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id)));
+            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id, role.clone())));
     }
 
     // ── Issue #583: Typed Evidence Schemas ───────────────────────────────────
@@ -2231,6 +2276,21 @@ impl Storage {
         Self::bump(env, &key);
     }
 
+    // Issue #927: tracks how many waitlist promotions have happened for this
+    // grant so promote_next can enforce config.max_slots.
+    pub fn get_waitlist_promoted_count(env: &Env, grant_id: u64) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id)))
+            .unwrap_or(0)
+    }
+
+    pub fn set_waitlist_promoted_count(env: &Env, grant_id: u64, count: u32) {
+        let key = DataKey::Waitlist(WaitlistKey::PromotedCount(grant_id));
+        env.storage().persistent().set(&key, &count);
+        Self::bump(env, &key);
+    }
+
     // ── Issue #533: Bounty-Mode Grants ───────────────────────────────────────
 
     pub fn next_bounty_id(env: &Env) -> u64 {
@@ -2399,7 +2459,10 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{
+        testutils::{storage::Persistent as _, Address as _, Ledger as _},
+        Env,
+    };
 
     #[test]
     fn test_global_admin_roundtrip() {
@@ -2443,15 +2506,88 @@ mod tests {
         let env = Env::default();
         let owner = Address::generate(&env);
         let grant = crate::types::Grant {
+            id: 1,
             owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
             total_milestones: 3,
-            ..Default::default()
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
         };
         Storage::set_grant(&env, 1, &grant);
 
         let loaded = Storage::get_grant(&env, 1).unwrap();
         assert_eq!(loaded.owner, owner);
         assert_eq!(loaded.total_milestones, 3);
+    }
+
+    fn advance_ledger_sequence(env: &Env, by: u32) {
+        env.ledger().with_mut(|li| {
+            li.sequence_number += by;
+            li.max_entry_ttl = li.max_entry_ttl.max(PERSISTENT_TTL_EXTEND_TO * 2);
+        });
+    }
+
+    #[test]
+    fn test_get_and_set_grant_extend_ttl() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        advance_ledger_sequence(&env, 0);
+
+        let owner = Address::generate(&env);
+        let grant = crate::types::Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        let key = DataKey::Grant(GrantKey::Data(1));
+
+        // A write extends the TTL out to PERSISTENT_TTL_EXTEND_TO.
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &grant);
+        });
+        let ttl_after_set =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_set >= PERSISTENT_TTL_THRESHOLD);
+
+        // Let the TTL decay below the bump threshold.
+        advance_ledger_sequence(
+            &env,
+            PERSISTENT_TTL_EXTEND_TO - PERSISTENT_TTL_THRESHOLD / 2,
+        );
+        let ttl_before_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_before_get < PERSISTENT_TTL_THRESHOLD);
+
+        // A read re-extends the TTL back out.
+        let loaded = env.as_contract(&contract_id, || Storage::get_grant(&env, 1));
+        assert!(loaded.is_some());
+        let ttl_after_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_get >= PERSISTENT_TTL_THRESHOLD);
+        assert!(ttl_after_get > ttl_before_get);
     }
 
     #[test]

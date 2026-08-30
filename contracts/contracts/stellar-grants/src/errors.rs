@@ -183,8 +183,7 @@ pub enum ContractError {
     NotYetUnlocked = 142,
     LockupRevocationUnauthorized = 143,
     LockupAlreadyRevoked = 144,
-    // Params (#700)
-    DaoVoteRequired = 145,
-    // Token swap (#683): no real DEX integration exists yet
-    SwapNotImplemented = 146,
+    // Delegation (#907)
+    DelegationChainTooLong = 145,
+    BountySubmissionLimitExceeded = 146,
 }

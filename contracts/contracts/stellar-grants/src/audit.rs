@@ -50,7 +50,20 @@ pub fn log_length(env: &Env, grant_id: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Address, Env};
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env};
+
+    fn set_ledger(env: &Env, sequence: u32, timestamp: u64) {
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp,
+            protocol_version: 21,
+            sequence_number: sequence,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+    }
 
     fn setup() -> (Env, Address, u64) {
         let env = Env::default();
@@ -450,7 +463,7 @@ mod tests {
     #[test]
     fn entry_records_timestamp_and_ledger() {
         let (env, actor, grant_id) = setup();
-        env.ledger().set(1000, 1_700_000_000);
+        set_ledger(&env, 1000, 1_700_000_000);
         log(
             &env,
             grant_id,

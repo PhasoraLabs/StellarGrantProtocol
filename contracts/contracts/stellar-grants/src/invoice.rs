@@ -220,9 +220,128 @@ pub fn validate_line_items(
         subtotal = subtotal.saturating_add(item.total);
     }
 
-    // Calculate tax
-    let tax_amount = (subtotal * (tax_bps as i128)) / 10_000;
+    // Calculate tax. `basis_points_of` rejects tax_bps > 10_000 and uses
+    // checked arithmetic internally, so a malicious/oversized tax_bps
+    // returns a clean error instead of overflowing.
+    let tax_amount = crate::math::basis_points_of(subtotal, tax_bps)?;
     let total = subtotal.saturating_add(tax_amount);
 
     Ok((subtotal, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::Storage;
+    use crate::types::{Grant, GrantStatus, Milestone, MilestoneState};
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env, Map};
+
+    fn setup_grant(env: &Env, owner: Address, token: Address) -> Grant {
+        Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: String::from_str(env, "Test Grant"),
+            description: String::from_str(env, "Test"),
+            token: token.clone(),
+            status: GrantStatus::Active,
+            total_amount: 1000,
+            milestone_amount: 500,
+            reviewers: Vec::new(env),
+            total_milestones: 1,
+            milestones_paid_out: 0,
+            escrow_balance: 500,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
+
+    fn setup_milestone(env: &Env, amount: i128) -> Milestone {
+        Milestone {
+            idx: 0,
+            description: String::from_str(env, "Milestone"),
+            amount,
+            state: MilestoneState::Submitted,
+            votes: Map::new(env),
+            approvals: 0,
+            rejections: 0,
+            reasons: Map::new(env),
+            status_updated_at: env.ledger().timestamp(),
+            proof_url: None,
+            submission_timestamp: env.ledger().timestamp(),
+            deadline: None,
+            reviewer_count_snapshot: 0,
+        }
+    }
+
+    fn line_item(env: &Env, quantity: u32, unit_price: i128) -> LineItem {
+        LineItem {
+            description: String::from_str(env, "Work"),
+            quantity,
+            unit_price,
+            total: (quantity as i128) * unit_price,
+        }
+    }
+
+    #[test]
+    fn test_validate_line_items_accepts_valid_tax_bps() {
+        let env = Env::default();
+        let items = Vec::from_array(&env, [line_item(&env, 10, 100)]);
+
+        // 1000 subtotal, 2.5% tax = 25
+        let (subtotal, total) = validate_line_items(&items, 250).unwrap();
+        assert_eq!(subtotal, 1000);
+        assert_eq!(total, 1025);
+    }
+
+    #[test]
+    fn test_validate_line_items_rejects_excessive_tax_bps() {
+        let env = Env::default();
+        let items = Vec::from_array(&env, [line_item(&env, 10, 100)]);
+
+        // A malicious/oversized tax_bps must return a clean error, not
+        // silently overflow or panic.
+        let result = validate_line_items(&items, u32::MAX);
+        assert_eq!(result, Err(ContractError::InvalidInput));
+    }
+
+    #[test]
+    fn test_validate_line_items_rejects_tax_bps_just_over_limit() {
+        let env = Env::default();
+        let items = Vec::from_array(&env, [line_item(&env, 10, 100)]);
+
+        let result = validate_line_items(&items, 10_001);
+        assert_eq!(result, Err(ContractError::InvalidInput));
+    }
+
+    #[test]
+    fn test_submit_invoice_rejects_tax_bps_over_10000() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+
+            let grant = setup_grant(&env, owner.clone(), token);
+            Storage::set_grant(&env, 1, &grant);
+
+            let milestone = setup_milestone(&env, 1000);
+            Storage::set_milestone(&env, 1, 0, &milestone);
+
+            // Subtotal 1000 so the milestone-amount tolerance check never
+            // masks the tax_bps rejection.
+            let items = Vec::from_array(&env, [line_item(&env, 10, 100)]);
+            let invoice_number = String::from_str(&env, "INV-1");
+
+            let result = submit_invoice(&env, &owner, 1, 0, invoice_number, items, 10_001, None);
+            assert_eq!(result, Err(ContractError::InvalidInput));
+
+            // A malicious submission must not leave a partial invoice on record.
+            assert!(get_invoice(&env, 1, 0).is_none());
+        });
+    }
 }

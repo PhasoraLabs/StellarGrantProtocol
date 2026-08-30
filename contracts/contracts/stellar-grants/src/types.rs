@@ -316,6 +316,7 @@ pub struct InsurancePolicy {
     pub issued_at: u64,
     pub expires_at: u64,
     pub active: bool,
+    pub total_paid_out: i128,
 }
 
 #[contracttype]
@@ -554,6 +555,7 @@ pub struct ReviewerRewardPool {
     pub balance: i128,
     pub total_deposited: i128,
     pub total_paid_out: i128,
+    pub total_votes_recorded: i128,
 }
 
 // ── Issue #533: Bounty-Mode Grants ────────────────────────────────────────────
@@ -676,6 +678,7 @@ pub struct MultisigProposal {
     pub threshold: u32,
     pub total_weight_signed: u32,
     pub executed: bool,
+    pub expired: bool,
     pub expired_at: u64,
     pub created_by: Address,
     pub created_at: u64,
@@ -1325,6 +1328,15 @@ pub struct GrantTemplate {
     pub insurance_opt_in: bool,
 }
 
+/// Archetype-derived safety flags enforced on a specific grant (issue #912).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantSafetyFlags {
+    pub requires_staking: bool,
+    pub multisig_required: bool,
+    pub insurance_opt_in: bool,
+}
+
 // ── Waitlist Module ─────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -1360,6 +1372,7 @@ pub enum RateLimitAction {
     ContributorRegister = 2,
     DisputeRaise = 3,
     BountyCreate = 4,
+    WaitlistJoin = 5,
 }
 
 #[contracttype]
@@ -2121,6 +2134,7 @@ pub struct ArbitrationCase {
     pub finalized: bool,
     pub assigned_at: u64,
     pub deadline: u64,
+    pub panel_stakes: Vec<i128>, // Snapshot of each panelist's stake at finalization time
 }
 
 // ── Issue #574: Surety Bonds for High-Value Grant Delivery ───────────────────
@@ -2339,6 +2353,7 @@ pub struct DashboardView {
     pub total_reviewers: u32,
     pub recent_grant_ids: soroban_sdk::Vec<u64>,
     pub protocol_metrics: ProtocolMetrics,
+    pub truncated: bool,
 }
 
 #[contracttype]
@@ -2350,6 +2365,7 @@ pub struct ReviewerView {
     pub pending_votes: soroban_sdk::Vec<(u64, u32)>,
     pub sla_breach_count: u32,
     pub pending_rewards: i128,
+    pub truncated: bool,
 }
 
 // ── Issue #613: Conditional Release ───────────────────────────────────────

@@ -1,7 +1,7 @@
 use soroban_sdk::{Address, Env, Vec};
 
 use crate::errors::ContractError;
-use crate::storage::Storage;
+use crate::storage::{DataKey, Storage, VotingKey};
 use crate::types::{QuadraticVoteRecord, VoiceCredits};
 
 /// Allocate voice credits to a voter for a grant (called when reviewer is added).
@@ -9,16 +9,27 @@ pub fn allocate_credits(
     env: &Env,
     voter: &Address,
     grant_id: u64,
-    credits: u32,
+    additional_credits: u32,
 ) -> Result<(), ContractError> {
+    let existing = Storage::get_voice_credits(env, voter, grant_id);
     let record = VoiceCredits {
         voter: voter.clone(),
         grant_id,
-        total_credits: credits,
-        spent_credits: 0,
+        total_credits: existing.as_ref().map(|r| r.total_credits).unwrap_or(0).saturating_add(additional_credits),
+        spent_credits: existing.map(|r| r.spent_credits).unwrap_or(0),
     };
     Storage::set_voice_credits(env, &record);
     Ok(())
+}
+
+fn get_voter_cumulative_votes(env: &Env, grant_id: u64, milestone_idx: u32, voter: &Address) -> u32 {
+    let key = DataKey::Voting(VotingKey::CumulativeVotes(grant_id, milestone_idx, voter.clone()));
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn set_voter_cumulative_votes(env: &Env, grant_id: u64, milestone_idx: u32, voter: &Address, votes: u32) {
+    let key = DataKey::Voting(VotingKey::CumulativeVotes(grant_id, milestone_idx, voter.clone()));
+    env.storage().persistent().set(&key, &votes);
 }
 
 /// Compute the credit cost for casting `votes` unit votes: cost = votes^2.
@@ -32,35 +43,39 @@ pub fn cast_qv_vote(
     voter: &Address,
     grant_id: u64,
     milestone_idx: u32,
-    votes: u32,
+    additional_votes: u32,
     in_favor: bool,
 ) -> Result<QuadraticVoteRecord, ContractError> {
     voter.require_auth();
 
-    if votes == 0 {
+    if additional_votes == 0 {
         return Err(ContractError::InvalidInput);
     }
 
     let mut credits =
         Storage::get_voice_credits(env, voter, grant_id).ok_or(ContractError::VoterNotAllocated)?;
 
-    let cost = credit_cost(votes);
+    let prior_votes = get_voter_cumulative_votes(env, grant_id, milestone_idx, voter);
+    let new_total_votes = prior_votes.saturating_add(additional_votes);
+    let marginal_cost = credit_cost(new_total_votes).saturating_sub(credit_cost(prior_votes));
     let available = credits.total_credits.saturating_sub(credits.spent_credits);
-    if cost > available {
+    
+    if marginal_cost > available {
         return Err(ContractError::InsufficientVoiceCredits);
     }
 
     credits.spent_credits = credits
         .spent_credits
-        .checked_add(cost)
+        .checked_add(marginal_cost)
         .ok_or(ContractError::InvalidInput)?;
     Storage::set_voice_credits(env, &credits);
+    set_voter_cumulative_votes(env, grant_id, milestone_idx, voter, new_total_votes);
 
     let record = QuadraticVoteRecord {
         voter: voter.clone(),
         milestone_idx,
-        votes_cast: votes,
-        credits_spent: cost,
+        votes_cast: additional_votes,
+        credits_spent: marginal_cost,
         in_favor,
     };
 

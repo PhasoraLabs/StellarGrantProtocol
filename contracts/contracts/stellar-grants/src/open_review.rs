@@ -21,7 +21,10 @@ pub fn submit_review(
     comment: String,
 ) -> Result<(), ContractError> {
     reviewer.require_auth();
-
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if milestone_idx >= grant.total_milestones {
+        return Err(ContractError::MilestoneIndexOutOfBounds);
+    }
     if comment.len() > MAX_PUBLIC_REVIEW_COMMENT_LEN {
         return Err(ContractError::CommentTooLong);
     }
@@ -327,5 +330,60 @@ mod tests {
             String::from_str(&env, "Updated comment"),
         );
         assert!(update_result.is_ok());
+    }
+
+    #[test]
+    fn submit_review_rejects_nonexistent_grant() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let reviewer = Address::generate(&env);
+        let result = submit_review(
+            &env,
+            &reviewer,
+            999_999u64,
+            0u32,
+            PublicReviewSignal::Positive,
+            String::from_str(&env, "Hi"),
+        );
+        assert_eq!(result, Err(ContractError::GrantNotFound));
+    }
+
+    #[test]
+    fn submit_review_rejects_milestone_out_of_bounds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let reviewer = Address::generate(&env);
+
+        // create a grant with only 1 milestone
+        let owner = Address::generate(&env);
+        let grant = crate::types::Grant {
+            id: 1234,
+            owner: owner.clone(),
+            title: String::from_str(&env, "G"),
+            description: String::from_str(&env, "D"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: Vec::new(&env),
+            total_milestones: 1,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(&env),
+            reason: None,
+            timestamp: 0,
+            require_compliance: None,
+        };
+        Storage::set_grant(&env, 1234, &grant);
+
+        let result = submit_review(
+            &env,
+            &reviewer,
+            1234,
+            1u32,
+            PublicReviewSignal::Neutral,
+            String::from_str(&env, "oob"),
+        );
+        assert_eq!(result, Err(ContractError::MilestoneIndexOutOfBounds));
     }
 }

@@ -55,8 +55,8 @@ pub fn category_stats(env: &Env, category_id: u32) -> CategoryStats {
     let mut total_completion_ledgers = 0u64;
     let mut completion_count = 0u32;
 
-    // Iterate through tag index to find grants in this category
-    let grant_ids = Storage::get_tag_index(env, category_id);
+    // Iterate through category index to find grants in this category
+    let grant_ids = Storage::get_category_index(env, category_id);
 
     for grant_id in grant_ids.iter() {
         if let Some(grant) = Storage::get_grant(env, grant_id) {
@@ -187,7 +187,66 @@ pub fn get_window(env: &Env, metric: Symbol) -> Option<RollingWindow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Ledger;
+    use crate::types::{Grant, GrantStatus};
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::{Address, String};
+
+    fn setup_grant(env: &Env, id: u64, owner: &Address, status: GrantStatus, escrow_balance: i128) {
+        let grant = Grant {
+            id,
+            owner: owner.clone(),
+            title: String::from_str(env, "Grant"),
+            description: String::from_str(env, "Desc"),
+            token: Address::generate(env),
+            status,
+            total_amount: 1000,
+            milestone_amount: 500,
+            reviewers: Vec::new(env),
+            total_milestones: 2,
+            milestones_paid_out: 0,
+            escrow_balance,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: 0,
+            require_compliance: None,
+        };
+        Storage::set_grant(env, id, &grant);
+    }
+
+    /// #876: category_stats must read the per-category index populated by
+    /// grant_tags::tag_grant, not the freeform-tag hash index (whose keys
+    /// are 32-bit hashes that a small sequential category_id will never
+    /// match, silently leaving every category's stats at zero).
+    #[test]
+    fn test_category_stats_reads_tagged_grants() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        Storage::set_global_admin(&env, &admin);
+        let owner = Address::generate(&env);
+
+        let cat_id = crate::grant_tags::create_category(
+            &env,
+            &admin,
+            String::from_str(&env, "Infrastructure"),
+            Vec::new(&env),
+        )
+        .unwrap();
+
+        setup_grant(&env, 1, &owner, GrantStatus::Active, 1000);
+        setup_grant(&env, 2, &owner, GrantStatus::Completed, 2000);
+
+        let no_tags = Vec::new(&env);
+        crate::grant_tags::tag_grant(&env, &owner, 1, Some(cat_id), None, no_tags.clone()).unwrap();
+        crate::grant_tags::tag_grant(&env, &owner, 2, Some(cat_id), None, no_tags).unwrap();
+
+        let stats = category_stats(&env, cat_id);
+        assert_eq!(stats.total_grants, 2);
+        assert_eq!(stats.completed_grants, 1);
+        assert_eq!(stats.total_funded, 3000);
+        assert_eq!(stats.success_rate_bps, constants::BASIS_POINTS_SCALE / 2);
+    }
 
     /// #695: an old cached snapshot must trigger a rebuild once the ledger
     /// advances past the staleness threshold. The previous implementation

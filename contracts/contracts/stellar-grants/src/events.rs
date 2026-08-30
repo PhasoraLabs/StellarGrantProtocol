@@ -13,6 +13,24 @@ pub struct GrantCancelled {
 
 #[contractevent]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParamChanged {
+    pub key: soroban_sdk::Symbol,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+/// Issue #698: emitted instead of silently dropping the entry when a
+/// `grant_index` list (per-owner, per-status, per-token, or the global
+/// recency order) has already reached `MAX_INDEX_ENTRIES`.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IndexCapReached {
+    pub grant_id: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefundExecuted {
     pub grant_id: u64,
     pub funder: Address,
@@ -253,6 +271,17 @@ pub struct ClawbackCancelled {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackAllowanceAuthorized {
+    pub grant_id: u64,
+    pub contributor: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub live_until_ledger: u32,
+    pub timestamp: u64,
+}
+
 // ── Issue #135: Machine-readable receipts ───────────────────────────────────────
 
 #[contractevent]
@@ -426,6 +455,15 @@ pub struct BountyCancelled {
 pub struct Events;
 
 impl Events {
+    pub fn emit_param_changed(env: &Env, key: soroban_sdk::Symbol, set_by: Address) {
+        let event = ParamChanged {
+            key,
+            set_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
     pub fn emit_grant_cancelled(
         env: &Env,
         grant_id: u64,
@@ -438,6 +476,14 @@ impl Events {
             owner,
             reason,
             refund_amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_index_cap_reached(env: &Env, grant_id: u64) {
+        let event = IndexCapReached {
+            grant_id,
             timestamp: env.ledger().timestamp(),
         };
         event.publish(env);
@@ -793,6 +839,25 @@ impl Events {
         event.publish(env);
     }
 
+    pub fn emit_clawback_allowance_authorized(
+        env: &Env,
+        grant_id: u64,
+        contributor: Address,
+        token: Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) {
+        let event = ClawbackAllowanceAuthorized {
+            grant_id,
+            contributor,
+            token,
+            amount,
+            live_until_ledger,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
     // ── Issue #135: Machine-readable receipt emit methods ─────────────────────
 
     pub fn emit_payer_receipt(
@@ -1088,6 +1153,13 @@ pub struct MultisigExecuted {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultisigProposalExpired {
+    pub proposal_id: u32,
+    pub timestamp: u64,
+}
+
 // ── Issue #548: Compliance events ─────────────────────────────────────────────
 
 #[contractevent]
@@ -1106,6 +1178,24 @@ pub struct ComplianceRevoked {
     pub subject: Address,
     pub revoked_by: Address,
     pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifierChanged {
+    pub old_verifier: Option<Address>,
+    pub new_verifier: Address,
+}
+
+// ── Issue #923: License events ────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LicenseAttached {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub spdx_id: String,
+    pub attached_by: Address,
 }
 
 // ── Issue #566: Invoice events ────────────────────────────────────────────────
@@ -1177,6 +1267,14 @@ pub struct RoleRenounced {
 }
 
 impl Events {
+    pub fn emit_multisig_proposal_expired(env: &Env, proposal_id: u32) {
+        MultisigProposalExpired {
+            proposal_id,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(env);
+    }
+
     // ... existing methods ...
 
     // ── Invoice event emitters ────────────────────────────────────────────────
@@ -1663,6 +1761,55 @@ impl Events {
         };
         event.publish(env);
     }
+
+    // ── Issue #955: Reviewer event emitters ────────────────────────────────
+
+    pub fn emit_reviewer_added_to_grant(env: &Env, grant_id: u64, reviewer: Address) {
+        let event = ReviewerAddedToGrant {
+            grant_id,
+            reviewer,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_reviewer_removed_from_grant(env: &Env, grant_id: u64, reviewer: Address) {
+        let event = ReviewerRemovedFromGrant {
+            grant_id,
+            reviewer,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #954: Template event emitters ────────────────────────────────
+
+    pub fn emit_template_saved(env: &Env, template_id: u64, owner: Address, name: String) {
+        let event = TemplateSaved {
+            template_id,
+            owner,
+            name,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_template_deleted(env: &Env, template_id: u64, owner: Address) {
+        let event = TemplateDeleted {
+            template_id,
+            owner,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_template_used(env: &Env, template_id: u64) {
+        let event = TemplateUsed {
+            template_id,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
 }
 
 // ── Issue #587: Grant Forked event ──────────────────────────────────────────
@@ -1701,4 +1848,127 @@ pub struct WaitlistLeft {
     pub grant_id: u64,
     pub applicant: Address,
     pub timestamp: u64,
+}
+
+// ── Issue #955: Grant reviewer events ───────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerAddedToGrant {
+    pub grant_id: u64,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewerRemovedFromGrant {
+    pub grant_id: u64,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #954: Milestone template events ───────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateSaved {
+    pub template_id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateDeleted {
+    pub template_id: u64,
+    pub owner: Address,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateUsed {
+    pub template_id: u64,
+    pub timestamp: u64,
+}
+
+// ── Issue #926: Escrow multisig events ──────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigRequestCreated {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigApproved {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub approver: Address,
+    pub total_approvals: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowMultisigExecuted {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+impl Events {
+    pub fn emit_escrow_multisig_request_created(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        amount: i128,
+    ) {
+        let event = EscrowMultisigRequestCreated {
+            grant_id,
+            milestone_idx,
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_escrow_multisig_approved(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        approver: Address,
+        total_approvals: u32,
+    ) {
+        let event = EscrowMultisigApproved {
+            grant_id,
+            milestone_idx,
+            approver,
+            total_approvals,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_escrow_multisig_executed(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        amount: i128,
+    ) {
+        let event = EscrowMultisigExecuted {
+            grant_id,
+            milestone_idx,
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
 }

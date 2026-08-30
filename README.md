@@ -21,7 +21,7 @@
 
 StellarGrants Protocol is a fully decentralized grant-management system built on [Stellar (Soroban)](https://developers.stellar.org/docs/build/smart-contracts/overview). It allows grant creators to post milestone-gated bounties, contributors to submit work with on-chain proof, and a decentralized reviewer committee to vote on approvals — with automatic token payouts from on-chain escrow the moment consensus is reached.
 
-All protocol state lives on the Soroban smart contract. The Next.js frontend reads contract state directly from Stellar RPC — no centralized backend is required for any core feature.
+All protocol state lives on the Soroban smart contract. The Next.js frontend reads contract state directly from Stellar RPC — no centralized backend is required for any core feature. The contract itself is large and modular (90+ Rust modules covering everything from quadratic funding to multisig escrow — see [Smart Contract Modules](#smart-contract-modules)), and an optional Express API adds indexing, notifications, and OAuth-based accounts on top.
 
 ### Who is it for?
 
@@ -30,31 +30,90 @@ All protocol state lives on the Soroban smart contract. The Next.js frontend rea
 | **Grant Creator** | Post grants with budget, milestones, reviewer list, and token |
 | **Contributor** | Browse open grants, submit milestone work with IPFS proof |
 | **Reviewer** | Vote approve / reject on milestone submissions |
-| **Funder** | Deposit XLM or USDC into a grant's on-chain escrow |
+| **Funder** | Deposit XLM or any SEP-41 token (e.g. USDC) into a grant's on-chain escrow |
 
 ---
 
 ## Features
 
-### Core Protocol
+### Core Grant Lifecycle
 
-- **Milestone-Based Escrow** — Funds are locked in a Soroban contract and only released when a milestone is approved by the designated reviewer quorum
+- **Milestone-Based Escrow** — Funds are locked in the Soroban contract and released only when a milestone is approved by the reviewer quorum
+- **Standard & High-Security Escrow** — `grant_create_high_security` gates payout release behind an on-chain multisig signer set in addition to reviewer voting
+- **Automatic Payout** — No admin intervention: the contract executes the token transfer atomically as soon as the vote threshold is reached
+- **Grant Renewal, Transfer & Forking** — Owners can propose renewals, transfer roles (e.g. replace a reviewer), or fork an existing grant record
+- **Grant Pause & Timers** — Grants can be paused independently of the global circuit breaker, and deadline timers can auto-trigger default actions
+- **Milestone Dependencies & Templates** — Milestones can be sequenced as a DAG (later ones unlock only once earlier ones are approved) and created from reusable templates
+- **Batch Operations** — Submit multiple milestones, fund multiple grants, or add/remove a reviewer across many grants in a single transaction
+- **Multi-Token Support** — Grants can be denominated in native XLM or any SEP-41 token (e.g. USDC)
+
+### Governance, Voting & Delegation
+
 - **DAO Voting** — Every milestone requires a configurable quorum of reviewer approvals before payout is triggered
-- **Automatic Payout** — No admin intervention: the contract executes the token transfer as soon as the vote threshold is reached
-- **Dispute Resolution** — Contributors or funders can raise disputes on rejected milestones for arbitration
-- **Multi-Token Support** — Grants can be denominated in native XLM or USDC (any SEP-41 token)
-- **Contributor Reputation** — On-chain reputation scoring tracks completed milestones and participation history
+- **Vote Delegation** — Reviewers can delegate their voting power to another address for a grant, which resolves back to the delegator on vote
+- **Quadratic Voting** — Reviewers can be allocated voice credits and cast weighted quadratic votes on milestones
+- **DAO Proposals** — Protocol-level changes (e.g. admin rotation) can be routed through a passed-and-executed DAO proposal instead of direct admin action
+- **Dispute Resolution & Arbitration** — Contributors or funders can raise disputes on rejected milestones; a staked arbitration pool of arbiters votes on outcomes
+- **Public/Open Review** — Non-reviewer community members can leave public review signals and helpful-vote feedback on submissions
+
+### Funding Mechanisms
+
+- **Quadratic Funding Matching Rounds** — Admins can create QF rounds with a matching pool; contributions are matched proportionally to broad community support
+- **Crowdfunding Campaigns** — Grants can be crowdfunded with pledge tracking and refunds if a campaign doesn't reach its goal
+- **Bounty Grants** — Simpler bounty-style grants for smaller, single-submission tasks
+- **Syndication** — Multiple funders can co-lead a grant as a syndicate
+- **Referral Program** — Referral codes and on-chain rewards for bringing in new contributors/funders
+- **Waitlists & Whitelists** — Grants can gate contributor/funder participation behind a waitlist or an allow-list
+
+### Escrow, Payments & Treasury
+
+- **Streaming Payments** — Continuous per-ledger payment streams (create/withdraw/pause/resume/cancel) as an alternative to lump-sum milestone payouts
+- **Split Payments** — A milestone payout can be split across multiple recipients
+- **Protocol Fees & Treasury** — Configurable protocol fee is deducted and split across the reviewer reward pool, revenue-share pool, and treasury on every payout
+- **Performance Bonds & Collateral** — Contributors can be required to post a bond or collateral before submitting milestones, forfeited on abandonment
+- **Clawback & Lockup** — Disputed funds can be clawed back by an authorized arbiter role; tokens can be locked up/vested over time
+- **Token Swaps** — Integration point for swapping tokens (e.g. DEX routing) as part of payout flows
+
+### Reputation, Recognition & Verification
+
+- **Contributor Reputation** — On-chain reputation scoring tracks completed/rejected milestones, with configurable decay over time
+- **Soulbound Milestone NFTs** — Approved milestones mint a non-transferable NFT certificate for the contributor
+- **Badges** — Automatic badge awards (e.g. first milestone, ten milestones, fifty milestones)
+- **Reviewer Staking, Rewards & SLA** — Reviewers stake tokens to participate in a grant's quorum, earn reward-pool payouts, can be slashed for misbehavior, and are tracked against SLA response times
+- **KYC / Compliance Gating** — Grants can require a minimum verification level (via an identity oracle) before high-value payouts release
+- **Scoring Rubrics & Checklists** — Structured, weighted scoring dimensions and required-criteria checklists gate milestone approval
+
+### Protocol Operations & Safety
+
+- **Emergency Pause & Circuit Breakers** — Global admin pause plus per-module circuit breakers (e.g. pause only the Streaming module)
+- **Rate Limiting** — Per-address, per-action rate limits (grant creation, milestone submission, registration, …)
+- **Reentrancy Guards** — Critical state-changing flows are wrapped in a non-reentrant context
+- **Immutable Audit Log** — Every state-changing action on a grant is appended to an on-chain audit log
+- **Versioned Migrations** — Contract storage schema is versioned, with an admin-only migration path and full migration history
+- **Role-Based Access Control** — SuperAdmin/ProtocolAdmin roles gate sensitive operations beyond the single global-admin model
+- **Provenance & Data Export** — Append-only contribution provenance ledger, paginated data export, funder financial reports, analytics snapshots, and protocol-wide metrics
+- **Cross-Contract & Cross-Chain Hooks** — External contract hooks on protocol events, an oracle interface for price feeds, and a grant-bridge/relayer pattern for cross-chain proofs
 
 ### Frontend Application
 
-- **Wallet-First UX** — Connect Freighter, xBull, or use Stellar Passkeys (WebAuthn/Secp256r1) in one click
-- **Zero-Backend Architecture** — All state reads go directly to Stellar RPC; no custom API needed
-- **Real-Time Event Streaming** — Subscribe to contract events via Server-Sent Events for live vote counts and funding progress
-- **Multi-Step Grant Creation** — Four-step guided form with Zod validation, milestone builder, and budget configurator
+- **Wallet-First UX** — Connect Freighter or Albedo today; xBull and Stellar Passkeys (WebAuthn/Secp256r1) are wired in the UI as "coming soon"
+- **Zero-Backend Core** — All state reads can go directly to Stellar RPC; the optional API is additive, not required
+- **Real-Time Event Streaming** — Subscribe to contract events via Server-Sent Events (relayed by the optional API) or direct RPC polling for live vote counts and funding progress
+- **Multi-Step Grant Creation** — Guided form with Zod validation, milestone builder, and budget configurator
 - **IPFS Proof Submission** — Contributors upload milestone evidence to IPFS via Pinata; the CID is stored on-chain
-- **Leaderboard & Profiles** — Contributor reputation board and individual profile pages with GitHub handle and skills
+- **Leaderboard, Dashboard & Profiles** — Contributor reputation board, a per-wallet dashboard, and public contributor profile pages with GitHub handle and skills
 - **Responsive & Accessible** — Mobile-first Tailwind UI with ARIA labels, keyboard shortcuts, and dark theme
 - **Storybook Component Library** — All UI components are documented and previewed in Storybook
+
+### Optional Backend API
+
+- **Indexing & Caching** — Indexes on-chain events into PostgreSQL for fast, filterable, paginated queries the RPC alone can't do cheaply
+- **OAuth Accounts** — GitHub and Twitter/X OAuth login (via Passport), linked to a Stellar address
+- **RBAC** — A separate role/permission system (`roles`, `user_roles`) for API-level authorization
+- **Notifications & Webhooks** — Queued email notifications (SendGrid), outbound webhook subscriptions with delivery logs, and Socket.IO for live push
+- **Admin & Ops Tooling** — Admin routes, protocol analytics, rate-limit alerting (Redis-backed, falls back to in-memory), Prometheus metrics, and Swagger API docs
+- **Disputes, Appeals & Moderation** — Milestone appeals, dispute tracking, comment threads, and community/report entities layered on top of the on-chain state
+- **Reconciliation** — A reconciliation service cross-checks indexed data against on-chain state via checkpoints
 
 ---
 
@@ -79,9 +138,9 @@ StellarGrantProtocol/              ← Monorepo root
 | Package | Tech | Purpose |
 |---------|------|---------|
 | [`web/`](web/) | Next.js 16, React 19, TypeScript | Full-featured web UI — grant browsing, creation, funding, milestone voting |
-| [`contracts/`](contracts/) | Rust, Soroban SDK | Smart contract: escrow, milestones, voting, payouts, events |
-| [`client/`](client/) | TypeScript, stellar-sdk | `@stellargrants/client-sdk` — programmatic contract access for Node or bundlers |
-| [`backend/`](backend/) | Express, TypeORM, PostgreSQL | Optional middleware layer for caching, indexing, and server-side flows |
+| [`contracts/`](contracts/) | Rust, Soroban SDK | ~90-module smart contract: escrow, governance, funding, reputation, protocol safety |
+| [`client/`](client/) | TypeScript, stellar-sdk | `@stellargrants/client-sdk` — typed SDK + CLI + Vue composables for Node, bundlers, or scripts |
+| [`backend/`](backend/) | Express, TypeORM, PostgreSQL | Optional layer: indexing, OAuth accounts, notifications/webhooks, RBAC, admin & ops tooling |
 
 ---
 
@@ -95,7 +154,7 @@ StellarGrantProtocol/              ← Monorepo root
 │                                                                 │
 │  ┌──────────────────┐    ┌─────────────────┐                   │
 │  │  Next.js Frontend│    │ Wallet Extension │                   │
-│  │  (React / SSR)   │    │(Freighter/xBull) │                   │
+│  │  (React / SSR)   │    │(Freighter/Albedo)│                   │
 │  └────────┬─────────┘    └────────┬────────┘                   │
 │           │ reads contract state   │ signs transactions          │
 └───────────┼────────────────────────┼────────────────────────────┘
@@ -149,7 +208,7 @@ For a full architecture reference including rendering strategy, state management
 | Node.js | >= 20 | Use [nvm](https://github.com/nvm-sh/nvm) to manage versions |
 | npm | >= 10 | Lockfiles committed per package |
 | Rust | stable | Required for smart contracts only |
-| `wasm32-unknown-unknown` target | — | `rustup target add wasm32-unknown-unknown` |
+| `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
 | [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools) | latest | Required for contract deploy/invoke |
 | [Freighter Wallet](https://freighter.app) | latest | Browser extension for testing wallet flows |
 
@@ -194,14 +253,14 @@ npm run dev:mock      # starts both mock server (port 4000) and Next.js (port 30
 cd contracts
 
 # Add WASM target if not already added
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 
 # Format check, lint, compile check (mirrors CI)
 cargo fmt --all -- --check
-cargo clippy --workspace --lib --target wasm32-unknown-unknown -- -D warnings
-cargo check --workspace --target wasm32-unknown-unknown
+cargo clippy --workspace --lib --target wasm32v1-none -- -D warnings
+cargo check --workspace --target wasm32v1-none
 
-# Run contract unit tests
+# Run contract unit tests (not part of CI, but run locally before opening a PR)
 cargo test
 
 # Build WASM binary
@@ -269,50 +328,62 @@ docker compose up    # Postgres + API
 
 ### Frontend (`web/.env.local`)
 
-Create this file from the template — **never commit it**.
+Copy `web/.env.local.example` to `web/.env.local` and fill in the values — **never commit it**.
 
 ```env
-# ── Stellar Network ─────────────────────────────────────────────
+# ── Stellar Network ───────────────────────────────────────────────────────────
 NEXT_PUBLIC_STELLAR_NETWORK=testnet
-# Options: testnet | mainnet | futurenet
-
-NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-# Mainnet: https://soroban.stellar.org
-
-NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-# Mainnet: Public Global Stellar Network ; September 2015
-
+NEXT_PUBLIC_CONTRACT_ID=
 NEXT_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
-# Mainnet: https://horizon.stellar.org
+NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+NEXT_PUBLIC_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 
-# ── Contract ────────────────────────────────────────────────────
-NEXT_PUBLIC_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# Your deployed StellarGrants contract address
-
-# ── Token Addresses ─────────────────────────────────────────────
-NEXT_PUBLIC_NATIVE_TOKEN=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
-NEXT_PUBLIC_USDC_TOKEN=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
-
-# ── IPFS (Pinata) — for milestone proof uploads ─────────────────
-NEXT_PUBLIC_IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs
-PINATA_API_KEY=your_pinata_api_key          # server-only
-PINATA_SECRET_KEY=your_pinata_secret_key    # server-only
-
-# ── Optional API Backend ─────────────────────────────────────────
+# ── Backend API ───────────────────────────────────────────────────────────────
 NEXT_PUBLIC_API_URL=http://localhost:4000
 
-# ── Analytics (optional) ─────────────────────────────────────────
-NEXT_PUBLIC_POSTHOG_KEY=
-NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+# ── IPFS / Pinata ─────────────────────────────────────────────────────────────
+# JWT from https://app.pinata.cloud/keys
+# If omitted, useIPFS falls back to mock mode (no real upload, no crash).
+NEXT_PUBLIC_PINATA_JWT=
 ```
 
-> **Security**: Variables prefixed `NEXT_PUBLIC_` are bundled into the client. Never prefix secrets (API keys, private keys) with `NEXT_PUBLIC_`.
+> **Security**: Variables prefixed `NEXT_PUBLIC_` are bundled into the client. Never prefix secrets with `NEXT_PUBLIC_`.
 
 ### API (`backend/.env`)
 
+Copy `backend/.env.example` to `backend/.env` and fill in the values.
+
 ```env
+# ── Server ────────────────────────────────────────────────────────────────────
 PORT=4000
-DATABASE_URL=postgres://user:password@localhost:5432/stellargrant
+NODE_ENV=development
+
+# ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/stellargrant
+
+# ── Stellar / Soroban ─────────────────────────────────────────────────────────
+USE_MOCK_SOROBAN=true          # true = in-process mock client for local dev/tests
+RPC_URL=https://soroban-testnet.stellar.org
+CONTRACT_ID=                   # deployed StellarGrants contract address (C...)
+NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+ADMIN_ADDRESSES=               # comma-separated Stellar addresses with admin access
+
+# ── Redis (optional — falls back to in-memory rate limiting when absent) ──────
+REDIS_URL=
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+METRICS_ALLOWED_IPS=
+METRICS_BASIC_AUTH_USER=
+METRICS_BASIC_AUTH_PASSWORD=
+
+# ── SendGrid (email notifications) ─────────────────────────────────────────────
+SENDGRID_API_KEY=
+
+# ── IPFS / Pinata ─────────────────────────────────────────────────────────────
+PINATA_JWT=
+PINATA_GATEWAY=https://gateway.pinata.cloud
 ```
 
 ---
@@ -324,26 +395,35 @@ DATABASE_URL=postgres://user:password@localhost:5432/stellargrant
 The primary user-facing application. Key sub-directories:
 
 ```
-app/                 Next.js App Router — pages and API routes
+app/                 Next.js App Router — pages and route handlers (see Pages & Routes)
 components/          React components (UI primitives + domain-specific)
   ui/                shadcn/ui base components (Button, Card, Dialog …)
   grants/            Grant cards, creation form, funding progress
   milestones/        Milestone list, proof submission, vote panel
-  wallet/            Wallet connect modal, wallet guard
+  wallet/            Wallet connect modal, wallet guard, wallet info/address
+  contributors/      Contributor profile components
   leaderboard/       Contributor reputation table
   dispute/           Dispute submission and status
+  settings/          User preference components
+  landing/           Landing page sections
   layout/            Header, footer, sidebar, notification bell
 hooks/               TanStack Query + Zustand powered custom hooks
 lib/
   stellar/           Stellar SDK wrappers (RPC client, contract calls, event streaming)
   store/             Zustand stores (wallet session)
-  wallets/           Adapter pattern — Freighter, Albedo, xBull
+  wallets/           Adapter pattern — FreighterAdapter, AlbedoAdapter (xBull/Passkey UI stubs)
   schemas/           Zod validation schemas for forms and API responses
   ipfs/              Pinata upload helpers
+  search/            Grant search helpers
+  tokens/            Token metadata / balance helpers
+  config/            Runtime env/config accessors
+  errors/            Typed error helpers
+  utils/             Misc utilities
 types/               Shared TypeScript interfaces (Grant, Milestone, Contributor …)
 tests/               Vitest unit and component tests
 e2e/                 Playwright end-to-end tests
 stories/             Storybook component stories
+mock-server/         Standalone mock API used by `npm run dev:mock`
 ```
 
 **Available Scripts**
@@ -364,28 +444,61 @@ stories/             Storybook component stories
 
 ### `contracts/` — Soroban Contracts
 
-Rust contracts compiled to WASM and deployed to Stellar. Core contract entry points:
+A single Rust crate (`contracts/contracts/stellar-grants`) compiled to WASM and deployed to Stellar, organized as ~90 internal modules under `src/`. Core entry points contributors touch most:
 
 | Function | Description |
 |----------|-------------|
-| `grant_create` | Create a new grant with owner, title, budget, milestones, reviewer list |
+| `grant_create` / `grant_create_high_security` | Create a new grant (standard escrow, or gated behind an additional multisig signer set) |
 | `grant_fund` | Deposit tokens into the grant's escrow |
-| `milestone_submit` | Submit proof of work for a milestone (IPFS CID + notes) |
-| `milestone_vote` | Reviewer casts approve/reject vote; triggers payout when quorum reached |
-| `dispute_raise` | Open a dispute on a rejected milestone |
-| `contributor_register` | Register a contributor's GitHub handle and skills |
+| `milestone_submit` / `milestone_submit_batch` | Submit proof of work for one or more milestones (proof URL + description) |
+| `milestone_vote` | Reviewer (or delegate) casts approve/reject vote; triggers payout when quorum reached |
+| `milestone_reject` | Reviewer rejects a milestone with a reason |
+| `cancel_grant` / `grant_complete` | Cancel a grant (refunding escrow per the configured refund policy) or finalize completion |
+| `contributor_register` | Register a contributor's profile (name, bio, skills, GitHub URL) |
+
+See [Smart Contract Modules](#smart-contract-modules) below for the full module map — grant lifecycle, governance/voting, funding mechanisms, escrow/payments, reputation, and protocol operations are each implemented as a separate module (e.g. `delegate.rs`, `refund.rs`, `snapshot.rs`, `matching.rs`, `streaming.rs`, `quadratic.rs`).
+
+#### Smart Contract Modules
+
+`src/` groups into roughly these areas (each a separate `.rs` module):
+
+| Area | Modules |
+|------|---------|
+| **Grant lifecycle** | `factory`, `grant_pause`, `grant_timer`, `grant_renewal`, `grant_transfer`, `grant_tags`, `grant_index`, `fork`, `milestone_deps`, `milestone_extension`, `milestone_template`, `batch`, `batch_read` |
+| **Governance & voting** | `dao`, `governance`, `quadratic`, `delegate`, `open_review`, `arbitration_pool`, `dispute` |
+| **Funding mechanisms** | `matching` (quadratic funding), `crowdfund`, `bounty`, `syndication`, `referral`, `waitlist`, `whitelist` |
+| **Escrow & payments** | `escrow`, `escrow_multisig`, `multisig`, `streaming`, `split_payment`, `fees`, `treasury`, `clawback`, `lockup`, `performance_bond`, `collateral`, `token_swap`, `refund`, `revenue_share` |
+| **Reputation & verification** | `reputation`, `reputation_decay`, `badge`, `milestone_nft`, `scoring`, `checklist`, `evidence_schema`, `reviewer_pool`, `reviewer_reward`, `reviewer_sla`, `contributor_verification`, `compliance`, `auto_approve` |
+| **Protocol operations & safety** | `access_control`, `emergency`, `circuit_breaker`, `rate_limit`, `reentrancy`, `audit`, `migration`, `versioning`, `config`, `params` |
+| **Data, interop & reporting** | `data_export`, `analytics`, `metrics`, `provenance`, `funder_report`, `portfolio`, `merkle`, `cross_contract`, `grant_bridge`, `relay`, `registry`, `pagination`, `notification`, `hooks`, `invoice`, `license`, `insurance`, `oracle` |
+
+For a deeper dive into individual modules, see [contracts/README.md](contracts/README.md), [contracts/THREAT_MODEL.md](contracts/THREAT_MODEL.md), and [contracts/BENCHMARK.md](contracts/BENCHMARK.md).
 
 ### `client/` — TypeScript SDK
 
-`@stellargrants/client-sdk` provides a typed interface to the Soroban contract from Node.js or any bundler. Useful for scripts, bots, and integration tests.
+`@stellargrants/client-sdk` provides a typed interface to the Soroban contract from Node.js, any bundler, or the command line. Useful for scripts, bots, and integration tests.
+
+- **`StellarGrantsSDK`** — the core typed client (`src/StellarGrantsSDK.ts`)
+- **CLI** — ships a `sg` binary (`src/cli.ts`) for scripting contract calls from the terminal
+- **Vue composables** (optional peer dep on `vue`) — `useGrant`, `useGrants`, `useGrantBalances`, `useGrantHistory`, `useStellarGrants`, `useTransactionHistory`
+- **Wallet adapters** — `FreighterAdapter`, `AlbedoAdapter`, `XBullAdapter`, `WalletConnectAdapter`
+- **Batch builder, transaction tracker/retry, optimistic state manager** — helpers for building batched calls and tracking in-flight transactions
+- **Typed errors** — `StellarGrantsError`, `TransactionFailedError`, `TransactionTimeoutError`, `MetadataValidationError` with parsed Soroban error codes
 
 ```bash
 cd client && npm ci && npm run build
 ```
 
-### `backend/` — Express Caching API
+### `backend/` — Express API
 
-Optional Express + TypeORM service that indexes on-chain events into PostgreSQL for faster queries and server-side validation. Not required for core frontend functionality.
+Optional Express + TypeORM + PostgreSQL service. **Not required** for core read/write flows (the frontend can talk to Stellar RPC directly) — it adds:
+
+- **Indexing/caching** of on-chain events for fast, paginated, filterable queries (`routes/grants.ts`, `milestone-*`, `disputes.ts`, `analytics.ts`, `search.ts`, `stats.ts`)
+- **OAuth accounts** — GitHub/Twitter login via Passport, linked to a Stellar address (`routes/auth.ts`)
+- **Notifications & webhooks** — SendGrid email queue, outbound webhook subscriptions + delivery logs, Socket.IO push (`services/notification-*`, `services/webhook-dispatcher.ts`, `routes/webhooks.ts`)
+- **RBAC, admin & moderation** — roles/permissions, admin routes, milestone appeals, community/report entities (`routes/admin.ts`, `routes/roles.ts`, `routes/milestone-appeals.ts`, `routes/communities.ts`)
+- **Ops** — Redis-backed rate-limit alerting (falls back to in-memory), Prometheus metrics, Swagger docs, a reconciliation service that cross-checks indexed data against on-chain state
+- **`USE_MOCK_SOROBAN`** — an in-process mock Soroban client for local dev and tests without a live RPC dependency
 
 ---
 
@@ -397,7 +510,8 @@ Optional Express + TypeORM service that indexes on-chain events into PostgreSQL 
 | `/grants` | Paginated, filterable grant listing with status / token / sort filters |
 | `/grants/[id]` | Grant detail — funding progress, milestone timeline, reviewer panel, event history |
 | `/grants/create` | Multi-step grant creation form (wallet required) |
-| `/grants/[id]/fund` | Fund a grant — deposit XLM or USDC into escrow |
+| `/grants/[id]/fund` | Fund a grant — deposit XLM or any supported SEP-41 token into escrow |
+| `/grants/[id]/history` | Grant activity/audit history |
 | `/grants/[id]/milestones` | Milestone overview for a grant |
 | `/grants/[id]/milestones/[idx]` | Single milestone — proof viewer, vote panel, payout status |
 | `/dashboard` | User dashboard — my grants, activity feed, pending actions |
@@ -421,7 +535,7 @@ npm test             # watch mode
 npm run test:run     # single pass with coverage
 ```
 
-Tests live in `tests/` and co-located `*.test.tsx` files.
+Tests live in `tests/` and co-located `*.test.tsx` files. Note: Vitest and Playwright are **not** currently run in CI (the `frontend` job only lints and builds) — run them locally before opening a PR.
 
 ### End-to-End Tests (Playwright)
 
@@ -440,6 +554,8 @@ cd contracts
 cargo test
 ```
 
+Note: contract tests are **not** part of CI (CI only runs `fmt`/`clippy`/`check`) — run them locally before opening a PR.
+
 ### API Tests
 
 ```bash
@@ -454,16 +570,17 @@ npm run test:integration   # integration tests
 
 GitHub Actions workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-Runs on every pull request and push to `main`:
+`contracts`, `backend`, `frontend`, and `client-sdk` run on every push to `main` and every pull request; `client-docs` runs only when a GitHub Release is published.
 
 | Job | Steps |
 |-----|-------|
-| **contracts** | `cargo fmt` check, `cargo clippy` (WASM, deny warnings), `cargo check` |
-| **frontend** | `npm ci`, `npm run lint`, `npm run build` |
-| **api** | `npm ci`, migrations, integration + E2E tests |
-| **client-sdk** | `npm ci`, `npm run build`, Jest tests |
+| **contracts** | `cargo fmt --check`, `cargo clippy --target wasm32v1-none` (deny warnings), `cargo check --target wasm32v1-none` — note: does **not** run `cargo test` |
+| **backend** | `npm install` against a real Postgres 15 service container, run migrations, `test:e2e`, `test:integration`, `test:coverage` |
+| **frontend** | `npm install`, `npm run lint`, `npm run build` — note: does **not** run Vitest or Playwright |
+| **client-sdk** | `npm install`, `npm run test` (Jest) |
+| **client-docs** | On release only: build and publish TypeDoc API docs to GitHub Pages |
 
-Always run `npm run lint`, `npm run test:run`, and `npm run build` locally before opening a PR.
+Because CI doesn't cover contract/frontend tests, always run `cargo test` (contracts), `npm run test:run` and `npm run test:e2e` (web), and `npm run lint` / `npm run build` locally before opening a PR.
 
 ---
 

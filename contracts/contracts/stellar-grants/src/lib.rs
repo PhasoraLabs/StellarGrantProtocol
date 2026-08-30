@@ -40,6 +40,7 @@ mod cross_contract;
 mod crowdfund;
 mod dao;
 mod data_export;
+mod delegate;
 mod dispute;
 mod emergency;
 mod errors;
@@ -48,7 +49,7 @@ mod escrow_multisig;
 mod events;
 mod evidence_schema;
 mod factory;
-mod fees;
+pub mod fees;
 mod fork;
 mod funder_report;
 mod governance;
@@ -88,6 +89,7 @@ mod quadratic;
 mod rate_limit;
 mod reentrancy;
 mod referral;
+mod refund;
 mod registry;
 mod relay;
 mod reputation;
@@ -97,6 +99,7 @@ mod reviewer_pool;
 mod reviewer_reward;
 pub mod reviewer_sla;
 mod scoring;
+mod snapshot;
 mod split_payment;
 mod storage;
 mod streaming;
@@ -123,30 +126,31 @@ pub use types::{
     ComplianceStatus, ConditionResult, ContractVersion, ContributionType, ContributorPortfolio,
     ContributorRegisterPayload, CriterionStatus, CrossChainProof, CrowdfundCampaign,
     CrowdfundPledge, CrowdfundStatus, DaoProposal, DaoProposalStatus, DaoProposalType,
-    DashboardView, DecayConfig, DecayType, DexConfig, Dispute, DisputeStatus, EscrowAccount,
-    EscrowLifecycleState, EscrowMode, EscrowReleaseApproval, EscrowReleaseRequest, EscrowState,
-    EvidenceField, EvidenceFieldType, EvidenceSchema, ExportGrant, ExportGrantPage,
-    ExportMilestone, ExportMilestonePage, ExtensionRequest, ExtensionStatus, FeeRecord, ForkRecord,
-    FunderGrantSummary, FunderLedger, FunderReport, FunderTokenSummary, Grant, GrantArchetype,
-    GrantCard, GrantCategory, GrantDetailView, GrantFund, GrantPortfolio, GrantStatus,
-    GrantSummary, GrantTag, GrantTemplate, GrantVersion, HookCallResult, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, InvoiceStatus, IpRights,
-    LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus, MatchingAllocation,
-    MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof, MigrationRecord, Milestone,
-    MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState, MilestoneSubmission,
-    MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult, MultisigProposal,
-    MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord, ParamType,
-    ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond, PortfolioFilter,
-    PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule, ProvenanceRecord,
-    PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction, ReferralCode,
-    ReferralRecord, ReferralReward, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig,
-    RelayDispatch, RelayRecord, RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus,
-    ReputationTier, RevenueEpoch, ReviewParticipation, ReviewerAvailability, ReviewerProfile,
-    ReviewerRequest, ReviewerRequestStatus, ReviewerRewardPool, ReviewerRewardRecord, ReviewerView,
-    Role, RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric,
-    ScoringWeight, SignatureStatus, SplitRecipient, StakerEpochRecord, StructuredEvidence,
-    Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant, SyndicateMember,
-    SyndicateStatus, TemplateCategory, TimerRecord, TimerTriggerType, TokenMetric,
+    DashboardView, DecayConfig, DecayType, Delegation, DelegationScope, DexConfig, Dispute,
+    DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode, EscrowReleaseApproval,
+    EscrowReleaseRequest, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema,
+    ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage, ExtensionRequest,
+    ExtensionStatus, FeeRecord, ForkRecord, FunderGrantSummary, FunderLedger, FunderReport,
+    FunderTokenSummary, Grant, GrantArchetype, GrantCard, GrantCategory, GrantDetailView,
+    GrantFund, GrantPortfolio, GrantStatus, GrantSummary, GrantTag, GrantTemplate, GrantVersion,
+    HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice,
+    InvoiceStatus, IpRights, LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus,
+    MatchingAllocation, MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof,
+    MigrationRecord, Milestone, MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState,
+    MilestoneSubmission, MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult,
+    MultisigProposal, MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord,
+    ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond,
+    PortfolioFilter, PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule,
+    ProvenanceRecord, PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction,
+    ReferralCode, ReferralRecord, ReferralReward, RefundCalculation, RefundPolicy,
+    RefundPolicyType, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig, RelayDispatch,
+    RelayRecord, RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus, ReputationTier,
+    RevenueEpoch, ReviewParticipation, ReviewerAvailability, ReviewerProfile, ReviewerRequest,
+    ReviewerRequestStatus, ReviewerRewardPool, ReviewerRewardRecord, ReviewerView, Role,
+    RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight,
+    SignatureStatus, SnapshotTrigger, SplitRecipient, StakerEpochRecord, StateSnapshot,
+    StructuredEvidence, Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant,
+    SyndicateMember, SyndicateStatus, TemplateCategory, TimerRecord, TimerTriggerType, TokenMetric,
     TransferProposal, TransferableRole, TreasurySnapshot, VerificationAttestation,
     VerificationLevel, VerificationStatus, VoiceCredits, VotingMechanism, WaitlistConfig,
     WaitlistEntry, WhitelistEntry, WhitelistMode, WhitelistScope, WithdrawStreamPayload,
@@ -360,6 +364,7 @@ impl StellarGrantsContract {
                 let forfeit_reason = String::from_str(&env, "grant cancelled by owner");
                 let _ = collateral::forfeit(
                     &env,
+                    &caller,
                     grant_id,
                     &grant.owner,
                     req.forfeit_on_abandon_bps,
@@ -369,7 +374,15 @@ impl StellarGrantsContract {
 
             let total_refundable = grant.escrow_balance;
             if total_refundable > 0 {
-                escrow::refund_all(&env, grant_id)?;
+                // Issue #727: use the configured refund policy when the owner
+                // has explicitly set one, otherwise fall back to the existing
+                // flat refund-all behavior. Exactly one of these runs, so
+                // there's no double-payout.
+                if refund::has_policy(&env, grant_id) {
+                    refund::execute_refund(&env, grant_id, &caller)?;
+                } else {
+                    escrow::refund_all(&env, grant_id)?;
+                }
             }
 
             let mut grant =
@@ -415,7 +428,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id);
+            let mut escrow_state =
+                Storage::get_escrow_state(&env, grant_id).ok_or(ContractError::InvalidState)?;
             if escrow_state.lifecycle == EscrowLifecycleState::Released {
                 return Err(ContractError::GrantAlreadyReleased);
             }
@@ -443,7 +457,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id);
+            let mut escrow_state =
+                Storage::get_escrow_state(&env, grant_id).ok_or(ContractError::InvalidState)?;
             if escrow_state.mode != EscrowMode::HighSecurity {
                 return Err(ContractError::InvalidState);
             }
@@ -484,7 +499,13 @@ impl StellarGrantsContract {
         let mut approved_count = 0;
         for milestone_idx in 0..total_milestones {
             if let Some(milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-                if milestone.state != MilestoneState::Approved {
+                // A milestone may already be `Paid` here: `finalize_grant_release`
+                // pays out milestones before this function is called a second
+                // time from `execute_escrow_release` once a multisig-gated
+                // release actually executes (issue #696).
+                if milestone.state != MilestoneState::Approved
+                    && milestone.state != MilestoneState::Paid
+                {
                     return Err(ContractError::NotAllMilestonesApproved);
                 }
                 total_paid += milestone.amount;
@@ -510,6 +531,17 @@ impl StellarGrantsContract {
         // Compliance gate: if the grant requires KYC, check the owner/contributor.
         if let Some(required_level) = grant.require_compliance {
             compliance::require_compliant_u32(env, &grant.owner, required_level)?;
+        }
+
+        // Issue #912: enforce archetype-derived safety flags that were
+        // previously recorded but never checked anywhere.
+        let safety_flags = Storage::get_grant_safety_flags(env, grant_id);
+        if safety_flags.insurance_opt_in {
+            let policy =
+                insurance::get_policy(env, grant_id).ok_or(ContractError::PolicyNotFound)?;
+            if !policy.active {
+                return Err(ContractError::PolicyInactive);
+            }
         }
 
         let total_paid =
@@ -555,7 +587,11 @@ impl StellarGrantsContract {
             }
             if owner_amount > 0 {
                 let config: ProtocolConfig = config::get_config(env);
-                if config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold {
+                // Issue #912: an archetype with `multisig_required: true` must
+                // have its releases multisig-gated regardless of amount.
+                let multisig_gated = safety_flags.multisig_required
+                    || (config.multisig_threshold > 0 && owner_amount >= config.multisig_threshold);
+                if multisig_gated {
                     // Issue #821: a multisig request only reserves the payout;
                     // it must not be treated as a completed release until a
                     // signer actually executes it via `execute_escrow_release`.
@@ -584,12 +620,18 @@ impl StellarGrantsContract {
         if multisig_pending {
             // Grant stays Active with escrow untouched (beyond what was
             // already paid out above) until execute_escrow_release runs.
-            let mut escrow_state = Storage::get_escrow_state(env, grant_id);
+            let mut escrow_state =
+                Storage::get_escrow_state(env, grant_id).ok_or(ContractError::InvalidState)?;
             escrow_state.lifecycle = EscrowLifecycleState::AwaitingMultisig;
             escrow_state.quorum_ready = true;
             Storage::set_escrow_state(env, grant_id, &escrow_state);
             return Ok(());
         }
+
+        // All milestone payouts above have actually left escrow at this
+        // point (Soroban invocations are atomic, so any failure before here
+        // would have reverted these writes) — safe to transition to Paid.
+        governance::mark_milestones_paid(env, grant_id, grant.total_milestones);
 
         Self::complete_grant(env, grant_id, total_paid, remaining_balance)
     }
@@ -614,7 +656,8 @@ impl StellarGrantsContract {
         // Issue #817: keep the data_export staleness/filter API fresh.
         data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
 
-        let mut escrow_state = Storage::get_escrow_state(env, grant_id);
+        let mut escrow_state =
+            Storage::get_escrow_state(env, grant_id).ok_or(ContractError::InvalidState)?;
         escrow_state.lifecycle = EscrowLifecycleState::Released;
         escrow_state.quorum_ready = true;
         Storage::set_escrow_state(env, grant_id, &escrow_state);
@@ -626,7 +669,9 @@ impl StellarGrantsContract {
         performance_bond::release_bond(env, grant_id)?;
 
         // Issue #564: release any collateral deposit back to the contributor.
-        let _ = collateral::release(env, grant_id, &grant.owner);
+        let admin = Storage::get_global_admin(env);
+        let caller = admin.as_ref().unwrap_or(&grant.owner).clone();
+        let _ = collateral::release(env, &caller, grant_id, &grant.owner);
 
         Events::emit_grant_completed(env, grant_id, total_paid, remaining_balance);
         // Emit PayeeReceipt for grant completion as final summary snapshot
@@ -661,6 +706,20 @@ impl StellarGrantsContract {
         let mut grant = Storage::get_grant_v(&env, grant_id);
         let mut milestone = Storage::get_milestone_v(&env, grant_id, milestone_idx);
 
+        // Issue #724: `reviewer` may be a delegate voting on behalf of the real
+        // reviewer. Resolve back to the delegator and burn one use of the
+        // delegation; if `reviewer` is already a registered reviewer, this is a
+        // no-op and behavior is unchanged.
+        let effective_reviewer = if grant.reviewers.contains(reviewer.clone()) {
+            reviewer.clone()
+        } else {
+            let delegator = delegate::resolve_delegator(&env, &reviewer, grant_id);
+            if delegator != reviewer {
+                delegate::consume_delegation_for_vote(&env, &delegator, &reviewer, grant_id)?;
+            }
+            delegator
+        };
+
         if approve && !checklist::all_required_approved(&env, grant_id, milestone_idx) {
             return Err(ContractError::RequiredCriteriaNotMet);
         }
@@ -669,7 +728,7 @@ impl StellarGrantsContract {
             &env,
             &mut grant,
             &mut milestone,
-            &reviewer,
+            &effective_reviewer,
             approve,
             feedback,
         )?;
@@ -681,7 +740,7 @@ impl StellarGrantsContract {
         provenance::record(
             &env,
             ContributionType::MilestoneReviewed,
-            &reviewer,
+            &effective_reviewer,
             grant_id,
             Some(milestone_idx),
             None,
@@ -689,9 +748,29 @@ impl StellarGrantsContract {
             soroban_sdk::Vec::new(&env),
         );
 
-        reviewer_reward::record_participation(&env, &reviewer, grant_id, milestone_idx, false);
+        reviewer_reward::record_participation(
+            &env,
+            &effective_reviewer,
+            grant_id,
+            milestone_idx,
+            false,
+        );
 
         if result.quorum_reached {
+            // Issue #699: notify subscribers watching this grant of the vote
+            // outcome, regardless of which branch it took below.
+            let notif_event = if result.approved {
+                NotificationEvent::MilestoneApproved
+            } else {
+                NotificationEvent::MilestoneRejected
+            };
+            notification::emit_notification(
+                &env,
+                notif_event,
+                &SubscriptionScope::PerGrant(grant_id),
+                reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
+            );
+
             if result.approved {
                 Self::update_contributor_reputation(
                     &env,
@@ -704,7 +783,7 @@ impl StellarGrantsContract {
                     &env,
                     grant_id,
                     AuditAction::MilestoneApproved,
-                    &reviewer,
+                    &effective_reviewer,
                     Some(milestone_idx),
                     Some(milestone.amount),
                 );
@@ -758,7 +837,7 @@ impl StellarGrantsContract {
                     &env,
                     grant_id,
                     AuditAction::MilestoneRejected,
-                    &reviewer,
+                    &effective_reviewer,
                     Some(milestone_idx),
                     None,
                 );
@@ -1487,16 +1566,22 @@ impl StellarGrantsContract {
         sender: Address,
         stream_id: u32,
     ) -> Result<(i128, i128), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::cancel_stream(&env, &sender, stream_id)
     }
 
     /// Pause an active stream.
     pub fn pause_stream(env: Env, sender: Address, stream_id: u32) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::pause_stream(&env, &sender, stream_id)
     }
 
     /// Resume a paused stream.
     pub fn resume_stream(env: Env, sender: Address, stream_id: u32) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Streaming)?;
         streaming::resume_stream(&env, &sender, stream_id)
     }
 
@@ -1619,6 +1704,15 @@ impl StellarGrantsContract {
     /// Return a claim by id.
     pub fn get_insurance_claim(env: Env, claim_id: u32) -> Result<InsuranceClaim, ContractError> {
         insurance::get_claim(&env, claim_id)
+    }
+
+    /// Deactivate an active insurance policy for a grant. Admin only.
+    pub fn insurance_deactivate_policy(
+        env: Env,
+        admin: Address,
+        grant_id: u64,
+    ) -> Result<(), ContractError> {
+        insurance::deactivate_policy(&env, &admin, grant_id)
     }
 
     // ── External Callback Hooks (#539) ──────────────────────────────────────
@@ -1788,6 +1882,8 @@ impl StellarGrantsContract {
         emergency::require_not_paused(&env)?;
         let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
         dispute::raise_dispute(&env, &grant, milestone_idx, &caller, reason)?;
+        // Issue #726: capture a tamper-evident state snapshot when a dispute is raised.
+        snapshot::capture(&env, grant_id, SnapshotTrigger::DisputeRaised, &caller)?;
         metrics::increment(&env, MetricField::DisputesRaised, 1);
         if hooks::has_hooks(&env, HookEvent::DisputeRaised) {
             let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
@@ -1854,6 +1950,7 @@ impl StellarGrantsContract {
                 let reason = String::from_str(&env, "dispute lost");
                 let _ = collateral::forfeit(
                     &env,
+                    &caller,
                     grant_id,
                     &grant.owner,
                     req.forfeit_on_dispute_loss_bps,
@@ -1892,7 +1989,132 @@ impl StellarGrantsContract {
         Storage::get_dispute(&env, grant_id, milestone_idx)
     }
 
+    // ── Reviewer Vote Delegation (#724) ───────────────────────────────────────
+
+    /// Delegate a reviewer's vote (globally or for a single grant) to another address.
+    pub fn delegate_vote(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+        scope: DelegationScope,
+        expires_at: Option<u64>,
+        max_uses: Option<u32>,
+    ) -> Result<(), ContractError> {
+        delegate::delegate_vote(&env, &delegator, &delegate, scope, expires_at, max_uses)
+    }
+
+    /// Revoke a previously created vote delegation.
+    pub fn revoke_delegation(
+        env: Env,
+        delegator: Address,
+        scope: DelegationScope,
+    ) -> Result<(), ContractError> {
+        delegate::revoke_delegation(&env, &delegator, &scope)
+    }
+
+    /// Fetch an active delegation for a delegator/scope pair, if one exists.
+    pub fn get_delegation(
+        env: Env,
+        delegator: Address,
+        scope: DelegationScope,
+    ) -> Option<Delegation> {
+        delegate::get_delegation(&env, &delegator, &scope)
+    }
+
+    // ── State Snapshots for Audit/Dispute Support (#726) ──────────────────────
+
+    /// Manually capture a point-in-time state snapshot of a grant.
+    pub fn snapshot_capture(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        trigger: SnapshotTrigger,
+    ) -> Result<u32, ContractError> {
+        caller.require_auth();
+        snapshot::capture(&env, grant_id, trigger, &caller)
+    }
+
+    /// Fetch a specific state snapshot by id.
+    pub fn get_snapshot(
+        env: Env,
+        grant_id: u64,
+        snapshot_id: u32,
+    ) -> Result<StateSnapshot, ContractError> {
+        snapshot::get_snapshot(&env, grant_id, snapshot_id)
+    }
+
+    /// List all state snapshots captured for a grant.
+    pub fn list_snapshots(env: Env, grant_id: u64) -> Vec<StateSnapshot> {
+        snapshot::list_snapshots(&env, grant_id)
+    }
+
+    /// Fetch the most recent state snapshot for a grant, if any.
+    pub fn latest_snapshot(env: Env, grant_id: u64) -> Option<StateSnapshot> {
+        snapshot::latest_snapshot(&env, grant_id)
+    }
+
+    /// Diff two state snapshots and return the symbols of changed fields.
+    pub fn diff_snapshots(
+        env: Env,
+        grant_id: u64,
+        a_id: u32,
+        b_id: u32,
+    ) -> Vec<soroban_sdk::Symbol> {
+        snapshot::diff_snapshots(&env, grant_id, a_id, b_id)
+    }
+
+    // ── Configurable Refund Policies (#727) ───────────────────────────────────
+
+    /// Attach a refund policy to a grant. Owner-only; must be set before any
+    /// funds are escrowed (see `refund::set_policy`).
+    pub fn refund_set_policy(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        policy: RefundPolicy,
+    ) -> Result<(), ContractError> {
+        refund::set_policy(&env, &owner, grant_id, policy)
+    }
+
+    /// Fetch the refund policy configured for a grant (a default FullRefund
+    /// policy if none has been explicitly set).
+    pub fn refund_get_policy(env: Env, grant_id: u64) -> RefundPolicy {
+        refund::get_policy(&env, grant_id)
+    }
+
+    /// Preview the refund/compensation split for a grant under its configured policy.
+    pub fn refund_calculate(
+        env: Env,
+        grant_id: u64,
+        canceller: Address,
+    ) -> Result<RefundCalculation, ContractError> {
+        refund::calculate_refund(&env, grant_id, &canceller)
+    }
+
+    /// Execute the configured refund policy directly. Callable by the grant
+    /// owner or global admin (mirrors `cancel_grant`'s own authorization).
+    pub fn refund_execute(
+        env: Env,
+        grant_id: u64,
+        canceller: Address,
+    ) -> Result<RefundCalculation, ContractError> {
+        canceller.require_auth();
+        let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
+        let is_owner = grant.owner == canceller;
+        let is_admin = Storage::get_global_admin(&env) == Some(canceller.clone());
+        if !is_owner && !is_admin {
+            return Err(ContractError::Unauthorized);
+        }
+        refund::execute_refund(&env, grant_id, &canceller)
+    }
+
     // ── Clawback Mechanism Entry Points ───────────────────────────────────────
+    //
+    // Note: none of these wrappers call `.require_auth()` themselves — each
+    // delegates to a `clawback::*` function that already calls it internally.
+    // A duplicate `require_auth()` call for the same address at the same
+    // invocation depth trips Soroban's "frame is already authorized" auth
+    // error, so the check belongs in exactly one place (the module fn).
 
     pub fn clawback_initiate(
         env: Env,
@@ -1901,7 +2123,6 @@ impl StellarGrantsContract {
         milestone_idx: u32,
         reason: String,
     ) -> Result<(), ContractError> {
-        initiator.require_auth();
         clawback::initiate(&env, &initiator, grant_id, milestone_idx, reason)
     }
 
@@ -1911,7 +2132,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        approver.require_auth();
         clawback::approve(&env, &approver, grant_id, milestone_idx)
     }
 
@@ -1921,8 +2141,25 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        contributor.require_auth();
         clawback::dispute(&env, &contributor, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_authorize_pull(
+        env: Env,
+        contributor: Address,
+        grant_id: u64,
+        token: Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) -> Result<(), ContractError> {
+        clawback::authorize_pull(
+            &env,
+            &contributor,
+            grant_id,
+            &token,
+            amount,
+            live_until_ledger,
+        )
     }
 
     pub fn clawback_execute(
@@ -1931,7 +2168,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<i128, ContractError> {
-        caller.require_auth();
         clawback::execute(&env, &caller, grant_id, milestone_idx)
     }
 
@@ -1941,7 +2177,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        admin.require_auth();
         clawback::cancel(&env, &admin, grant_id, milestone_idx)
     }
 
@@ -2097,7 +2332,10 @@ impl StellarGrantsContract {
 
     pub fn cancel_bounty(env: Env, caller: Address, bounty_id: u64) -> Result<(), ContractError> {
         caller.require_auth();
-        bounty::cancel_bounty(&env, &caller, bounty_id)
+        let bounty = bounty::get_bounty(&env, bounty_id).ok_or(ContractError::BountyNotFound)?;
+        bounty::cancel_bounty(&env, &caller, bounty_id)?;
+        metrics::update_token_locked(&env, &bounty.token, -bounty.prize_amount);
+        Ok(())
     }
 
     pub fn get_bounty(env: Env, bounty_id: u64) -> Option<BountyGrant> {
@@ -2290,6 +2528,10 @@ impl StellarGrantsContract {
         reentrancy::with_non_reentrant(&env, || {
             let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
             escrow_multisig::execute_release(&env, grant_id, milestone_idx)?;
+            // The multisig-gated release just transferred funds for the
+            // milestones that were still `Approved` — transition them to
+            // `Paid` now that the payout is confirmed (issue #696).
+            governance::mark_milestones_paid(&env, grant_id, grant.total_milestones);
             let total_paid =
                 Self::compute_total_paid_if_quorum_ready(&env, grant_id, grant.total_milestones)?;
             Self::complete_grant(&env, grant_id, total_paid, 0)
@@ -2780,6 +3022,8 @@ impl StellarGrantsContract {
         amount_in: i128,
     ) -> Result<SwapResult, ContractError> {
         caller.require_auth();
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap(&env, &caller, route, amount_in)
     }
 
@@ -2795,6 +3039,7 @@ impl StellarGrantsContract {
         input_amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap_and_fund(&env, &funder, grant_id, &input_token, input_amount)
     }
 
@@ -2808,6 +3053,7 @@ impl StellarGrantsContract {
         amount: i128,
     ) -> Result<SwapResult, ContractError> {
         emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::TokenSwap)?;
         token_swap::swap_and_pay(
             &env,
             &payer,
@@ -3782,11 +4028,21 @@ impl StellarGrantsContract {
 
     pub fn record_payout_allocation(
         env: Env,
+        caller: Address,
         grant_id: u64,
         milestone_idx: u32,
         payout: i128,
     ) -> Result<(), ContractError> {
-        syndication::record_payout_allocation(&env, grant_id, milestone_idx, payout)
+        caller.require_auth();
+        syndication::record_payout_allocation(&env, &caller, grant_id, milestone_idx, payout)
+    }
+
+    pub fn syndicate_payout_allocation(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
+        syndication::get_payout_allocation(&env, grant_id, milestone_idx)
     }
 
     pub fn withdraw_syndicate(
@@ -4185,21 +4441,23 @@ impl StellarGrantsContract {
     /// Release collateral back to contributor on grant completion.
     pub fn collateral_release(
         env: Env,
+        caller: Address,
         grant_id: u64,
         contributor: Address,
     ) -> Result<i128, ContractError> {
-        collateral::release(&env, grant_id, &contributor)
+        collateral::release(&env, &caller, grant_id, &contributor)
     }
 
     /// Forfeit a portion of collateral (called by dispute or abandon logic).
     pub fn collateral_forfeit(
         env: Env,
+        caller: Address,
         grant_id: u64,
         contributor: Address,
         forfeit_bps: u32,
         reason: String,
     ) -> Result<i128, ContractError> {
-        collateral::forfeit(&env, grant_id, &contributor, forfeit_bps, reason)
+        collateral::forfeit(&env, &caller, grant_id, &contributor, forfeit_bps, reason)
     }
 
     /// Return collateral deposit for a contributor.
@@ -4427,8 +4685,12 @@ impl StellarGrantsContract {
 
     /// Promote the top-ranked entry. Called when a slot opens.
     /// Returns the promoted address if successful, None if waitlist is empty.
-    pub fn promote_from_waitlist(env: Env, grant_id: u64) -> Option<Address> {
-        waitlist::promote_next(&env, grant_id)
+    pub fn promote_from_waitlist(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+    ) -> Result<Option<Address>, ContractError> {
+        waitlist::promote_next(&env, &caller, grant_id)
     }
 
     /// Return all entries, sorted by reputation (or FIFO).
@@ -4454,8 +4716,13 @@ impl StellarGrantsContract {
     }
 
     /// Return all provenance records for a grant.
-    pub fn provenance_get_by_grant(env: Env, grant_id: u64) -> Vec<ProvenanceRecord> {
-        provenance::get_by_grant(&env, grant_id)
+    pub fn provenance_get_by_grant(
+        env: Env,
+        grant_id: u64,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ProvenanceRecord> {
+        provenance::get_by_grant(&env, grant_id, offset, limit)
     }
 
     /// Return a specific provenance record by global ID.
@@ -4688,6 +4955,17 @@ fn apply_milestone_submission(
     data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
     Events::emit_milestone_submitted(env, grant_id, milestone_idx, description);
 
+    // Issue #699: notify subscribers watching this grant.
+    notification::emit_notification(
+        env,
+        NotificationEvent::MilestoneSubmitted,
+        &SubscriptionScope::PerGrant(grant_id),
+        reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
+    );
+
+    // Issue #726: capture a tamper-evident state snapshot on every submission.
+    snapshot::capture(env, grant_id, SnapshotTrigger::MilestoneSubmission, actor)?;
+
     audit::log(
         env,
         grant_id,
@@ -4796,6 +5074,16 @@ pub(crate) fn internal_grant_create(
     grant_index::on_grant_created(env, grant_id, owner, token, GrantStatus::Active);
 
     Events::emit_grant_created(env, grant_id, owner.clone(), title, total_amount);
+
+    // Issue #699: notify subscribers following this owner that a new grant
+    // was created. Scoped by contributor (not grant) since a subscriber
+    // can't know a grant's id before it exists.
+    notification::emit_notification(
+        env,
+        NotificationEvent::NewGrant,
+        &SubscriptionScope::PerContributor(owner.clone()),
+        grant_id as u128,
+    );
 
     audit::log(
         env,

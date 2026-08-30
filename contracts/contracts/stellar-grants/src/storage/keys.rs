@@ -1,4 +1,4 @@
-use crate::types::{ProtocolModule, RateLimitAction, Role, WhitelistScope};
+use crate::types::{ProtocolModule, RateLimitAction, Role, TransferableRole, WhitelistScope};
 use soroban_sdk::{contracttype, Address, Bytes, String, Symbol};
 
 // ── Domain sub-enums ─────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ pub enum GrantKey {
     CurrentVersion(u64),
     Amendment(u64, u32),
     AmendmentHistory(u64),
-    Transfer(u64),
+    Transfer(u64, TransferableRole),
     Renewal(u64),
     RenewalHistory(u64),
     Fork(u64),
@@ -32,6 +32,7 @@ pub enum GrantKey {
     TokenIndex(Address),
     ContribIndex(Address),
     GlobalOrder,
+    SafetyFlags(u64),
 }
 
 #[contracttype]
@@ -96,6 +97,7 @@ pub enum VotingKey {
     ReleaseApproval(u64, Address),
     Proposal(u32),
     ProposalCounter,
+    CumulativeVotes(u64, u32, Address),
 }
 
 #[contracttype]
@@ -151,6 +153,7 @@ pub enum CollateralKey {
 pub enum WaitlistKey {
     Config(u64),
     Entries(u64),
+    PromotedCount(u64),
 }
 
 #[contracttype]
@@ -168,6 +171,7 @@ pub enum ReviewerRewardKey {
     Pool(Address),
     Participation(Address, u64),
     RewardRecord(Address, Address),
+    ParticipationIndex(Address),
 }
 
 #[contracttype]
@@ -177,6 +181,7 @@ pub enum MatchingKey {
     Contribution(u32, Address, u64),
     Pool(u32),
     Counter,
+    GrantContributors(u32, u64),
 }
 
 #[contracttype]
@@ -310,7 +315,7 @@ pub enum DataKey {
 
     // Notifications
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 
     // Issue #609: Lockup
     Lockup(u64, u32),
@@ -479,5 +484,5 @@ pub enum LegacyDataKey {
     ForkRecord(u64),
     ForkChildren(u64),
     NotifSub(Address, u32, u32, u128),
-    NotifSubList(u32, u32),
+    NotifSubList(u32, u32, crate::types::SubscriptionScope),
 }

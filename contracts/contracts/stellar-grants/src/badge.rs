@@ -3,11 +3,13 @@ use soroban_sdk::{contractevent, contracttype, Address, Env, Vec};
 use crate::types::{BadgeCriteria, BadgeRecord, BadgeType, ContractError};
 use crate::Storage;
 
+const BADGE_TTL_THRESHOLD: u32 = 100_000;
+const BADGE_TTL_EXTEND_TO: u32 = 1_000_000;
+
 #[contracttype]
 pub enum BadgeKey {
     Badge(Address, BadgeType),
     BadgeList(Address),
-    BadgeRegistry,
     BadgeAwardCount(BadgeType),
 }
 
@@ -28,9 +30,14 @@ fn get_badges_raw(env: &Env, contributor: &Address) -> Vec<BadgeRecord> {
 }
 
 fn has_badge_raw(env: &Env, contributor: &Address, badge_type: &BadgeType) -> bool {
-    env.storage()
-        .persistent()
-        .has(&BadgeKey::Badge(contributor.clone(), badge_type.clone()))
+    let key = BadgeKey::Badge(contributor.clone(), badge_type.clone());
+    let exists = env.storage().persistent().has(&key);
+    if exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, BADGE_TTL_THRESHOLD, BADGE_TTL_EXTEND_TO);
+    }
+    exists
 }
 
 fn meets_criteria(env: &Env, contributor: &Address, criteria: &BadgeCriteria) -> bool {
@@ -77,6 +84,12 @@ fn write_award(
         &BadgeKey::Badge(contributor.clone(), badge_type.clone()),
         &record,
     );
+    // Extend TTL for the badge entry
+    env.storage().persistent().extend_ttl(
+        &BadgeKey::Badge(contributor.clone(), badge_type.clone()),
+        BADGE_TTL_THRESHOLD,
+        BADGE_TTL_EXTEND_TO,
+    );
 
     let mut badges = get_badges_raw(env, contributor);
     badges.push_back(record.clone());
@@ -93,16 +106,6 @@ fn write_award(
         &BadgeKey::BadgeAwardCount(badge_type.clone()),
         &count.saturating_add(1),
     );
-
-    let mut registry: Vec<BadgeRecord> = env
-        .storage()
-        .persistent()
-        .get(&BadgeKey::BadgeRegistry)
-        .unwrap_or_else(|| Vec::new(env));
-    registry.push_back(record.clone());
-    env.storage()
-        .persistent()
-        .set(&BadgeKey::BadgeRegistry, &registry);
 
     BadgeAwarded {
         contributor: contributor.clone(),

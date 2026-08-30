@@ -18,7 +18,7 @@ pub fn get_portfolio(
     let profile =
         Storage::get_contributor(env, contributor.clone()).ok_or(ContractError::InvalidInput)?;
 
-    let reputation_score = reputation::calculate_score(&profile);
+    let reputation_score = reputation::calculate_effective_score(env, &profile);
     let tier = reputation::tier_from_score(reputation_score);
 
     let badge_records = badge::get_badges(env, contributor);
@@ -83,6 +83,10 @@ pub fn get_grant_summary(
     grant_id: u64,
 ) -> Result<GrantSummary, ContractError> {
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+
+    if grant.owner != *contributor {
+        return Err(ContractError::Unauthorized);
+    }
 
     let mut milestones_completed = 0u32;
     let mut completed_at: Option<u64> = None;
@@ -168,7 +172,7 @@ pub fn portfolio_hash(env: &Env, contributor: &Address) -> Bytes {
     let profile = Storage::get_contributor(env, contributor.clone());
     let reputation_score = profile
         .as_ref()
-        .map(|p| reputation::calculate_score(p))
+        .map(|p| reputation::calculate_effective_score(env, p))
         .unwrap_or(0);
     let milestones_approved = profile
         .as_ref()
@@ -258,5 +262,88 @@ mod tests {
         // No badges initially — list should be empty
         assert_eq!(portfolio.badges.len(), 0);
         assert_eq!(portfolio.milestones_approved, 2);
+    }
+
+    #[test]
+    fn get_grant_summary_requires_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let other = Address::generate(&env);
+
+        // create a grant owned by `owner`
+        let grant = crate::types::Grant {
+            id: 42,
+            owner: owner.clone(),
+            title: String::from_str(&env, "G"),
+            description: String::from_str(&env, "D"),
+            token: Address::generate(&env),
+            status: GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: Vec::new(&env),
+            total_milestones: 1,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(&env),
+            reason: None,
+            timestamp: 0,
+            require_compliance: None,
+        };
+        Storage::set_grant(&env, 42, &grant);
+
+        // other address should be rejected
+        let res = get_grant_summary(&env, &other, 42);
+        assert_eq!(res, Err(ContractError::Unauthorized));
+    }
+
+    #[test]
+    fn get_portfolio_applies_reputation_decay() {
+        use soroban_sdk::testutils::Ledger as _;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contributor = Address::generate(&env);
+
+        // register contributor with high raw score and old last_action_at
+        let profile = crate::types::ContributorProfile {
+            contributor: contributor.clone(),
+            name: String::from_str(&env, "Alice"),
+            bio: String::from_str(&env, "dev"),
+            skills: Vec::new(&env),
+            github_url: String::from_str(&env, ""),
+            registration_timestamp: 1,
+            reputation_score: 800,
+            grants_count: 0,
+            total_earned: 0,
+            milestones_completed: 0,
+            milestones_rejected: 0,
+            last_action_at: 0,
+        };
+        Storage::set_contributor(&env, contributor.clone(), &profile);
+
+        // enable linear decay in protocol config and set params
+        let mut cfg = crate::config::default_config();
+        cfg.decay_config.enabled = true;
+        cfg.decay_config.decay_type = crate::types::DecayType::Linear;
+        cfg.decay_config.linear_decay_per_day = 50; // 50 points/day
+        cfg.decay_config.decay_floor = 50;
+        cfg.decay_config.inactivity_threshold_ledgers = 0;
+        Storage::set_protocol_config(&env, &cfg);
+
+        // advance ledger far enough to trigger decay (~10 days)
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp: 86400 * 10,
+            protocol_version: 21,
+            sequence_number: 1,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+
+        let portfolio = get_portfolio(&env, &contributor).unwrap();
+        assert!(portfolio.reputation_score < 800);
     }
 }

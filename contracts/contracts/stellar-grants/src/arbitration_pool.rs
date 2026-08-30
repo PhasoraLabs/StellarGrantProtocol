@@ -202,6 +202,7 @@ pub fn assign_panel(env: &Env, dispute_id: u32, panel_size: u32) -> Result<u32, 
         finalized: false,
         assigned_at: now,
         deadline: now + ARBITRATION_VOTING_WINDOW,
+        panel_stakes: Vec::new(env),
     };
     Storage::set_arbitration_case(env, &case);
     Storage::set_case_id_by_dispute(env, dispute_id, case_id);
@@ -295,6 +296,17 @@ pub fn finalize_case(env: &Env, case_id: u32) -> Result<bool, ContractError> {
     let outcome = favor > against;
     case.outcome = Some(outcome);
     case.finalized = true;
+
+    // Snapshot each panelist's stake at finalization time to prevent slash evasion.
+    let mut stakes = Vec::new(env);
+    for addr in case.panel.iter() {
+        let stake = Storage::get_arbiter(env, &addr)
+            .map(|a| a.stake)
+            .unwrap_or(0);
+        stakes.push_back(stake);
+    }
+    case.panel_stakes = stakes;
+
     Storage::set_arbitration_case(env, &case);
 
     // Release the active-case lock on every panellist.
@@ -324,8 +336,15 @@ pub fn settle_rewards(env: &Env, case_id: u32) -> Result<(), ContractError> {
 
     // Slash minority arbiters and accumulate the redistributable pot. Track the
     // confidence-weighted majority for proportional payout.
+    // Use the snapshotted stakes to prevent slash evasion via early pool exit.
     let mut total_slashed: i128 = 0;
     let mut majority_weight: u64 = 0;
+    let mut panelist_idx_to_arbiter: Vec<(u32, Address)> = Vec::new(env);
+
+    for (idx, addr) in case.panel.iter().enumerate() {
+        panelist_idx_to_arbiter.push_back((idx as u32, addr.clone()));
+    }
+
     for v in case.votes.iter() {
         let in_majority = v.favor_contributor == outcome;
         let mut arb = match Storage::get_arbiter(env, &v.arbiter) {
@@ -337,18 +356,30 @@ pub fn settle_rewards(env: &Env, case_id: u32) -> Result<(), ContractError> {
             arb.cases_correct = arb.cases_correct.saturating_add(1);
             majority_weight = majority_weight.saturating_add(v.confidence as u64);
         } else {
-            let slash = arb
-                .stake
-                .checked_mul(ARBITER_SLASH_BPS as i128)
-                .ok_or(ContractError::InvalidInput)?
-                .checked_div(BASIS_POINTS_SCALE as i128)
-                .ok_or(ContractError::InvalidInput)?;
-            if slash > 0 {
-                arb.stake = arb
-                    .stake
-                    .checked_sub(slash)
-                    .ok_or(ContractError::InvalidInput)?;
-                total_slashed = total_slashed.saturating_add(slash);
+            // Find this arbiter's index in the panel to get their snapshotted stake
+            let mut panelist_idx: Option<u32> = None;
+            for (idx, addr) in panelist_idx_to_arbiter.iter() {
+                if addr == v.arbiter {
+                    panelist_idx = Some(idx);
+                    break;
+                }
+            }
+
+            if let Some(idx) = panelist_idx {
+                if let Some(snapshotted_stake) = case.panel_stakes.get(idx) {
+                    let slash = snapshotted_stake
+                        .checked_mul(ARBITER_SLASH_BPS as i128)
+                        .ok_or(ContractError::InvalidInput)?
+                        .checked_div(BASIS_POINTS_SCALE as i128)
+                        .ok_or(ContractError::InvalidInput)?;
+                    if slash > 0 {
+                        arb.stake = arb
+                            .stake
+                            .checked_sub(slash)
+                            .ok_or(ContractError::InvalidInput)?;
+                        total_slashed = total_slashed.saturating_add(slash);
+                    }
+                }
             }
         }
         Storage::set_arbiter(env, &arb);

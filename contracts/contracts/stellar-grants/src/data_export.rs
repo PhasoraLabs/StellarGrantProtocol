@@ -4,6 +4,8 @@ use crate::constants;
 use crate::storage::{DataKey, GrantKey, Storage};
 use crate::types::{ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage};
 
+const MAX_GRANTS_PER_SCAN: u32 = 1_000;
+
 fn cap_limit(limit: u32) -> u32 {
     if limit > constants::MAX_EXPORT_PAGE_SIZE {
         constants::MAX_EXPORT_PAGE_SIZE
@@ -27,9 +29,13 @@ pub fn export_grants(
         .get(&global_order_key)
         .unwrap_or_else(|| Vec::new(env));
 
+    let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
     let mut filtered = soroban_sdk::Vec::new(env);
-    for i in 0..all_ids.len() {
-        let gid = all_ids.get(i).unwrap();
+    for i in 0..scan_limit {
+        if i >= all_ids.len() as usize {
+            break;
+        }
+        let gid = all_ids.get(i as u32).unwrap();
         let last_updated = get_last_updated(env, gid);
         if let Some(after) = last_updated_after {
             if last_updated <= after {
@@ -66,7 +72,7 @@ pub fn export_grants(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total_filtered;
+    let has_more = offset.saturating_add(capped) < total_filtered;
 
     ExportGrantPage {
         items: page_items,
@@ -90,7 +96,9 @@ pub fn export_milestones(env: &Env, grant_id: u64) -> Vec<ExportMilestone> {
             } else {
                 None
             };
-            let approved_at = if milestone.state == crate::types::MilestoneState::Approved {
+            let approved_at = if milestone.state == crate::types::MilestoneState::Approved
+                || milestone.state == crate::types::MilestoneState::Paid
+            {
                 Some(milestone.status_updated_at)
             } else {
                 None
@@ -127,9 +135,13 @@ pub fn export_milestones_since(
         .unwrap_or_else(|| Vec::new(env));
 
     let mut all_milestones = soroban_sdk::Vec::new(env);
+    let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
 
-    for i in 0..all_ids.len() {
-        let gid = all_ids.get(i).unwrap();
+    for i in 0..scan_limit {
+        if i >= all_ids.len() as usize {
+            break;
+        }
+        let gid = all_ids.get(i as u32).unwrap();
         if let Some(grant) = Storage::get_grant(env, gid) {
             for idx in 0..grant.total_milestones {
                 if let Some(milestone) = Storage::get_milestone(env, gid, idx) {
@@ -176,7 +188,7 @@ pub fn export_milestones_since(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total;
+    let has_more = offset.saturating_add(capped) < total;
 
     ExportMilestonePage {
         items: page_items,
@@ -290,5 +302,19 @@ mod tests {
         assert_eq!(cap_limit(0), 0);
         assert_eq!(cap_limit(25), 25);
         assert_eq!(cap_limit(100), constants::MAX_EXPORT_PAGE_SIZE);
+    }
+
+    #[test]
+    fn test_export_grants_overflow() {
+        let (env, _admin) = setup();
+        let result = export_grants(&env, u32::MAX - 5, 10, None);
+        assert!(!result.has_more);
+    }
+
+    #[test]
+    fn test_export_milestones_since_overflow() {
+        let (env, _admin) = setup();
+        let result = export_milestones_since(&env, 0, u32::MAX - 5, 10);
+        assert!(!result.has_more);
     }
 }

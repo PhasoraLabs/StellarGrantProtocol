@@ -1,3 +1,4 @@
+use crate::events::Events;
 use crate::storage::keys::DataKey;
 use crate::types::{ContractError, MilestoneTemplate, TemplateCategory};
 use soroban_sdk::{Address, Env, String, Vec};
@@ -13,6 +14,10 @@ pub fn save_template(
 ) -> Result<u64, ContractError> {
     owner.require_auth();
 
+    if default_amount_pct == 0 || default_amount_pct > 100 {
+        return Err(ContractError::InvalidInput);
+    }
+
     let id_key = DataKey::TemplateCounter;
     let mut id: u64 = env.storage().persistent().get(&id_key).unwrap_or(0);
     id += 1;
@@ -21,7 +26,7 @@ pub fn save_template(
     let template = MilestoneTemplate {
         id,
         owner: owner.clone(),
-        name,
+        name: name.clone(),
         description,
         category,
         default_amount_pct,
@@ -41,7 +46,9 @@ pub fn save_template(
     owner_templates.push_back(id);
     env.storage()
         .persistent()
-        .set(&DataKey::TemplatesByOwner(owner), &owner_templates);
+        .set(&DataKey::TemplatesByOwner(owner.clone()), &owner_templates);
+
+    Events::emit_template_saved(env, id, owner, name);
 
     Ok(id)
 }
@@ -67,7 +74,13 @@ pub fn create_from_templates(
             .persistent()
             .set(&DataKey::MilestoneTemplate(id), &template);
 
-        let amount = (total_amount * (template.default_amount_pct as i128)) / 100;
+        Events::emit_template_used(env, id);
+
+        let amount = total_amount
+            .checked_mul(template.default_amount_pct as i128)
+            .ok_or(ContractError::InvalidInput)?
+            .checked_div(100)
+            .ok_or(ContractError::InvalidInput)?;
         results.push_back((template.description.clone(), amount));
     }
 
@@ -130,7 +143,9 @@ pub fn delete_template(env: &Env, caller: Address, id: u64) -> Result<(), Contra
     }
     env.storage()
         .persistent()
-        .set(&DataKey::TemplatesByOwner(caller), &new_templates);
+        .set(&DataKey::TemplatesByOwner(caller.clone()), &new_templates);
+
+    Events::emit_template_deleted(env, id, caller);
 
     Ok(())
 }
