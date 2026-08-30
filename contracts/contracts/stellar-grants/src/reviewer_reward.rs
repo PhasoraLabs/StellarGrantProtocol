@@ -100,7 +100,7 @@ pub fn record_participation(
             PERSISTENT_TTL_EXTEND_TO,
         );
     }
-    
+
     if let Some(grant) = crate::storage::Storage::get_grant(env, grant_id) {
         let pool_key = DataKey::ReviewerReward(ReviewerRewardKey::Pool(grant.token.clone()));
         let mut pool: ReviewerRewardPool = env
