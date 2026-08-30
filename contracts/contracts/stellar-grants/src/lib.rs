@@ -316,6 +316,10 @@ impl StellarGrantsContract {
         registry::register_contributor(&env, &contributor, &name)?;
 
         metrics::increment(&env, MetricField::ContributorsRegistered, 1);
+        if hooks::has_hooks(&env, HookEvent::ContributorRegistered) {
+            let payload = soroban_sdk::Bytes::new(&env);
+            hooks::trigger(&env, HookEvent::ContributorRegistered, payload);
+        }
 
         Ok(())
     }
@@ -785,7 +789,15 @@ impl StellarGrantsContract {
                 );
                 metrics::increment(&env, MetricField::MilestonesApproved, 1);
                 if hooks::has_hooks(&env, HookEvent::MilestoneApproved) {
-                    hooks::trigger(&env, HookEvent::MilestoneApproved, Bytes::new(&env));
+                    let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
+                    for byte in grant_id.to_le_bytes().iter() {
+                        payload_data.push_back(*byte);
+                    }
+                    for byte in milestone_idx.to_le_bytes().iter() {
+                        payload_data.push_back(*byte);
+                    }
+                    let payload = soroban_sdk::Bytes::from_slice(&env, payload_data.as_slice());
+                    hooks::trigger(&env, HookEvent::MilestoneApproved, payload);
                 }
                 // Mint soulbound NFT certificate for the contributor (#570)
                 let meta = NftMetadata {
@@ -1873,13 +1885,17 @@ impl StellarGrantsContract {
         // Issue #726: capture a tamper-evident state snapshot when a dispute is raised.
         snapshot::capture(&env, grant_id, SnapshotTrigger::DisputeRaised, &caller)?;
         metrics::increment(&env, MetricField::DisputesRaised, 1);
-        // Issue #699: notify subscribers watching this grant.
-        notification::emit_notification(
-            &env,
-            NotificationEvent::DisputeRaised,
-            &SubscriptionScope::PerGrant(grant_id),
-            reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
-        );
+        if hooks::has_hooks(&env, HookEvent::DisputeRaised) {
+            let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
+            for byte in grant_id.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            for byte in milestone_idx.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            let payload = soroban_sdk::Bytes::from_slice(&env, payload_data.as_slice());
+            hooks::trigger(&env, HookEvent::DisputeRaised, payload);
+        }
         Ok(())
     }
 
@@ -1943,6 +1959,17 @@ impl StellarGrantsContract {
             }
         }
         metrics::increment(&env, MetricField::DisputesResolved, 1);
+        if hooks::has_hooks(&env, HookEvent::DisputeResolved) {
+            let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
+            for byte in grant_id.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            for byte in milestone_idx.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            let payload = soroban_sdk::Bytes::from_slice(&env, payload_data.as_slice());
+            hooks::trigger(&env, HookEvent::DisputeResolved, payload);
+        }
         Ok(outcome)
     }
 
@@ -2292,6 +2319,14 @@ impl StellarGrantsContract {
         metrics::increment(&env, MetricField::BountiesAwarded, 1);
         let bounty = bounty::get_bounty(&env, bounty_id).ok_or(ContractError::BountyNotFound)?;
         metrics::update_token_locked(&env, &bounty.token, -bounty.prize_amount);
+        if hooks::has_hooks(&env, HookEvent::BountyAwarded) {
+            let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
+            for byte in bounty_id.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            let payload = soroban_sdk::Bytes::from_slice(&env, payload_data.as_slice());
+            hooks::trigger(&env, HookEvent::BountyAwarded, payload);
+        }
         Ok(())
     }
 
@@ -3330,7 +3365,19 @@ impl StellarGrantsContract {
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
-        invoice::approve_invoice(&env, &reviewer, grant_id, milestone_idx)
+        invoice::approve_invoice(&env, &reviewer, grant_id, milestone_idx)?;
+        if hooks::has_hooks(&env, HookEvent::MilestonePaid) {
+            let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(&env);
+            for byte in grant_id.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            for byte in milestone_idx.to_le_bytes().iter() {
+                payload_data.push_back(*byte);
+            }
+            let payload = soroban_sdk::Bytes::from_slice(&env, payload_data.as_slice());
+            hooks::trigger(&env, HookEvent::MilestonePaid, payload);
+        }
+        Ok(())
     }
 
     /// Reject an invoice with a reason. Reviewer only.
@@ -5051,7 +5098,12 @@ pub(crate) fn internal_grant_create(
     metrics::increment(env, MetricField::GrantsActive, 1);
 
     if hooks::has_hooks(env, HookEvent::GrantCreated) {
-        hooks::trigger(env, HookEvent::GrantCreated, Bytes::new(env));
+        let mut payload_data: soroban_sdk::Vec<u8> = soroban_sdk::Vec::new(env);
+        for byte in grant_id.to_le_bytes().iter() {
+            payload_data.push_back(*byte);
+        }
+        let payload = soroban_sdk::Bytes::from_slice(env, payload_data.as_slice());
+        hooks::trigger(env, HookEvent::GrantCreated, payload);
     }
 
     provenance::record(
