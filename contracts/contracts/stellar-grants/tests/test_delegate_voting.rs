@@ -287,3 +287,146 @@ fn test_delegation_cycle_is_rejected() {
     );
     assert!(result.is_err());
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #978: `test_delegation_cycle_is_rejected` above only exercises a direct
+// A→B, B→A 2-node cycle. `delegate::would_create_cycle` also special-cases
+// self-delegation and walks a chain of arbitrary length to catch longer
+// indirect cycles — branches that had no coverage. The tests below fill those
+// in.
+//
+// On the walk-limit boundary: `would_create_cycle` has a hard-coded
+// `max_chain_length` of 256, but a single on-chain invocation can only touch
+// ~100 distinct ledger entries, so a cycle walk over more than ~100 delegation
+// records hits `Error(Budget, ExceededLimit)` ("total footprint ledger
+// entries") before it can reach 256. `LONG_CHAIN_LEN` sits just under that
+// real ceiling. The 256 `max_chain_length` / long-valid-chain gap is tracked
+// separately in #953.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A delegation chain long enough to exercise the multi-hop walk and the
+/// visited-set bookkeeping in `would_create_cycle`, while keeping the closing
+/// call's ledger-entry footprint under the ~100-entry per-invocation limit.
+const LONG_CHAIN_LEN: usize = 80;
+
+#[test]
+fn test_self_delegation_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let reviewer = Address::generate(&env);
+
+    let mut reviewers: Vec<Address> = Vec::new(&env);
+    reviewers.push_back(reviewer.clone());
+
+    let (client, _grant_id) = setup_grant(&env, &admin, &owner, &reviewers, 1);
+
+    // A reviewer delegating to itself is a trivial 1-node cycle.
+    let result =
+        client.try_delegate_vote(&reviewer, &reviewer, &DelegationScope::Global, &None, &None);
+    assert!(result.is_err());
+    assert!(client
+        .get_delegation(&reviewer, &DelegationScope::Global)
+        .is_none());
+}
+
+#[test]
+fn test_three_node_delegation_cycle_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let reviewer_a = Address::generate(&env);
+    let reviewer_b = Address::generate(&env);
+    let reviewer_c = Address::generate(&env);
+
+    let mut reviewers: Vec<Address> = Vec::new(&env);
+    reviewers.push_back(reviewer_a.clone());
+    reviewers.push_back(reviewer_b.clone());
+    reviewers.push_back(reviewer_c.clone());
+
+    let (client, _grant_id) = setup_grant(&env, &admin, &owner, &reviewers, 1);
+
+    // Build the chain A→B→C ...
+    client.delegate_vote(
+        &reviewer_a,
+        &reviewer_b,
+        &DelegationScope::Global,
+        &None,
+        &None,
+    );
+    client.delegate_vote(
+        &reviewer_b,
+        &reviewer_c,
+        &DelegationScope::Global,
+        &None,
+        &None,
+    );
+
+    // ... then C→A closes a 3-node cycle and must be rejected.
+    let result = client.try_delegate_vote(
+        &reviewer_c,
+        &reviewer_a,
+        &DelegationScope::Global,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+    assert!(client
+        .get_delegation(&reviewer_c, &DelegationScope::Global)
+        .is_none());
+}
+
+#[test]
+fn test_long_indirect_delegation_cycle_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+
+    // `Global`-scope delegation is open to any address (the per-grant reviewer
+    // check only applies to `PerGrant` scope), so this test needs no grant —
+    // just a chain of `LONG_CHAIN_LEN` addresses r[0]→r[1]→…→r[n-1], far more
+    // than `max_reviewers` allows on a single grant.
+    let contract_id = env.register_contract(None, stellar_grants::StellarGrantsContract);
+    let client = StellarGrantsContractClient::new(&env, &contract_id);
+    client.initialize(&admin);
+
+    let mut chain: std::vec::Vec<Address> = std::vec::Vec::new();
+    for _ in 0..LONG_CHAIN_LEN {
+        chain.push(Address::generate(&env));
+    }
+
+    for i in 0..LONG_CHAIN_LEN - 1 {
+        client.delegate_vote(
+            &chain[i],
+            &chain[i + 1],
+            &DelegationScope::Global,
+            &None,
+            &None,
+        );
+    }
+
+    // Building the chain never trips the cycle check (each new edge points at a
+    // node with no outgoing delegation yet).
+    assert!(client
+        .get_delegation(&chain[0], &DelegationScope::Global)
+        .is_some());
+
+    // Closing the loop from the last node back to the first is a genuine
+    // `LONG_CHAIN_LEN`-node cycle — `would_create_cycle` must walk the whole
+    // chain and reject it.
+    let result = client.try_delegate_vote(
+        &chain[LONG_CHAIN_LEN - 1],
+        &chain[0],
+        &DelegationScope::Global,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+
+    // The rejected edge was not stored.
+    assert!(client
+        .get_delegation(&chain[LONG_CHAIN_LEN - 1], &DelegationScope::Global)
+        .is_none());
+}

@@ -3,7 +3,9 @@ use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token, Address, Env, String, Vec,
 };
-use stellar_grants::{DisputeStatus, MilestoneState, StellarGrantsContractClient};
+use stellar_grants::{
+    AcceptanceCriteria, DisputeStatus, MilestoneState, StellarGrantsContractClient,
+};
 
 const COMMUNITY_REVIEW_PERIOD: u64 = 3 * 24 * 60 * 60;
 
@@ -35,6 +37,10 @@ fn make_env_client_token() -> (
     let tok_client = token::StellarAssetClient::new(env_ref, &tok);
 
     client.initialize(&admin);
+    // `initialize` only records the migration version; `dispute_assign_arbiter`
+    // and friends check the global admin, which must be set explicitly (same as
+    // tests/integration_lifecycle.rs::test_milestone_dispute_and_resolution).
+    client.set_global_admin(&admin, &admin);
     (env, client, admin, owner, reviewer, funder, tok, tok_client)
 }
 
@@ -71,6 +77,22 @@ fn create_funded_submitted_voted(
         &String::from_str(env, "MS"),
         &String::from_str(env, "proof"),
     );
+
+    // `milestone_vote` now requires a satisfied acceptance-criteria checklist
+    // (same pattern as tests/integration_lifecycle.rs::setup_checklist).
+    let criteria = Vec::from_array(
+        env,
+        [AcceptanceCriteria {
+            idx: 0,
+            description: String::from_str(env, "Criteria 1"),
+            is_required: true,
+        }],
+    );
+    client.checklist_define_criteria(owner, &gid, &0, &criteria);
+    let evidence = Vec::from_array(env, [Some(String::from_str(env, "https://evidence.com"))]);
+    client.checklist_submit(owner, &gid, &0, &evidence);
+    client.checklist_review_criterion(reviewer, &gid, &0, &0u32, &true);
+
     let now = env.ledger().timestamp();
     env.ledger()
         .set_timestamp(now + COMMUNITY_REVIEW_PERIOD + 1);
@@ -105,9 +127,33 @@ fn test_dispute_raise_and_resolve_for_contributor() {
     // Arbiter votes in favor of contributor
     client.dispute_arbiter_vote(&gid, &0, &arbiter, &true);
 
-    // Resolve
+    // Issue #977: a contributor win must move the disputed milestone's exact
+    // amount from escrow to the grant owner and leave the funder untouched —
+    // assert the real fund movement, not just the returned status enum.
+    let tok_client = token::Client::new(&env, &tok);
+    let milestone_amount = client.get_milestone(&gid, &0).amount;
+    assert!(milestone_amount > 0);
+    let owner_before = tok_client.balance(&owner);
+    let funder_before = tok_client.balance(&funder);
+    let escrow_before = client.get_grant(&gid).escrow_balance;
+
     let outcome = client.dispute_resolve(&gid, &0, &_admin);
     assert_eq!(outcome, DisputeStatus::ResolvedForContributor);
+
+    assert_eq!(
+        tok_client.balance(&owner) - owner_before,
+        milestone_amount,
+        "owner (contributor) receives exactly milestone.amount"
+    );
+    assert_eq!(
+        tok_client.balance(&funder),
+        funder_before,
+        "funder balance unchanged on a contributor win"
+    );
+    assert_eq!(
+        client.get_grant(&gid).escrow_balance,
+        escrow_before - milestone_amount
+    );
 }
 
 #[test]
@@ -123,8 +169,32 @@ fn test_dispute_raise_and_resolve_for_funder() {
     client.dispute_assign_arbiter(&gid, &0, &admin, &arbiter);
     client.dispute_arbiter_vote(&gid, &0, &arbiter, &false);
 
+    // Issue #977: a funder win must refund the disputed milestone's exact
+    // amount from escrow back to the funder and leave the grant owner untouched.
+    let tok_client = token::Client::new(&env, &tok);
+    let milestone_amount = client.get_milestone(&gid, &0).amount;
+    assert!(milestone_amount > 0);
+    let owner_before = tok_client.balance(&owner);
+    let funder_before = tok_client.balance(&funder);
+    let escrow_before = client.get_grant(&gid).escrow_balance;
+
     let outcome = client.dispute_resolve(&gid, &0, &admin);
     assert_eq!(outcome, DisputeStatus::ResolvedForFunder);
+
+    assert_eq!(
+        tok_client.balance(&funder) - funder_before,
+        milestone_amount,
+        "funder is refunded exactly milestone.amount"
+    );
+    assert_eq!(
+        tok_client.balance(&owner),
+        owner_before,
+        "owner balance unchanged on a funder win"
+    );
+    assert_eq!(
+        client.get_grant(&gid).escrow_balance,
+        escrow_before - milestone_amount
+    );
 }
 
 #[test]
