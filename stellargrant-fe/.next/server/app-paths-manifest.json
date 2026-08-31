@@ -1,0 +1,15 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/events/route": "app/api/events/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/grants/[id]/fund/page": "app/grants/[id]/fund/page.js",
+  "/grants/[id]/milestones/[idx]/page": "app/grants/[id]/milestones/[idx]/page.js",
+  "/grants/[id]/milestones/page": "app/grants/[id]/milestones/page.js",
+  "/grants/[id]/page": "app/grants/[id]/page.js",
+  "/grants/create/page": "app/grants/create/page.js",
+  "/grants/page": "app/grants/page.js",
+  "/leaderboard/page": "app/leaderboard/page.js",
+  "/page": "app/page.js",
+  "/profile/page": "app/profile/page.js"
+}
