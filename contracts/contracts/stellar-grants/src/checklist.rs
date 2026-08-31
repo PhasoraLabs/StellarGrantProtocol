@@ -2,6 +2,7 @@ use soroban_sdk::{contractevent, Address, Env, String, Vec};
 
 use crate::constants::MAX_CRITERIA_PER_MILESTONE;
 use crate::errors::ContractError;
+use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{AcceptanceCriteria, ChecklistSubmission, CriterionStatus};
 
@@ -44,6 +45,7 @@ pub fn define_criteria(
     }
 
     Storage::set_milestone_checklist(env, grant_id, milestone_idx, &criteria);
+    Events::emit_criteria_defined(env, grant_id, milestone_idx, criteria.len() as u32);
     Ok(())
 }
 
@@ -372,5 +374,33 @@ mod tests {
             define_criteria(&env, &owner, 1, 0, criteria)
         });
         assert_eq!(result, Err(ContractError::MaxCriteriaExceeded));
+    }
+
+    #[test]
+    fn test_define_criteria_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, &reviewer);
+        });
+
+        let mut criteria: Vec<AcceptanceCriteria> = Vec::new(&env);
+        criteria.push_back(AcceptanceCriteria {
+            idx: 0,
+            description: soroban_sdk::String::from_str(&env, "Code compiles"),
+            is_required: true,
+        });
+
+        env.as_contract(&contract_id, || {
+            define_criteria(&env, &owner, 1, 0, criteria.clone()).unwrap();
+        });
+
+        // Verify the event was emitted
+        let events = env.events().all();
+        assert!(events.len() > 0, "At least one event should be emitted");
     }
 }

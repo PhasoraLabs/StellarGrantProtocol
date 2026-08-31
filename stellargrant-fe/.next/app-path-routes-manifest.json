@@ -1,0 +1,15 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/events/route": "/api/events",
+  "/favicon.ico/route": "/favicon.ico",
+  "/grants/[id]/fund/page": "/grants/[id]/fund",
+  "/grants/[id]/milestones/[idx]/page": "/grants/[id]/milestones/[idx]",
+  "/grants/[id]/milestones/page": "/grants/[id]/milestones",
+  "/grants/[id]/page": "/grants/[id]",
+  "/grants/create/page": "/grants/create",
+  "/grants/page": "/grants",
+  "/leaderboard/page": "/leaderboard",
+  "/page": "/",
+  "/profile/page": "/profile"
+}

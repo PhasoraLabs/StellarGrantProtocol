@@ -1,0 +1,12 @@
+{
+  "pages": {},
+  "app": {
+    "[project]/StellarGrant-fe/stellargrant-fe/app/page": [
+      "static/media/0acc7fdf55eb3220-s.p.532ccaa1.woff2",
+      "static/media/99e609270109b47d-s.p.64b9304e.woff2",
+      "static/media/effe91970fc4db64-s.p.19510058.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
+  "pagesUsingSizeAdjust": false
+}
