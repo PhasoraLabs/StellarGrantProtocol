@@ -1088,6 +1088,13 @@ impl Storage {
         id
     }
 
+    pub fn get_rubric_counter(env: &Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ScoringRubricCounter)
+            .unwrap_or(0)
+    }
+
     pub fn get_scoring_rubric(env: &Env, rubric_id: u32) -> Option<ScoringRubric> {
         env.storage()
             .persistent()
