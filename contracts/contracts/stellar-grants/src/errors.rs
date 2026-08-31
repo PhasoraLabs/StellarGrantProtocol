@@ -187,4 +187,6 @@ pub enum ContractError {
     DaoVoteRequired = 145,
     // Token swap (#683): no real DEX integration exists yet
     SwapNotImplemented = 146,
+    // Public review cap (#808): open_review enforces MAX_PUBLIC_REVIEWS_PER_MILESTONE
+    TooManyPublicReviews = 147,
 }
