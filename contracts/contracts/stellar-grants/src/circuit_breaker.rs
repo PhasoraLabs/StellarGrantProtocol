@@ -1,8 +1,9 @@
 use soroban_sdk::{contractevent, Address, Env, String, Vec};
 
+use crate::access_control;
 use crate::errors::ContractError;
 use crate::storage::Storage;
-use crate::types::{BreakerState, ProtocolModule};
+use crate::types::{BreakerState, ProtocolModule, Role};
 
 #[contractevent]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,8 +27,9 @@ pub struct BreakerAutoReset {
 }
 
 fn require_emergency_pauser(env: &Env, caller: &Address) -> Result<(), ContractError> {
-    let global_admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
-    if global_admin != *caller {
+    let is_admin = Storage::get_global_admin(env) == Some(caller.clone());
+    let has_role = access_control::has_role(env, caller, Role::EmergencyPauser);
+    if !is_admin && !has_role {
         return Err(ContractError::Unauthorized);
     }
     Ok(())
@@ -65,13 +67,9 @@ pub fn trip(
 
 pub fn reset(env: &Env, caller: &Address, module: ProtocolModule) -> Result<(), ContractError> {
     caller.require_auth();
+    require_emergency_pauser(env, caller)?;
 
     let prev = Storage::get_breaker_state(env, &module);
-    let is_pauser = Storage::get_global_admin(env) == Some(caller.clone());
-    if !is_pauser {
-        return Err(ContractError::Unauthorized);
-    }
-
     if prev.as_ref().map(|s| !s.tripped).unwrap_or(true) {
         return Err(ContractError::BreakerNotTripped);
     }
@@ -358,5 +356,94 @@ mod tests {
         let count = env.as_contract(&contract_id, || auto_reset_expired(&env));
         assert_eq!(count, 1);
         assert!(env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Relay)));
+    }
+
+    /// #950: EmergencyPauser role (non-admin) can trip and reset circuit breakers.
+    #[test]
+    fn test_emergency_pauser_role_can_trip_and_reset() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup(&env);
+        let emergency_pauser = Address::generate(&env);
+
+        // Grant EmergencyPauser role to non-admin
+        env.as_contract(&contract_id, || {
+            crate::access_control::grant_role(
+                &env,
+                &admin,
+                &emergency_pauser,
+                Role::EmergencyPauser,
+                None,
+            )
+            .unwrap();
+        });
+
+        // Non-admin with EmergencyPauser role can trip
+        env.as_contract(&contract_id, || {
+            trip(
+                &env,
+                &emergency_pauser,
+                ProtocolModule::Streaming,
+                String::from_str(&env, "emergency"),
+                None,
+            )
+            .unwrap();
+        });
+
+        assert!(!env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Streaming)));
+
+        // Non-admin with EmergencyPauser role can reset
+        env.as_contract(&contract_id, || {
+            reset(&env, &emergency_pauser, ProtocolModule::Streaming).unwrap();
+        });
+
+        assert!(env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Streaming)));
+    }
+
+    /// #950: Address without EmergencyPauser role or admin cannot trip.
+    #[test]
+    fn test_unauthorized_cannot_trip() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup(&env);
+        let unauthorized = Address::generate(&env);
+
+        let result = env.as_contract(&contract_id, || {
+            trip(
+                &env,
+                &unauthorized,
+                ProtocolModule::Streaming,
+                String::from_str(&env, "test"),
+                None,
+            )
+        });
+        assert_eq!(result, Err(ContractError::Unauthorized));
+    }
+
+    /// #950: Global admin retains ability to trip and reset.
+    #[test]
+    fn test_global_admin_can_trip_and_reset() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            trip(
+                &env,
+                &admin,
+                ProtocolModule::Grants,
+                String::from_str(&env, "admin trip"),
+                None,
+            )
+            .unwrap();
+        });
+
+        assert!(!env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Grants)));
+
+        env.as_contract(&contract_id, || {
+            reset(&env, &admin, ProtocolModule::Grants).unwrap();
+        });
+
+        assert!(env.as_contract(&contract_id, || is_open(&env, ProtocolModule::Grants)));
     }
 }

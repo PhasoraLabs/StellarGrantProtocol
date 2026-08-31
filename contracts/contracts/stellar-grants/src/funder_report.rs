@@ -5,9 +5,27 @@ use crate::escrow;
 use crate::storage::Storage;
 use crate::types::{FunderGrantSummary, FunderReport, FunderTokenSummary, GrantStatus};
 
+const MAX_GRANTS_TO_SCAN: u64 = 1_000;
+
+/// Fetch every grant summary for a funder, regardless of how many grants
+/// they've contributed to. `grant_summaries` itself supports offset/limit
+/// pagination, but the report/summary/dashboard functions below used to
+/// hard-code `(0, 50)` — silently truncating any funder past their 50th
+/// grant (issue #697). `grant_summaries`'s own loop is bounded by the real
+/// grant counter regardless of the limit passed in, so passing the full
+/// counter as the limit fetches everything in one pass.
+fn all_grant_summaries(
+    env: &Env,
+    funder: &Address,
+) -> Result<Vec<FunderGrantSummary>, ContractError> {
+    let total_grants = Storage::get_grant_counter(env);
+    let limit = u32::try_from(total_grants).unwrap_or(u32::MAX);
+    grant_summaries(env, funder, 0, limit)
+}
+
 /// Build a comprehensive financial report for a funder. Read-only.
 pub fn get_report(env: &Env, funder: &Address) -> Result<FunderReport, ContractError> {
-    let grants = grant_summaries(env, funder, 0, 50)?;
+    let grants = all_grant_summaries(env, funder)?;
     let token_sums = build_token_summaries(env, funder, &grants);
 
     let mut active: u32 = 0;
@@ -52,7 +70,7 @@ pub fn get_report(env: &Env, funder: &Address) -> Result<FunderReport, ContractE
 
 /// Return per-token financial summary for a funder.
 pub fn token_summary(env: &Env, funder: &Address, token: &Address) -> FunderTokenSummary {
-    let grants = grant_summaries(env, funder, 0, 50).unwrap_or_else(|_| Vec::new(env));
+    let grants = all_grant_summaries(env, funder).unwrap_or_else(|_| Vec::new(env));
     let mut summary = FunderTokenSummary {
         token: token.clone(),
         total_committed: 0,
@@ -115,7 +133,7 @@ pub fn grant_summaries(
 
     // Since we don't have a direct reverse index, we use a pragmatic approach:
     // Look at each grant the funder contributed to by checking funder ledger.
-    // This is a read-only query, so we accept O(num_grants) iteration.
+    // Cap the scan to avoid unbounded resource consumption.
 
     // Get the grant ids from the contributor's grant index as a starting point
     // if the funder is also a contributor, or iterate through all escrow accounts.
@@ -126,9 +144,10 @@ pub fn grant_summaries(
     // Better approach: use the FunderGrantIndex if available in storage,
     // or just scan through grant ids from 1 to a reasonable counter.
     let grant_count = Storage::get_grant_counter(env);
+    let scan_limit = core::cmp::min(MAX_GRANTS_TO_SCAN, grant_count);
     let mut collected: u32 = 0;
 
-    for id in 1..=grant_count {
+    for id in 1..=scan_limit {
         if collected >= offset + limit {
             break;
         }
@@ -222,7 +241,7 @@ pub fn total_in_escrow(env: &Env, funder: &Address, token: &Address) -> i128 {
 /// Return a lightweight report suitable for a dashboard widget.
 /// Returns: (grants_count, total_committed, total_in_escrow, total_paid_out)
 pub fn dashboard_summary(env: &Env, funder: &Address) -> (u32, i128, i128, i128) {
-    let grants = grant_summaries(env, funder, 0, 50).unwrap_or_else(|_| Vec::new(env));
+    let grants = all_grant_summaries(env, funder).unwrap_or_else(|_| Vec::new(env));
     let count = grants.len() as u32;
     let mut committed: i128 = 0;
     let mut escrowed: i128 = 0;
@@ -289,7 +308,85 @@ mod tests {
     use super::*;
     use crate::types::{EscrowAccount, FunderLedger, Grant, GrantFund, GrantStatus};
     use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::Vec;
+    use soroban_sdk::{String, Vec};
+
+    /// Issue #697: `get_report`, `token_summary`, and `dashboard_summary` used
+    /// to hard-code `grant_summaries(env, funder, 0, 50)`, silently dropping
+    /// everything past a funder's 50th grant. Seed more than 50 grants for one
+    /// funder and assert every one of them is reflected in the aggregates.
+    #[test]
+    fn test_funder_with_more_than_50_grants_gets_complete_report() {
+        let env = Env::default();
+        let funder = Address::generate(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        let total_grants: u64 = 55;
+        for _ in 0..total_grants {
+            let grant_id = Storage::increment_grant_counter(&env);
+            let grant = Grant {
+                id: grant_id,
+                owner: owner.clone(),
+                title: String::from_str(&env, "Grant"),
+                description: String::from_str(&env, "Test"),
+                token: token.clone(),
+                status: GrantStatus::Active,
+                total_amount: 100,
+                milestone_amount: 100,
+                reviewers: Vec::new(&env),
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 100,
+                funders: Vec::new(&env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            Storage::set_grant(&env, grant_id, &grant);
+
+            Storage::set_escrow_account(
+                &env,
+                grant_id,
+                &EscrowAccount {
+                    owner: owner.clone(),
+                    token: token.clone(),
+                    balance: 100,
+                    total_deposited: 100,
+                    total_released: 0,
+                    locked: false,
+                },
+            );
+
+            Storage::set_funder_ledger(
+                &env,
+                grant_id,
+                &funder,
+                &FunderLedger {
+                    funder: funder.clone(),
+                    contributed: 100,
+                    refunded: 0,
+                    last_contribution_at: env.ledger().timestamp(),
+                },
+            );
+        }
+
+        let report = get_report(&env, &funder).unwrap();
+        assert_eq!(report.total_grants_funded, total_grants as u32);
+        assert_eq!(report.active_grants, total_grants as u32);
+        assert_eq!(report.grant_summaries.len(), total_grants as u32);
+
+        let (count, committed, escrowed, _paid) = dashboard_summary(&env, &funder);
+        assert_eq!(count, total_grants as u32);
+        assert_eq!(committed, 100 * total_grants as i128);
+        assert_eq!(escrowed, 100 * total_grants as i128);
+
+        let ts = token_summary(&env, &funder, &token);
+        assert_eq!(ts.total_committed, 100 * total_grants as i128);
+        assert_eq!(
+            total_in_escrow(&env, &funder, &token),
+            100 * total_grants as i128
+        );
+    }
 
     #[test]
     fn test_unknown_funder_returns_empty_report() {

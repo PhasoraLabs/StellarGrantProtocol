@@ -1,9 +1,12 @@
+use crate::config;
 use crate::constants::DEFAULT_REVIEWER_SLA_SECONDS;
 use crate::reviewer_sla;
 use crate::storage::Storage;
 use crate::types::{
     ContractError, ReviewerAvailability, ReviewerProfile, ReviewerRequest, ReviewerRequestStatus,
+    WhitelistScope,
 };
+use crate::whitelist;
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Upper bound on results returned by [`find_by_tag`], to keep the scan bounded.
@@ -130,7 +133,20 @@ pub fn accept_request(env: &Env, reviewer: &Address, grant_id: u64) -> Result<()
         return Err(ContractError::InvalidState);
     }
 
+    if !whitelist::is_allowed(env, reviewer, &WhitelistScope::GlobalReviewer) {
+        return Err(ContractError::AddressNotWhitelisted);
+    }
+
     let mut grant = Storage::get_grant_v(env, grant_id);
+    if grant.reviewers.contains(reviewer.clone()) {
+        return Err(ContractError::AlreadyRegistered);
+    }
+
+    let protocol_cfg = config::get_config(env);
+    if grant.reviewers.len() >= protocol_cfg.max_reviewers {
+        return Err(ContractError::ReviewerLimitExceeded);
+    }
+
     grant.reviewers.push_back(reviewer.clone());
     Storage::set_grant(env, grant_id, &grant);
 
@@ -209,6 +225,7 @@ pub fn get_request(env: &Env, grant_id: u64, reviewer: &Address) -> Option<Revie
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
+    use crate::types::WhitelistMode;
     use crate::{StellarGrantsContract, StellarGrantsContractClient};
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::vec;
@@ -357,5 +374,106 @@ mod tests {
         );
 
         assert_eq!(find(&env, &contract_id, &tag(&env, "rust"), 10).len(), 1);
+    }
+
+    #[test]
+    fn test_accept_request_enforces_whitelist_dedup_and_cap() {
+        let (env, contract_id, client) = setup();
+
+        let admin = Address::generate(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+            let mut cfg = crate::config::default_config();
+            cfg.max_reviewers = 1;
+            Storage::set_protocol_config(&env, &cfg);
+        });
+
+        let grant_id = client.grant_create(
+            &owner,
+            &String::from_str(&env, "Grant"),
+            &String::from_str(&env, "Desc"),
+            &token,
+            &1_000,
+            &1_000,
+            &1,
+            &vec![&env],
+        );
+
+        client.whitelist_set_mode(
+            &admin,
+            &WhitelistScope::GlobalReviewer,
+            &WhitelistMode::Restricted,
+        );
+
+        // A non-whitelisted reviewer cannot accept, even with a valid pending request.
+        let stranger = register(&env, &client, "Stranger", vec![&env]);
+        client.reviewer_request(
+            &owner,
+            &grant_id,
+            &stranger,
+            &String::from_str(&env, "msg"),
+            &1000,
+        );
+        assert_eq!(
+            client
+                .try_reviewer_accept_request(&stranger, &grant_id)
+                .unwrap_err()
+                .unwrap(),
+            ContractError::AddressNotWhitelisted
+        );
+
+        let reviewer_a = register(&env, &client, "A", vec![&env]);
+        let reviewer_b = register(&env, &client, "B", vec![&env]);
+        client.whitelist_add(&admin, &reviewer_a, &WhitelistScope::GlobalReviewer);
+        client.whitelist_add(&admin, &reviewer_b, &WhitelistScope::GlobalReviewer);
+
+        client.reviewer_request(
+            &owner,
+            &grant_id,
+            &reviewer_a,
+            &String::from_str(&env, "msg"),
+            &1000,
+        );
+        client.reviewer_accept_request(&reviewer_a, &grant_id);
+
+        env.as_contract(&contract_id, || {
+            assert_eq!(Storage::get_grant_v(&env, grant_id).reviewers.len(), 1);
+        });
+
+        // Dedup: re-requesting and re-accepting the same reviewer must not push a duplicate.
+        client.reviewer_request(
+            &owner,
+            &grant_id,
+            &reviewer_a,
+            &String::from_str(&env, "again"),
+            &1000,
+        );
+        assert_eq!(
+            client
+                .try_reviewer_accept_request(&reviewer_a, &grant_id)
+                .unwrap_err()
+                .unwrap(),
+            ContractError::AlreadyRegistered
+        );
+
+        // Cap: max_reviewers is 1 and already reached, so a second distinct
+        // whitelisted reviewer cannot be accepted.
+        client.reviewer_request(
+            &owner,
+            &grant_id,
+            &reviewer_b,
+            &String::from_str(&env, "msg"),
+            &1000,
+        );
+        assert_eq!(
+            client
+                .try_reviewer_accept_request(&reviewer_b, &grant_id)
+                .unwrap_err()
+                .unwrap(),
+            ContractError::ReviewerLimitExceeded
+        );
     }
 }

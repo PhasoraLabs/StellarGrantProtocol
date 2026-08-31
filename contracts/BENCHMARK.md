@@ -9,9 +9,11 @@ workspace release profile in `contracts/Cargo.toml`.
 > `overflow-checks = false` in `[profile.release]`. The figures below were
 > produced with a temporary `overflow-checks = true` so the documented
 > `stellar contract build` command could run; the checked-in workspace profile
-> still uses `overflow-checks = false` for size. Plain
-> `cargo build --target wasm32v1-none --release` (without the CLI’s spec-shaking
-> env) produces a larger artifact (~700 KB) and is not the size tracked here.
+> still uses `overflow-checks = false` for size. For a command that succeeds
+> against the checked-in profile, use `cargo build --target wasm32v1-none
+> --release --package stellar-grants` (see [README.md](./README.md) “Build the
+> Contract”). Plain `cargo build` without the CLI’s spec-shaking env produces a
+> larger artifact (~700 KB) and is not the size tracked here.
 
 ### Build commands
 

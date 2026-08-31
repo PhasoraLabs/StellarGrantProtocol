@@ -229,6 +229,7 @@ pub fn require_dao_mode_disabled(env: &Env) -> Result<(), ContractError> {
 }
 
 fn require_global_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    caller.require_auth();
     let admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
     if admin != *caller {
         return Err(ContractError::Unauthorized);
@@ -441,6 +442,27 @@ mod tests {
             );
             set_dao_mode(&env, &admin, true).unwrap();
             assert!(is_dao_mode_enabled(&env));
+        });
+    }
+
+    #[test]
+    fn test_set_dao_mode_rejects_admin_address_without_real_auth() {
+        let env = Env::default();
+        // Do NOT mock auths: this verifies require_global_admin enforces a
+        // genuine `require_auth()` on the caller, rather than only comparing
+        // addresses (which anyone could pass since the admin's address is
+        // public). Without any authorization recorded for `admin`, the call
+        // must be rejected even though the address itself matches.
+        with_contract(&env, || {
+            let admin = setup(&env);
+            let result = set_dao_mode(&env, &admin, true);
+            assert!(result.is_err());
+
+            let result = set_voting_period(&env, &admin, 100);
+            assert!(result.is_err());
+
+            let result = set_quorum_votes(&env, &admin, 5);
+            assert!(result.is_err());
         });
     }
 

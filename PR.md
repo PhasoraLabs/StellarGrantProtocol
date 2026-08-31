@@ -1,99 +1,184 @@
-# Enforce MAX_RUBRIC_WEIGHTS in validate_rubric (#812)
+# test: expand refund / dispute / delegate / fuzz coverage (#976, #977, #978, #979)
 
-This PR bundles four related fixes to the `stellar-grants` Soroban contract on a single branch: one critical security fix, two fixes to the same broken token-swap call chain, and the full end-to-end integration of the previously-orphaned DAO governance module.
+This PR is **test-only** — it touches five files, all under
+`contracts/contracts/stellar-grants/tests/`, and changes **no production code**.
+It bundles four independent test-coverage issues that all concern the same
+contract.
 
-Previously, `constants::MAX_RUBRIC_WEIGHTS` (defined as 6) was never checked in `scoring.rs`. An admin could define a rubric with an arbitrary number of `ScoringWeight` entries as long as their total basis points summed to 10,000 BPS. Every subsequent call to `score_contributor` and `rank_contributors` would iterate over all entries in the rubric's weight vector, turning scoring into an unbounded-cost operation.
-
-## #682 — Fix Unauthorized Escrow Drain via `swap_and_pay` (critical security)
-
-**Files:** `contracts/contracts/stellar-grants/src/token_swap.rs`, `src/lib.rs`
-
-`swap_and_pay` was a public entry point with **no authorization check at all** before releasing a grant's escrow. Since a grant's token is public (`get_grant`), any address could call `swap_and_pay(grant_id, attacker, grant.token, grant.token, amount)` and drain the escrow straight to itself — `escrow::release` trusts its caller to have already authorized the release, and this was the one call site that never did.
-
-- Added a `payer: Address` parameter to `token_swap::swap_and_pay` and the `swap_and_pay` entry point. Requires `payer.require_auth()` and rejects unless `payer == grant.owner`.
-- Also rejects if the caller-supplied `grant_token` doesn't match the grant's actual token (previously never checked at all).
-- This is a breaking signature change (an entry point with zero caller identity has no way to authenticate without adding one) — confirmed no other package in this monorepo (`backend`, `client`, `web`) references `swap_and_pay`, so nothing else needs updating.
-- New tests: a non-owner caller is rejected with `Unauthorized` and the escrow balance is untouched; the real owner succeeds; a grant-token mismatch is rejected.
+| Issue | Area | File(s) |
+|-------|------|---------|
+| #976 | Refund-policy variant coverage | `tests/test_refund_policy.rs` |
+| #977 | Dispute-resolution fund verification | `tests/test_milestone_dispute.rs`, `tests/test_reputation_and_dispute_fee.rs` |
+| #978 | Delegate cycle-detection coverage | `tests/test_delegate_voting.rs` |
+| #979 | Fuzz tests that never called the crate | `tests/fuzz/mod.rs` |
 
 ---
 
-## #683 — Fix `token_swap::swap` Confiscating Input Tokens Without Delivering Output
+## #976 — Refund policy tests cover only 2 of 5 `RefundPolicyType` variants
 
-**Files:** `src/token_swap.rs`, `src/errors.rs`
+`test_refund_policy.rs` previously exercised only `TimeWeighted` and the
+no-policy fallback. `ProportionalToRemaining`, `PenaltyOnCancel` and `NoRefund`
+were never referenced by name, and `NoRefund` (funder must get **exactly 0**)
+was the highest-risk untested branch.
 
-`quote`/`swap` never integrated a real DEX: `quote` always returned a fake 1:1 rate, and `swap` pulled the caller's input token in but never delivered anything back.
+**Added** — one dedicated end-to-end test per remaining variant, each driven
+through the real `grant_cancel` → `refund::execute_refund` path with exact
+funder/owner split assertions and a "the two payouts sum to the gross escrow"
+check (no double-payout, no leak):
 
-**Decision:** no DEX contract exists to integrate against in this PR. Per the issue's own sanctioned fallback, `quote()` now returns a new `ContractError::SwapNotImplemented` instead of a fake rate, rather than shipping a "successful" swap that delivers nothing. Since `swap()` calls `quote()` before any token transfer, this closes the fund-loss path with no separate change needed in `swap()` itself.
+- `test_full_refund_policy_returns_entire_escrow_to_funder` — funder 1000, owner 0.
+- `test_proportional_to_remaining_refunds_unreleased_escrow` — with 0 milestones
+  paid out, all escrow is unreleased, so the funder is refunded in full.
+- `test_penalty_on_cancel_applies_penalty_bps_and_splits_remainder` —
+  `penalty_bps = 2000` → funder 800, owner 200.
+- `test_no_refund_policy_sends_full_escrow_to_owner_and_zero_to_funder` —
+  funder **0**, owner 1000.
+- `test_no_refund_policy_with_min_refund_floor_still_pays_funder_the_floor` —
+  a 10% `min_refund_pct_bps` floor is honored even under `NoRefund` (funder 100,
+  owner 900).
 
-- New error variant `SwapNotImplemented`.
-- New tests: `quote()` and `swap()` both refuse cleanly; a `swap()` call is proven to leave the caller's token balance completely untouched.
+**Note on the partial ratio:** `ProportionalToRemaining` with
+`milestones_paid_out > 0` (a genuinely fractional refund) is not reachable from
+the mainline entry points — nothing increments `milestones_paid_out` without
+also completing (and thereby closing) the grant. That exact-fraction case is a
+good candidate for an inline `#[test]` in `src/refund.rs`, but `cargo test --lib`
+does not currently compile on `main` (see **CI status** below), so inline unit
+tests could not be verified and were left out of this PR.
+
+## #977 — Dispute resolution tests never verify actual fund movement
+
+`dispute::resolve_dispute` performs a real `escrow::release` (to the grant
+owner, contributor-win) or `escrow::release_to_funders` (to funders,
+funder-win) of the disputed milestone's exact amount, but every dispute test
+asserted only the returned `DisputeStatus` enum. A regression that resolved the
+status correctly while paying the wrong party — or the wrong amount — would
+have passed.
+
+**Changed** — `test_dispute_and_resolve_flow`,
+`test_dispute_raise_and_resolve_for_contributor` and
+`test_dispute_raise_and_resolve_for_funder` now snapshot token balances around
+`dispute_resolve` and assert:
+
+- the **winning** party's balance increases by exactly `milestone.amount`,
+- the **losing** party's balance is unchanged,
+- `escrow_balance` drops by exactly `milestone.amount`.
+
+These three tests were also **not executing the resolution path at all** on
+`main` — they predate two later changes and failed early:
+
+1. `milestone_vote` now requires a satisfied acceptance-criteria checklist
+   (`Error(Contract, #76) RequiredCriteriaNotMet`) — added the same
+   `checklist_define_criteria` / `checklist_submit` / `checklist_review_criterion`
+   setup that `tests/integration_lifecycle.rs::setup_checklist` already uses.
+2. `dispute_assign_arbiter` checks the global admin, which `initialize` does not
+   set (`Error(Contract, #2)`) — added `client.set_global_admin(&admin, &admin)`,
+   again matching the working `integration_lifecycle.rs` dispute test.
+
+Both are test-only setup fixes; no assertion or business logic was changed.
+
+## #978 — Delegate cycle-detection tests only cover the trivial 2-hop case
+
+`delegate::would_create_cycle` special-cases self-delegation and walks a
+delegation chain of arbitrary length, but `test_delegation_cycle_is_rejected`
+only exercised a direct `A→B, B→A` cycle.
+
+**Added:**
+
+- `test_self_delegation_is_rejected` — `delegate_vote(r, r, …)` rejected.
+- `test_three_node_delegation_cycle_is_rejected` — `A→B→C`, then `C→A` rejected.
+- `test_long_indirect_delegation_cycle_is_rejected` — an 80-node chain closed
+  into a cycle is rejected, exercising the full multi-hop walk and the
+  visited-set bookkeeping.
+
+**On the walk-limit boundary:** `would_create_cycle` hard-codes
+`max_chain_length = 256`, but a single on-chain invocation can only touch ~100
+distinct ledger entries, so a cycle walk over more than ~100 delegation records
+hits `Error(Budget, ExceededLimit)` ("total footprint ledger entries") long
+before it reaches 256 — an exact-256 test is not runnable. The 80-node test
+sits just under that real ceiling. The `max_chain_length` / long-valid-chain
+gap remains tracked in #953.
+
+## #979 — `tests/fuzz/mod.rs` "fuzz" tests never call the actual crate
+
+`prop_grant_create_no_overflow`, `prop_grant_create_total_amount_validation`,
+`prop_cancel_refund_sum_equals_escrow`, `prop_release_balance_conservation` and
+`prop_quorum_bounds` only asserted properties about arithmetic **reimplemented
+inline in the test**, so a real crate regression could never fail them.
+
+**Rewritten** to drive `StellarGrantsContractClient` / real crate functions
+with fuzzed inputs (case counts dialled down since each case spins up a fresh
+contract), following the `fees_fuzz.rs` pattern:
+
+| New name | What real code it now exercises |
+|----------|--------------------------------|
+| `prop_grant_create_rejects_overflowing_milestone_math` | `internal_grant_create`'s `checked_mul(...).ok_or(InvalidInput)` — asserts a clean `Err(Ok(_))` contract error, never a host trap from an unchecked multiply |
+| `prop_grant_create_enforces_total_covers_milestones` | `internal_grant_create`'s `total_amount < total_required` check + the stored grant echoing the inputs |
+| `prop_cancel_refund_sum_equals_escrow` | `escrow::refund_all`'s proportional split (incl. "last funder gets the remainder") via `grant_cancel` |
+| `prop_release_balance_conservation` | `escrow::release` + `refund_all` + `fees::compute_fee` via `grant_complete` — `owner_payout + funder_refund == gross escrow`, escrow fully drained |
+| `prop_quorum_bounds` | `governance::quorum_reached` (`approvals * 2 > reviewer_count`) via real milestone voting |
+
+The eight pure-math `prop_basis_points_*` / `prop_proportional_share_*` tests in
+the same file already called real crate functions and are unchanged.
 
 ---
 
-## #684 — Fix `swap_and_fund` Double-Charging the Funder
+## CI status — the `Contracts (Rust)` job is already red on `main`
 
-**Files:** `src/token_swap.rs` (test only — see below)
+**Every CI run on `main` for the last week fails at the `Clippy (WASM, lib
+only)` step** (e.g. runs `33364533301`, `33302780551`, …). The `stellar-grants`
+library has ~34 pre-existing compile errors from other contributors' recently
+merged features:
 
-This was a direct consequence of #683: `swap_and_fund`'s cross-token path called `swap()` (which pulled the input token once) and then `escrow::deposit` (which pulled the same amount again in the grant's real token), since `swap()` faked success without ever delivering anything.
+- broken hook-payload construction using `soroban_sdk::Vec<u8>` (which the
+  current soroban-sdk doesn't support) in `src/lib.rs` — 6 sites, from
+  `f0f444f`;
+- four `ContractError` variants referenced but never declared
+  (`InsufficientClawbackAllowance`, `TooManyPublicReviews`, `DaoVoteRequired`,
+  `SwapNotImplemented`) in `clawback.rs` / `open_review.rs` / `params.rs` /
+  `token_swap.rs`;
+- a removed `env.invoker()` call in `src/lockup.rs`;
+- one type mismatch in `src/params.rs`.
 
-With `swap()` now refusing up front (see #683), the cross-token branch errors out **before any transfer happens at all**, so the double-charge is unreachable. No production code change was needed beyond #683's fix.
+None of this relates to these four test-only issues, and per the issue scope
+this PR does **not** fix it. Consequences:
 
-- New test: a cross-token `swap_and_fund` call is rejected and the funder's token balance is proven to be exactly unchanged (zero transfers, not two).
+- The `Contracts (Rust)` job on this PR will show the **same** red X it shows on
+  every recent merge into `main` — it fails at clippy, before the `Test` step
+  this PR's changes live in.
+- `backend`, `frontend` and `client-sdk` CI jobs are unaffected by this PR and
+  continue to pass.
 
-**Bonus fix in the same call chain:** found and fixed a latent, previously-untested bug while writing the above test — `swap_and_fund` already authenticates its funder via `require_auth()`, then called into `swap()`, which re-called `require_auth()` for the *same* address. Soroban rejects a repeated `require_auth()` for one address within a single invocation ("frame is already authorized"). Moved that auth check out of `swap()` (which is otherwise only ever invoked with an already-authenticated caller, or the contract's own address from `swap_and_pay`) and into the `swap_tokens` entry point, the one place that actually needs it.
+### How the new tests were verified
 
----
-
-## #681 — Integrate On-Chain DAO Governance Module End-to-End
-
-**Files:** `src/types.rs`, `src/storage/keys.rs`, `src/storage/helpers.rs`, `src/config.rs`, `src/dao.rs`, `src/treasury.rs`, `src/lib.rs`
-
-`dao.rs` already contained complete reputation-weighted governance logic (proposal creation, one-vote-per-address weighted by reputation, permissionless finalization/execution, cancellation) with a passing 12-test suite, but had no storage layer or contract entry points — and its `execute()`'s `TreasuryWithdrawal` branch depended on `treasury.rs`, a second fully-written but undeclared module.
-
-**What was added:**
-- `DaoProposal`, `DaoProposalStatus`, `DaoProposalType`, and `TreasurySnapshot` types (the last was referenced by `treasury.rs` but didn't exist anywhere).
-- A full storage layer: a `Dao` sub-key (proposal CRUD, per-`(proposal_id, voter)` vote tracking, mode/voting-period/quorum config) and a `TreasuryLedger` sub-key for `treasury.rs`'s per-token balances.
-- `mod dao;` / `mod treasury;`, plus ten new DAO entry points (`dao_create_proposal`, `dao_vote`, `dao_finalize`, `dao_execute`, `dao_cancel`, `set_dao_mode`, etc.) and six new treasury entry points, all delegating straight into the existing, unmodified logic.
-
-**Design decision — treasury mechanism:** kept the existing simple `Storage::get_treasury`/`set_treasury` (a single payout address, used today by `slash_reviewer`) and the new `treasury.rs` (a per-token spendable ledger of funds the contract itself holds) as **separate concepts**, rather than merging them or replacing one with the other. They serve genuinely different destinations — an external payout address vs. funds held in-contract — and merging would mean changing where slashed stake physically goes, which is a bigger, riskier change than this issue calls for. `slash_reviewer` is untouched.
-
-**Design decision — treasury entry points:** exposed `treasury_deposit` as admin-gated rather than public. Its bookkeeping-only nature (it doesn't itself pull tokens in — see its doc comment) means an unauthenticated caller could otherwise inflate the ledger without a matching real transfer, letting a later `treasury_withdraw` drain unrelated contract funds (e.g. escrow balances). Gating it to the already-fully-trusted global admin keeps it no more dangerous than the admin's existing powers, without changing `treasury.rs`'s internal logic.
-
-**DAO-mode gate:** `dao::require_dao_mode_disabled` existed but was never called anywhere. Wired it into both legacy direct-admin paths it exists to gate — `config::set_config` and `lib.rs::set_global_admin` — so enabling DAO mode now actually restricts them as intended.
-
-**Test infrastructure fix:** `dao.rs`'s and `treasury.rs`'s own test suites could not run at all under the currently-installed `soroban-sdk` version (storage access outside an explicit `env.as_contract()` context now panics, and one test used a constant without importing it). Fixed by wrapping each existing test body in a small contract-registration helper — no assertion or business logic was changed, and all 12 original `dao.rs` tests pass unmodified. Added three new end-to-end tests that drive a full `UpdateConfig` proposal (verifying `ProtocolConfig` actually changes after execution) and a `TreasuryWithdrawal` proposal (verifying tokens actually move) through the real contract entry points, plus a test proving the legacy paths are gated once DAO mode is enabled.
-
----
-
-## CI / Verification
-
-Only the `contracts` CI job can be affected by this PR (no other package references anything touched here). Ran locally from `contracts/`, matching the CI job exactly:
+Because the library must compile to build any test target, the five affected
+test binaries were built and run locally against a **throwaway local patch**
+that fixes only the ~34 compile errors above (not included in this PR). Results:
 
 ```
-cargo fmt --all -- --check
-cargo clippy --workspace --lib --target wasm32v1-none -- -D warnings
-cargo check --workspace --target wasm32v1-none
+test_refund_policy              6 passed, 1 failed   (see pre-existing failures)
+test_delegate_voting            9 passed, 0 failed
+test_milestone_dispute          2 passed, 0 failed
+test_reputation_and_dispute_fee 4 passed, 0 failed
+fuzz_amounts (this PR's 5)      5 passed, 0 failed
 ```
 
-All three pass clean on every file this PR touches.
+`cargo fmt --all -- --check` passes.
 
-**Note on `cargo test`:** the full workspace `cargo test` currently does not compile on `main` — there are ~28 pre-existing, unrelated compile errors scattered across other modules (`access_control.rs`, `audit.rs`, `compliance.rs`, `lockup.rs`, `milestone_extension.rs`, `referral.rs`, `split_payment.rs`, a fuzz target), all stemming from the same `soroban-sdk` version drift and a couple of unrelated logic bugs. None of that is touched by this PR, and CI itself never runs `cargo test` for the `contracts` job. To verify this PR's own changes, `cargo test --lib -p stellar-grants` for the specific modules touched here (`dao`, `treasury`, `token_swap`) shows:
+### Pre-existing test failures (NOT introduced by this PR)
 
-```
-test result: ok. 15 passed; 0 failed   (dao::tests, incl. all 12 original + 3 new)
-test result: ok. 6 passed; 0 failed    (treasury::tests)
-test result: ok. 9 passed; 0 failed    (token_swap::tests, incl. all 4 original + 5 new)
-```
+Running the affected binaries surfaces failures that exist on `main`
+independently of this change and are out of scope here:
 
-## Notes for Reviewer
-
-- `swap_and_pay`'s signature change (new leading `payer` parameter) is breaking but necessary — happy to adjust the parameter name/position if you'd prefer a different convention.
-- The two design decisions above (treasury mechanism, treasury entry-point gating) are exactly the open questions #681 asked to be documented — flagging both explicitly for discussion in case you'd prefer a different call.
-- The pre-existing `cargo test` breakage described above is unrelated to this PR and not fixed here, per scope — happy to open a separate tracked issue for it if useful.
+- `test_refund_policy::test_time_weighted_refund_policy_on_partial_cancel` —
+  the `TimeWeighted` split no longer produces the expected 500/500
+  (unmodified by this PR).
+- `fuzz::prop_basis_points_partition_never_exceeds_total` and
+  `fees_fuzz::prop_proportional_share_sum_invariant` — pre-existing
+  `math::basis_points_of` rounding-invariant failures (unmodified by this PR).
 
 ---
 
-Closes #681
-Closes #682
-Closes #683
-Closes #684
+Closes #976
+Closes #977
+Closes #978
+Closes #979

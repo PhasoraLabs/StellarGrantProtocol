@@ -7,6 +7,28 @@ use crate::reviewer_sla;
 use crate::storage::Storage;
 use crate::types::{ContractError, Grant, Milestone, MilestoneState, VotingMechanism};
 
+/// Transition every `Approved` milestone on a grant to `Paid`. Call this only
+/// once the grant's payout path has actually confirmed the fund transfer for
+/// those milestones (see `StellarGrantsContract::finalize_grant_release` and
+/// `execute_escrow_release` in lib.rs) — `Approved` alone does not mean the
+/// funds moved, since a multisig-gated release can leave a milestone
+/// `Approved` for a time after quorum but before the transfer executes.
+/// Read paths (`portfolio::earnings_by_token`, `data_export`) only count
+/// `Paid` milestones as earned/paid-out, so skipping this step after a real
+/// payout silently zeroes a contributor's reported earnings (issue #696).
+pub fn mark_milestones_paid(env: &Env, grant_id: u64, total_milestones: u32) {
+    for idx in 0..total_milestones {
+        if let Some(mut milestone) = Storage::get_milestone(env, grant_id, idx) {
+            if milestone.state == MilestoneState::Approved {
+                milestone.state = MilestoneState::Paid;
+                Storage::set_milestone(env, grant_id, idx, &milestone);
+                Events::emit_milestone_paid(env, grant_id, idx, milestone.amount);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VoteResult {
     pub approved: bool,
     pub quorum_reached: bool,
@@ -79,13 +101,13 @@ pub fn cast_vote(
     }
 
     if milestone.state != MilestoneState::Submitted {
-        env.panic_with_error(ContractError::MilestoneNotSubmitted);
+        return Err(ContractError::MilestoneNotSubmitted);
     }
     if !grant.reviewers.contains(reviewer.clone()) {
-        env.panic_with_error(ContractError::Unauthorized);
+        return Err(ContractError::Unauthorized);
     }
     if milestone.votes.contains_key(reviewer.clone()) {
-        env.panic_with_error(ContractError::AlreadyVoted);
+        return Err(ContractError::AlreadyVoted);
     }
 
     if let Some(ref r) = reason {
@@ -186,6 +208,7 @@ pub fn finalize_milestone(milestone: &mut Milestone, result: &VoteResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_quorum_zero_reviewers() {
@@ -293,5 +316,159 @@ mod tests {
         };
         finalize_milestone(&mut milestone, &result);
         assert_eq!(milestone.state, MilestoneState::Rejected);
+    }
+
+    #[test]
+    fn test_cast_vote_milestone_not_submitted_returns_err() {
+        let env = soroban_sdk::Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let reviewer = soroban_sdk::Address::generate(&env);
+            let mut reviewers = soroban_sdk::Vec::new(&env);
+            reviewers.push_back(reviewer.clone());
+
+            let mut grant = crate::types::Grant {
+                id: 1,
+                owner: soroban_sdk::Address::generate(&env),
+                title: soroban_sdk::String::from_str(&env, "Grant"),
+                description: soroban_sdk::String::from_str(&env, "Desc"),
+                token: soroban_sdk::Address::generate(&env),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 1000,
+                milestone_amount: 500,
+                reviewers,
+                total_milestones: 2,
+                milestones_paid_out: 0,
+                escrow_balance: 1000,
+                funders: soroban_sdk::Vec::new(&env),
+                reason: None,
+                timestamp: 0,
+                require_compliance: None,
+            };
+
+            let mut milestone = crate::types::Milestone {
+                idx: 0,
+                description: soroban_sdk::String::from_str(&env, "MS0"),
+                amount: 500,
+                state: MilestoneState::Pending, // Not Submitted
+                votes: soroban_sdk::Map::new(&env),
+                approvals: 0,
+                rejections: 0,
+                reasons: soroban_sdk::Map::new(&env),
+                status_updated_at: 0,
+                proof_url: None,
+                submission_timestamp: 0,
+                deadline: None,
+                reviewer_count_snapshot: 1,
+            };
+
+            let res = cast_vote(&env, &mut grant, &mut milestone, &reviewer, true, None);
+            assert_eq!(res, Err(ContractError::MilestoneNotSubmitted));
+        });
+    }
+
+    #[test]
+    fn test_cast_vote_unauthorized_non_reviewer_returns_err() {
+        let env = soroban_sdk::Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let reviewer = soroban_sdk::Address::generate(&env);
+            let non_reviewer = soroban_sdk::Address::generate(&env);
+            let mut reviewers = soroban_sdk::Vec::new(&env);
+            reviewers.push_back(reviewer.clone());
+
+            let mut grant = crate::types::Grant {
+                id: 1,
+                owner: soroban_sdk::Address::generate(&env),
+                title: soroban_sdk::String::from_str(&env, "Grant"),
+                description: soroban_sdk::String::from_str(&env, "Desc"),
+                token: soroban_sdk::Address::generate(&env),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 1000,
+                milestone_amount: 500,
+                reviewers,
+                total_milestones: 2,
+                milestones_paid_out: 0,
+                escrow_balance: 1000,
+                funders: soroban_sdk::Vec::new(&env),
+                reason: None,
+                timestamp: 0,
+                require_compliance: None,
+            };
+
+            let mut milestone = crate::types::Milestone {
+                idx: 0,
+                description: soroban_sdk::String::from_str(&env, "MS0"),
+                amount: 500,
+                state: MilestoneState::Submitted,
+                votes: soroban_sdk::Map::new(&env),
+                approvals: 0,
+                rejections: 0,
+                reasons: soroban_sdk::Map::new(&env),
+                status_updated_at: 0,
+                proof_url: None,
+                submission_timestamp: 0,
+                deadline: None,
+                reviewer_count_snapshot: 1,
+            };
+
+            let res = cast_vote(&env, &mut grant, &mut milestone, &non_reviewer, true, None);
+            assert_eq!(res, Err(ContractError::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn test_cast_vote_already_voted_returns_err() {
+        let env = soroban_sdk::Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let reviewer = soroban_sdk::Address::generate(&env);
+            let mut reviewers = soroban_sdk::Vec::new(&env);
+            reviewers.push_back(reviewer.clone());
+
+            let mut grant = crate::types::Grant {
+                id: 1,
+                owner: soroban_sdk::Address::generate(&env),
+                title: soroban_sdk::String::from_str(&env, "Grant"),
+                description: soroban_sdk::String::from_str(&env, "Desc"),
+                token: soroban_sdk::Address::generate(&env),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 1000,
+                milestone_amount: 500,
+                reviewers,
+                total_milestones: 2,
+                milestones_paid_out: 0,
+                escrow_balance: 1000,
+                funders: soroban_sdk::Vec::new(&env),
+                reason: None,
+                timestamp: 0,
+                require_compliance: None,
+            };
+
+            let mut votes = soroban_sdk::Map::new(&env);
+            votes.set(reviewer.clone(), true);
+
+            let mut milestone = crate::types::Milestone {
+                idx: 0,
+                description: soroban_sdk::String::from_str(&env, "MS0"),
+                amount: 500,
+                state: MilestoneState::Submitted,
+                votes,
+                approvals: 1,
+                rejections: 0,
+                reasons: soroban_sdk::Map::new(&env),
+                status_updated_at: 0,
+                proof_url: None,
+                submission_timestamp: 0,
+                deadline: None,
+                reviewer_count_snapshot: 1,
+            };
+
+            let res = cast_vote(&env, &mut grant, &mut milestone, &reviewer, true, None);
+            assert_eq!(res, Err(ContractError::AlreadyVoted));
+        });
     }
 }

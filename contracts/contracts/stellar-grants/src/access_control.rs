@@ -201,7 +201,20 @@ pub fn renounce_role(env: &Env, holder: &Address, role: Role) -> Result<(), Cont
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Address, Env};
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env};
+
+    fn set_ledger(env: &Env, sequence: u32, timestamp: u64) {
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp,
+            protocol_version: 21,
+            sequence_number: sequence,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+    }
 
     fn setup() -> (Env, Address) {
         let env = Env::default();
@@ -396,7 +409,7 @@ mod tests {
         let (env, admin) = setup();
         let alice = Address::generate(&env);
         grant_role(&env, &admin, &alice, Role::EmergencyPauser, Some(50)).unwrap();
-        env.ledger().set(1, 51);
+        set_ledger(&env, 1, 51);
         assert!(!has_role(&env, &alice, Role::EmergencyPauser));
     }
 
@@ -405,7 +418,7 @@ mod tests {
         let (env, admin) = setup();
         let alice = Address::generate(&env);
         grant_role(&env, &admin, &alice, Role::EmergencyPauser, Some(100)).unwrap();
-        env.ledger().set(1, 99);
+        set_ledger(&env, 1, 99);
         assert!(has_role(&env, &alice, Role::EmergencyPauser));
     }
 

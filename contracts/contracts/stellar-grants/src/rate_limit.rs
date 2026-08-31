@@ -6,7 +6,8 @@ use crate::constants::{
     RATE_LIMIT_CONTRIBUTOR_REGISTER_MAX, RATE_LIMIT_CONTRIBUTOR_REGISTER_WINDOW,
     RATE_LIMIT_DISPUTE_RAISE_MAX, RATE_LIMIT_DISPUTE_RAISE_WINDOW, RATE_LIMIT_GRANT_CREATE_MAX,
     RATE_LIMIT_GRANT_CREATE_WINDOW, RATE_LIMIT_MILESTONE_SUBMIT_MAX,
-    RATE_LIMIT_MILESTONE_SUBMIT_WINDOW,
+    RATE_LIMIT_MILESTONE_SUBMIT_WINDOW, RATE_LIMIT_WAITLIST_JOIN_MAX,
+    RATE_LIMIT_WAITLIST_JOIN_WINDOW,
 };
 use crate::errors::ContractError;
 use crate::storage::Storage;
@@ -116,6 +117,10 @@ pub fn limit_for(action: &RateLimitAction) -> (u32, u64) {
         RateLimitAction::BountyCreate => (
             RATE_LIMIT_BOUNTY_CREATE_MAX,
             RATE_LIMIT_BOUNTY_CREATE_WINDOW,
+        ),
+        RateLimitAction::WaitlistJoin => (
+            RATE_LIMIT_WAITLIST_JOIN_MAX,
+            RATE_LIMIT_WAITLIST_JOIN_WINDOW,
         ),
     }
 }

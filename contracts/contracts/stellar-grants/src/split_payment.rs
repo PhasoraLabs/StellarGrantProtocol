@@ -104,11 +104,25 @@ mod tests {
     use soroban_sdk::{testutils::Address as _, vec, Env};
 
     fn setup_grant(env: &Env, owner: &Address, grant_id: u64, total_milestones: u32) {
-        use crate::types::Grant;
+        use crate::types::{Grant, GrantStatus};
+        use soroban_sdk::String;
         let grant = Grant {
+            id: grant_id,
             owner: owner.clone(),
+            title: String::from_str(env, "Test Grant"),
+            description: String::from_str(env, "Test"),
+            token: Address::generate(env),
+            status: GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: Vec::new(env),
             total_milestones,
-            ..Default::default()
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
         };
         Storage::set_grant(env, grant_id, &grant);
     }

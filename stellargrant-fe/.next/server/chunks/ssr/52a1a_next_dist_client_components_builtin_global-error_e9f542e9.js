@@ -1,0 +1,3 @@
+module.exports=[96815,(a,b,c)=>{let{createClientModuleProxy:d}=a.r(96980);a.n(d("[project]/StellarGrant-fe/stellargrant-fe/node_modules/next/dist/client/components/builtin/global-error.js <module evaluation>"))},52427,(a,b,c)=>{let{createClientModuleProxy:d}=a.r(96980);a.n(d("[project]/StellarGrant-fe/stellargrant-fe/node_modules/next/dist/client/components/builtin/global-error.js"))},77961,a=>{"use strict";a.i(96815);var b=a.i(52427);a.n(b)}];
+
+//# sourceMappingURL=52a1a_next_dist_client_components_builtin_global-error_e9f542e9.js.map

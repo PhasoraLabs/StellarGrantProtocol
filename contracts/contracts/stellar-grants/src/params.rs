@@ -49,6 +49,8 @@ pub fn set_param(
 
     Storage::set_param(env, &key, &record);
 
+    crate::events::Events::emit_param_changed(env, key.clone(), caller.clone());
+
     Ok(())
 }
 

@@ -1,5 +1,6 @@
+use crate::events::LicenseAttached;
 use crate::storage::Storage;
-use crate::types::{ContractError, IpRights, LicenseRecord, LicenseType};
+use crate::types::{ContractError, IpRights, LicenseRecord, LicenseType, MilestoneState};
 use soroban_sdk::{Address, Env, String};
 
 /// Attach a license record to an approved milestone deliverable.
@@ -23,7 +24,11 @@ pub fn attach_license(
     if milestone_idx >= grant.total_milestones {
         return Err(ContractError::MilestoneIndexOutOfBounds);
     }
-    Storage::get_milestone(env, grant_id, milestone_idx).ok_or(ContractError::MilestoneNotFound)?;
+    let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
+        .ok_or(ContractError::MilestoneNotFound)?;
+    if milestone.state != MilestoneState::Approved {
+        return Err(ContractError::InvalidState);
+    }
 
     let record = LicenseRecord {
         grant_id,
@@ -36,6 +41,13 @@ pub fn attach_license(
         attached_at: env.ledger().timestamp(),
     };
     Storage::set_license_record(env, grant_id, milestone_idx, &record);
+    LicenseAttached {
+        grant_id,
+        milestone_idx,
+        spdx_id: record.spdx_id.clone(),
+        attached_by: caller.clone(),
+    }
+    .publish(env);
     Ok(record)
 }
 
@@ -47,17 +59,16 @@ pub fn get_license(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Licen
 mod tests {
     use super::*;
     use crate::storage::Storage;
-    use crate::types::{
-        Grant, GrantStatus, Milestone, MilestoneState, RegistryEntry, RegistryEntryType,
-    };
-    use soroban_sdk::{testutils::Address as _, Env, Map, String, Vec};
+    use crate::types::{Grant, GrantStatus, Milestone, MilestoneState};
+    use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Vec};
 
-    fn setup() -> (Env, Address, Address) {
+    fn setup() -> (Env, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         let owner = Address::generate(&env);
         let admin = Address::generate(&env);
-        (env, owner, admin)
+        (env, contract_id, owner, admin)
     }
 
     fn create_grant_with_milestone(env: &Env, owner: &Address, grant_id: u64) {
@@ -99,104 +110,176 @@ mod tests {
         Storage::set_milestone(env, grant_id, 0, &milestone);
     }
 
+    fn create_grant_with_milestone_in_state(
+        env: &Env,
+        owner: &Address,
+        grant_id: u64,
+        state: MilestoneState,
+    ) {
+        create_grant_with_milestone(env, owner, grant_id);
+        let mut milestone = Storage::get_milestone(env, grant_id, 0).unwrap();
+        milestone.state = state;
+        Storage::set_milestone(env, grant_id, 0, &milestone);
+    }
+
     #[test]
     fn test_attach_and_get_license() {
-        let (env, owner, _) = setup();
-        create_grant_with_milestone(&env, &owner, 1);
+        let (env, contract_id, owner, _) = setup();
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 1);
 
-        let rights = IpRights {
-            commercial_use: true,
-            modification: false,
-            distribution: true,
-            sublicense: false,
-        };
+            let rights = IpRights {
+                commercial_use: true,
+                modification: false,
+                distribution: true,
+                sublicense: false,
+            };
 
-        let record = attach_license(
-            &env,
-            &owner,
-            1,
-            0,
-            String::from_str(&env, "MIT"),
-            LicenseType::OpenSource,
-            rights,
-            String::from_str(&env, "No restrictions"),
-        )
-        .unwrap();
+            let record = attach_license(
+                &env,
+                &owner,
+                1,
+                0,
+                String::from_str(&env, "MIT"),
+                LicenseType::OpenSource,
+                rights,
+                String::from_str(&env, "No restrictions"),
+            )
+            .unwrap();
 
-        assert_eq!(record.grant_id, 1);
-        assert_eq!(record.milestone_idx, 0);
-        assert_eq!(record.license_type, LicenseType::OpenSource);
-        assert!(record.rights.commercial_use);
-        assert!(!record.rights.modification);
+            assert_eq!(record.grant_id, 1);
+            assert_eq!(record.milestone_idx, 0);
+            assert_eq!(record.license_type, LicenseType::OpenSource);
+            assert!(record.rights.commercial_use);
+            assert!(!record.rights.modification);
 
-        let fetched = get_license(&env, 1, 0).unwrap();
-        assert_eq!(fetched, record);
+            let fetched = get_license(&env, 1, 0).unwrap();
+            assert_eq!(fetched, record);
+        });
     }
 
     #[test]
     fn test_get_license_returns_none_when_not_set() {
-        let (env, _, _) = setup();
-        assert!(get_license(&env, 999, 0).is_none());
+        let (env, contract_id, _, _) = setup();
+        env.as_contract(&contract_id, || {
+            assert!(get_license(&env, 999, 0).is_none());
+        });
     }
 
     #[test]
-    #[should_panic]
     fn test_attach_license_unauthorized() {
-        let (env, owner, _) = setup();
-        create_grant_with_milestone(&env, &owner, 1);
+        let (env, contract_id, owner, _) = setup();
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 1);
 
-        let other = Address::generate(&env);
-        let rights = IpRights {
-            commercial_use: false,
-            modification: false,
-            distribution: false,
-            sublicense: false,
-        };
+            let other = Address::generate(&env);
+            let rights = IpRights {
+                commercial_use: false,
+                modification: false,
+                distribution: false,
+                sublicense: false,
+            };
 
-        attach_license(
-            &env,
-            &other,
-            1,
-            0,
-            String::from_str(&env, "MIT"),
-            LicenseType::OpenSource,
-            rights,
-            String::from_str(&env, ""),
-        )
-        .unwrap();
+            let res = attach_license(
+                &env,
+                &other,
+                1,
+                0,
+                String::from_str(&env, "MIT"),
+                LicenseType::OpenSource,
+                rights,
+                String::from_str(&env, ""),
+            );
+            assert_eq!(res, Err(ContractError::Unauthorized));
+        });
     }
 
     #[test]
-    #[should_panic]
     fn test_attach_license_milestone_out_of_bounds() {
-        let (env, owner, _) = setup();
-        create_grant_with_milestone(&env, &owner, 1);
+        let (env, contract_id, owner, _) = setup();
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 1);
 
-        let rights = IpRights {
-            commercial_use: false,
-            modification: false,
-            distribution: false,
-            sublicense: false,
-        };
+            let rights = IpRights {
+                commercial_use: false,
+                modification: false,
+                distribution: false,
+                sublicense: false,
+            };
 
-        attach_license(
-            &env,
-            &owner,
-            1,
-            99,
-            String::from_str(&env, "MIT"),
-            LicenseType::OpenSource,
-            rights,
-            String::from_str(&env, ""),
-        )
-        .unwrap();
+            let res = attach_license(
+                &env,
+                &owner,
+                1,
+                99,
+                String::from_str(&env, "MIT"),
+                LicenseType::OpenSource,
+                rights,
+                String::from_str(&env, ""),
+            );
+            assert_eq!(res, Err(ContractError::MilestoneIndexOutOfBounds));
+        });
+    }
+
+    #[test]
+    fn test_attach_license_rejects_pending_milestone() {
+        let (env, contract_id, owner, _) = setup();
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone_in_state(&env, &owner, 1, MilestoneState::Pending);
+
+            let rights = IpRights {
+                commercial_use: false,
+                modification: false,
+                distribution: false,
+                sublicense: false,
+            };
+
+            let result = attach_license(
+                &env,
+                &owner,
+                1,
+                0,
+                String::from_str(&env, "MIT"),
+                LicenseType::OpenSource,
+                rights,
+                String::from_str(&env, ""),
+            );
+
+            assert_eq!(result, Err(ContractError::InvalidState));
+        });
+    }
+
+    #[test]
+    fn test_attach_license_rejects_rejected_milestone() {
+        let (env, contract_id, owner, _) = setup();
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone_in_state(&env, &owner, 1, MilestoneState::Rejected);
+
+            let rights = IpRights {
+                commercial_use: false,
+                modification: false,
+                distribution: false,
+                sublicense: false,
+            };
+
+            let result = attach_license(
+                &env,
+                &owner,
+                1,
+                0,
+                String::from_str(&env, "MIT"),
+                LicenseType::OpenSource,
+                rights,
+                String::from_str(&env, ""),
+            );
+
+            assert_eq!(result, Err(ContractError::InvalidState));
+        });
     }
 
     #[test]
     fn test_attach_license_all_types() {
-        let (env, owner, _) = setup();
-        create_grant_with_milestone(&env, &owner, 2);
-
+        let (env, contract_id, owner, _) = setup();
         let rights = IpRights {
             commercial_use: true,
             modification: true,
@@ -205,45 +288,54 @@ mod tests {
         };
 
         // Proprietary
-        let r = attach_license(
-            &env,
-            &owner,
-            2,
-            0,
-            String::from_str(&env, "PROPRIETARY"),
-            LicenseType::Proprietary,
-            rights.clone(),
-            String::from_str(&env, ""),
-        )
-        .unwrap();
-        assert_eq!(r.license_type, LicenseType::Proprietary);
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 2);
+            let r = attach_license(
+                &env,
+                &owner,
+                2,
+                0,
+                String::from_str(&env, "PROPRIETARY"),
+                LicenseType::Proprietary,
+                rights.clone(),
+                String::from_str(&env, ""),
+            )
+            .unwrap();
+            assert_eq!(r.license_type, LicenseType::Proprietary);
+        });
 
         // CreativeCommons
-        let r = attach_license(
-            &env,
-            &owner,
-            2,
-            0,
-            String::from_str(&env, "CC-BY-4.0"),
-            LicenseType::CreativeCommons,
-            rights.clone(),
-            String::from_str(&env, ""),
-        )
-        .unwrap();
-        assert_eq!(r.license_type, LicenseType::CreativeCommons);
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 3);
+            let r = attach_license(
+                &env,
+                &owner,
+                3,
+                0,
+                String::from_str(&env, "CC-BY-4.0"),
+                LicenseType::CreativeCommons,
+                rights.clone(),
+                String::from_str(&env, ""),
+            )
+            .unwrap();
+            assert_eq!(r.license_type, LicenseType::CreativeCommons);
+        });
 
         // Custom
-        let r = attach_license(
-            &env,
-            &owner,
-            2,
-            0,
-            String::from_str(&env, "CUSTOM"),
-            LicenseType::Custom,
-            rights,
-            String::from_str(&env, "Special terms"),
-        )
-        .unwrap();
-        assert_eq!(r.license_type, LicenseType::Custom);
+        env.as_contract(&contract_id, || {
+            create_grant_with_milestone(&env, &owner, 4);
+            let r = attach_license(
+                &env,
+                &owner,
+                4,
+                0,
+                String::from_str(&env, "CUSTOM"),
+                LicenseType::Custom,
+                rights,
+                String::from_str(&env, "Special terms"),
+            )
+            .unwrap();
+            assert_eq!(r.license_type, LicenseType::Custom);
+        });
     }
 }

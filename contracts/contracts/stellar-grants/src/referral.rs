@@ -535,7 +535,7 @@ mod tests {
     fn test_claim_rewards_rejects_reentrant_call_when_guard_is_held() {
         let f = setup();
 
-        f.env.as_contract(&f.contract_id, || {
+        f.env.as_contract(&f.client.address, || {
             f.env
                 .storage()
                 .temporary()

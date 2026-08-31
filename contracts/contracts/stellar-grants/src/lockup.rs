@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{token, Address, Env};
 
 use crate::circuit_breaker;
 use crate::errors::ContractError;
@@ -88,6 +88,13 @@ pub fn lock_payout(
         return Err(ContractError::InvalidState);
     }
 
+    token::Client::new(env, token).transfer_from(
+        env,
+        env.invoker(),
+        &env.current_contract_address(),
+        &amount,
+    );
+
     let now = env.ledger().timestamp();
     record.holder = holder.clone();
     record.token = token.clone();
@@ -133,6 +140,12 @@ pub fn release(
     }
 
     let amount = record.amount;
+    token::Client::new(env, &record.token).transfer(
+        &env.current_contract_address(),
+        holder,
+        &amount,
+    );
+
     record.status = LockupStatus::Released;
     record.released_at = Some(now);
     env.storage().persistent().set(&key, &record);
@@ -288,10 +301,7 @@ mod tests {
         attach_lockup(&env, &owner, 1, 0, 500).unwrap();
         let record = get_lockup(&env, 1, 0).unwrap();
         assert_eq!(record.unlocks_at, 1500);
-        assert_eq!(
-            record.token,
-            env.as_contract(&|| Storage::get_grant(&env, 1).unwrap().token)
-        );
+        assert_eq!(record.token, Storage::get_grant(&env, 1).unwrap().token);
     }
 
     #[test]

@@ -80,17 +80,19 @@ pub fn verify_proof(env: &Env, grant_id: u64, milestone_idx: u32, proof: &Merkle
     hash == commitment.root
 }
 
-/// Hash two child nodes together: SHA-256(left || right).
+/// Hash two child nodes together: SHA-256(0x01 || left || right).
 pub fn hash_pair(env: &Env, left: &Bytes, right: &Bytes) -> Bytes {
-    let mut data = Bytes::new(env);
+    let mut data = Bytes::from_array(env, &[0x01u8]);
     data.append(left);
     data.append(right);
     env.crypto().sha256(&data).into()
 }
 
-/// Hash a leaf value: SHA-256(leaf_data).
+/// Hash a leaf value: SHA-256(0x00 || leaf_data).
 pub fn hash_leaf(env: &Env, data: &Bytes) -> Bytes {
-    env.crypto().sha256(data).into()
+    let mut input = Bytes::from_array(env, &[0x00u8]);
+    input.append(data);
+    env.crypto().sha256(&input).into()
 }
 
 /// Return the committed root for a milestone, if any.
@@ -181,7 +183,7 @@ mod tests {
             let h23 = hash_pair(&env, &h2, &h3);
 
             let mut siblings = Vec::new(&env);
-            siblings.push_back(h1);
+            siblings.push_back(h1.clone());
             siblings.push_back(h23);
 
             let valid = MerkleProof {
@@ -221,6 +223,55 @@ mod tests {
 
             let _ = h0;
             let _ = h3;
+        });
+    }
+
+    #[test]
+    fn test_collision_attack_blocked_by_domain_separation() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+        let grant_id = 1u64;
+        let milestone_idx = 0u32;
+
+        let (root, leaves) = build_four_leaf_root(&env);
+
+        env.as_contract(&contract_id, || {
+            let commitment = MerkleCommitment {
+                grant_id,
+                milestone_idx,
+                root: root.clone(),
+                leaf_count: 4,
+                committed_by: owner.clone(),
+                committed_at: 0,
+            };
+            Storage::set_merkle_commitment(&env, grant_id, milestone_idx, &commitment);
+
+            let h0 = hash_leaf(&env, &leaves.get(0).unwrap());
+            let h1 = hash_leaf(&env, &leaves.get(1).unwrap());
+            let h2 = hash_leaf(&env, &leaves.get(2).unwrap());
+            let h3 = hash_leaf(&env, &leaves.get(3).unwrap());
+
+            let h23 = hash_pair(&env, &h2, &h3);
+
+            let mut siblings = Vec::new(&env);
+            siblings.push_back(h1.clone());
+            siblings.push_back(h23.clone());
+
+            let fake_leaf = Bytes::new(&env);
+            let mut fake_leaf_mut = fake_leaf.clone();
+            fake_leaf_mut.append(&h2);
+            fake_leaf_mut.append(&h3);
+
+            let forged_proof = MerkleProof {
+                leaf: fake_leaf_mut,
+                leaf_index: 0,
+                siblings: siblings.clone(),
+            };
+
+            assert!(!verify_proof(&env, grant_id, milestone_idx, &forged_proof));
         });
     }
 }

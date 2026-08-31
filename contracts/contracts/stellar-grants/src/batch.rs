@@ -160,35 +160,39 @@ fn try_fund_grant(
         return Err(ContractError::InvalidState);
     }
 
-    let token_client = token::Client::new(env, &grant.token);
-    let contract_address = env.current_contract_address();
-    token_client.transfer(funder, &contract_address, &amount);
-
-    grant.escrow_balance = grant
+    let new_escrow_balance = grant
         .escrow_balance
         .checked_add(amount)
         .ok_or(ContractError::InvalidInput)?;
 
+    let mut funders = grant.funders.clone();
     let mut funder_found = false;
-    for i in 0..grant.funders.len() {
-        let mut fund_entry = grant.funders.get(i).unwrap();
+    for i in 0..funders.len() {
+        let mut fund_entry = funders.get(i).unwrap();
         if fund_entry.funder == *funder {
             fund_entry.amount = fund_entry
                 .amount
                 .checked_add(amount)
                 .ok_or(ContractError::InvalidInput)?;
-            grant.funders.set(i, fund_entry);
+            funders.set(i, fund_entry);
             funder_found = true;
             break;
         }
     }
 
     if !funder_found {
-        grant.funders.push_back(GrantFund {
+        funders.push_back(GrantFund {
             funder: funder.clone(),
             amount,
         });
     }
+
+    let token_client = token::Client::new(env, &grant.token);
+    let contract_address = env.current_contract_address();
+    token_client.transfer(funder, &contract_address, &amount);
+
+    grant.escrow_balance = new_escrow_balance;
+    grant.funders = funders;
 
     Storage::set_grant(env, grant_id, &grant);
     Events::emit_grant_funded(env, grant_id, funder.clone(), amount, grant.escrow_balance);

@@ -2,6 +2,7 @@ use soroban_sdk::{Address, Env, String, Vec};
 
 use crate::constants::{BASIS_POINTS_SCALE, MAX_RUBRIC_WEIGHTS};
 use crate::errors::ContractError;
+use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight};
 
@@ -42,12 +43,13 @@ pub fn define_rubric(
     let id = Storage::next_rubric_id(env);
     let rubric = ScoringRubric {
         id,
-        name,
+        name: name.clone(),
         weights,
         created_by: admin.clone(),
         created_at: env.ledger().timestamp(),
     };
     Storage::set_scoring_rubric(env, &rubric);
+    Events::emit_rubric_defined(env, id, name, admin.clone());
     Ok(id)
 }
 
@@ -57,15 +59,10 @@ pub fn get_rubric(env: &Env, rubric_id: u32) -> Result<ScoringRubric, ContractEr
 
 pub fn list_rubrics(env: &Env) -> Vec<u32> {
     let mut ids: Vec<u32> = Vec::new(env);
-    let mut i = 1;
-    loop {
+    let max_id = Storage::get_rubric_counter(env);
+    for i in 1..=max_id {
         if Storage::get_scoring_rubric(env, i).is_some() {
             ids.push_back(i);
-            i += 1;
-        } else if i > 100 {
-            break;
-        } else {
-            i += 1;
         }
     }
     ids
@@ -574,5 +571,60 @@ mod tests {
             define_rubric(&env, &admin, name_exceeded, weights_exceeded)
         });
         assert_eq!(result, Err(ContractError::InvalidWeights));
+    }
+
+    #[test]
+    fn test_list_rubrics_many_rubrics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let admin = setup_admin(&env, &contract_id);
+
+        let mut weights: Vec<ScoringWeight> = Vec::new(&env);
+        weights.push_back(ScoringWeight {
+            dimension: ScoringDimension::ReputationScore,
+            weight_bps: 10000,
+            invert: false,
+        });
+
+        // Create 150 rubrics to test that list_rubrics doesn't scan indefinitely
+        for _ in 1..=150 {
+            let name = String::from_str(&env, "Rubric");
+            env.as_contract(&contract_id, || {
+                define_rubric(&env, &admin, name, weights.clone()).unwrap()
+            });
+        }
+
+        let rubric_ids = env.as_contract(&contract_id, || list_rubrics(&env));
+        assert_eq!(rubric_ids.len(), 150);
+
+        // Verify all IDs are present and in order
+        for (idx, &id) in rubric_ids.iter().enumerate() {
+            assert_eq!(id, (idx + 1) as u32);
+        }
+    }
+
+    #[test]
+    fn test_define_rubric_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let admin = setup_admin(&env, &contract_id);
+
+        let mut weights: Vec<ScoringWeight> = Vec::new(&env);
+        weights.push_back(ScoringWeight {
+            dimension: ScoringDimension::ReputationScore,
+            weight_bps: 10000,
+            invert: false,
+        });
+
+        let name = String::from_str(&env, "TestRubric");
+        env.as_contract(&contract_id, || {
+            define_rubric(&env, &admin, name.clone(), weights.clone()).unwrap();
+        });
+
+        // Verify the event was emitted
+        let events = env.events().all();
+        assert!(events.len() > 0, "At least one event should be emitted");
     }
 }

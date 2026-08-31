@@ -1,10 +1,10 @@
-use soroban_sdk::{Address, Env, String, Vec};
+use soroban_sdk::{Address, Env, Map, String, Vec};
 
 use crate::constants;
 use crate::errors::ContractError;
 use crate::events::Events;
 use crate::storage::Storage;
-use crate::types::{ForkRecord, GrantStatus};
+use crate::types::{ForkRecord, GrantStatus, Milestone, MilestoneState};
 
 pub fn fork_grant(
     env: &Env,
@@ -53,7 +53,31 @@ pub fn fork_grant(
         inherited_fields.push_back(String::from_str(env, "reviewers"));
     }
     if inherit_milestones {
-        inherited_fields.push_back(String::from_str(env, "milestones"));
+        let mut copied_any = false;
+        for idx in 0..original.total_milestones {
+            if let Some(orig_milestone) = Storage::get_milestone(env, original_grant_id, idx) {
+                let new_milestone = Milestone {
+                    idx,
+                    description: orig_milestone.description.clone(),
+                    amount: original.milestone_amount,
+                    state: MilestoneState::Pending,
+                    votes: Map::new(env),
+                    approvals: 0,
+                    rejections: 0,
+                    reasons: Map::new(env),
+                    status_updated_at: 0,
+                    proof_url: None,
+                    submission_timestamp: 0,
+                    deadline: None,
+                    reviewer_count_snapshot: 0,
+                };
+                Storage::set_milestone(env, new_grant_id, idx, &new_milestone);
+                copied_any = true;
+            }
+        }
+        if copied_any {
+            inherited_fields.push_back(String::from_str(env, "milestones"));
+        }
     }
     overridden_fields.push_back(String::from_str(env, "title"));
     overridden_fields.push_back(String::from_str(env, "description"));
@@ -147,6 +171,103 @@ mod test {
             require_compliance: None,
         };
         Storage::set_grant(env, id, &grant);
+    }
+
+    fn setup_milestone(env: &Env, grant_id: u64, idx: u32, description: &str) {
+        let milestone = Milestone {
+            idx,
+            description: String::from_str(env, description),
+            amount: 100,
+            state: MilestoneState::Approved,
+            votes: Map::new(env),
+            approvals: 1,
+            rejections: 0,
+            reasons: Map::new(env),
+            status_updated_at: 0,
+            proof_url: Some(String::from_str(env, "https://proof")),
+            submission_timestamp: env.ledger().timestamp(),
+            deadline: None,
+            reviewer_count_snapshot: 1,
+        };
+        Storage::set_milestone(env, grant_id, idx, &milestone);
+    }
+
+    /// #875: inherit_milestones = true must genuinely copy each submitted
+    /// milestone's description onto the new grant (with approval state
+    /// reset), and only then may ForkRecord.inherited_fields claim
+    /// "milestones" was inherited.
+    #[test]
+    fn test_fork_grant_copies_milestone_data_when_inherited() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        let caller = Address::generate(&env);
+        let token = Address::generate(&env);
+        setup_grant(&env, 1, &owner);
+        setup_milestone(&env, 1, 0, "Design doc");
+        setup_milestone(&env, 1, 1, "MVP implementation");
+
+        let new_grant_id = fork_grant(
+            &env,
+            &caller,
+            1,
+            String::from_str(&env, "Forked Grant"),
+            String::from_str(&env, "Forked Desc"),
+            2000,
+            &token,
+            false,
+            true,
+        )
+        .unwrap();
+
+        let record = get_fork_record(&env, new_grant_id).unwrap();
+        assert!(record
+            .inherited_fields
+            .contains(String::from_str(&env, "milestones")));
+
+        let copied_0 = Storage::get_milestone(&env, new_grant_id, 0).unwrap();
+        assert_eq!(copied_0.description, String::from_str(&env, "Design doc"));
+        assert_eq!(copied_0.state, MilestoneState::Pending);
+        assert_eq!(copied_0.approvals, 0);
+        assert!(copied_0.proof_url.is_none());
+
+        let copied_1 = Storage::get_milestone(&env, new_grant_id, 1).unwrap();
+        assert_eq!(
+            copied_1.description,
+            String::from_str(&env, "MVP implementation")
+        );
+        assert_eq!(copied_1.state, MilestoneState::Pending);
+    }
+
+    #[test]
+    fn test_fork_grant_no_milestones_copied_does_not_claim_inherited() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let owner = Address::generate(&env);
+        let caller = Address::generate(&env);
+        let token = Address::generate(&env);
+        // No milestones ever submitted on the original grant.
+        setup_grant(&env, 1, &owner);
+
+        let new_grant_id = fork_grant(
+            &env,
+            &caller,
+            1,
+            String::from_str(&env, "Forked Grant"),
+            String::from_str(&env, "Forked Desc"),
+            2000,
+            &token,
+            false,
+            true,
+        )
+        .unwrap();
+
+        let record = get_fork_record(&env, new_grant_id).unwrap();
+        assert!(!record
+            .inherited_fields
+            .contains(String::from_str(&env, "milestones")));
     }
 
     #[test]

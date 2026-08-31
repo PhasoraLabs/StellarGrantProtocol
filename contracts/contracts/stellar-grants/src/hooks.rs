@@ -38,7 +38,7 @@ pub fn register_hook(
 
     let mut hooks = Storage::get_hook_registry(env, &event);
 
-    if hooks.len() >= MAX_HOOKS_PER_EVENT {
+    if hooks.iter().filter(|h| h.is_active).count() >= MAX_HOOKS_PER_EVENT as usize {
         return Err(ContractError::HookLimitExceeded);
     }
 
