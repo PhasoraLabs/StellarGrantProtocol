@@ -1,67 +1,184 @@
-# Fix four issues in stellar-grants waitlist/registry/provenance modules
+# test: expand refund / dispute / delegate / fuzz coverage (#976, #977, #978, #979)
 
-This PR bundles four independent fixes to the `stellar-grants` Soroban contract: two security gaps in the waitlist module (missing authorization and a costless mass-enrollment DoS), an integer-overflow panic in provenance pagination, and an O(n) performance regression in contributor registration.
+This PR is **test-only** — it touches five files, all under
+`contracts/contracts/stellar-grants/tests/`, and changes **no production code**.
+It bundles four independent test-coverage issues that all concern the same
+contract.
 
----
-
-## #922 — Add `require_auth` checks to waitlist module
-
-**File:** `contracts/contracts/stellar-grants/src/waitlist.rs`
-
-None of `waitlist.rs`'s three state-changing functions called `require_auth()`. `configure()` only checked address equality against the grant's stored owner, so a caller could pass the real owner's (public) address as the `owner` parameter and sabotage their waitlist config (e.g. set `max_waitlist_size = 0`) without ever holding the owner's key. `join()` and `leave()` had no auth check at all, letting anyone enroll or evict arbitrary third-party addresses on any grant's waitlist. Every other module in this codebase (treasury, syndication, emergency, oracle, lockup, clawback, ...) enforces `require_auth()` somewhere in its call chain; `waitlist.rs` was the sole exception.
-
-- Added `owner.require_auth()` to `configure()` and `applicant.require_auth()` to `join()`/`leave()`.
-- New tests: a stranger can't reconfigure another owner's waitlist by passing the owner's address, and a third party can't enroll or remove an address via `join()`/`leave()` without that address's own signature.
-
-## #923 — Rate-limit waitlist join to prevent exhaustion DoS
-
-**File:** `contracts/contracts/stellar-grants/src/waitlist.rs` (+ `constants.rs`, `types.rs`, `rate_limit.rs`)
-
-Joining a waitlist required no deposit, stake, or reputation threshold. Even with `require_auth()` in place (previous fix), an attacker could still script one signed `join_waitlist` call per freshly generated address until `max_waitlist_size` is reached, permanently exhausting a grant's waitlist for legitimate applicants at only the cost of transaction fees.
-
-- Gated `join()` behind `rate_limit::check_and_increment`, keyed by applicant address — the same mechanism already used for grant/milestone/bounty creation and contributor registration.
-- Added a `WaitlistJoin` `RateLimitAction` variant (5 joins/hour by default, admin-exempt like every other rate-limited action).
-- New tests: an applicant address is throttled after `RATE_LIMIT_WAITLIST_JOIN_MAX` joins across distinct grants within one window, while a single legitimate join is unaffected.
-
-## #921 — Use checked pagination arithmetic in `provenance::get_by_address`
-
-**File:** `contracts/contracts/stellar-grants/src/provenance.rs`
-
-Unlike `pagination::paginate` — the shared helper this codebase documents as the canonical place for offset/limit pagination — `get_by_address` reimplemented pagination inline. It didn't clamp `limit` to `MAX_PAGE_SIZE`, and computed `offset + limit` with plain `u32` addition before checking against `len`. A caller passing large `offset`/`limit` values (both near `u32::MAX`) would overflow that addition and panic, violating this codebase's "never panic!, return Result" convention.
-
-- Replaced the inline pagination logic with `pagination::paginate`, which clamps to `MAX_PAGE_SIZE` and uses saturating arithmetic.
-- New test calls `get_by_address` with `offset`/`limit` near `u32::MAX` and confirms it returns cleanly instead of panicking.
-
-## #920 — Remove redundant linear scan from contributor registration
-
-**File:** `contracts/contracts/stellar-grants/src/registry.rs`
-
-Every call to `register_contributor` loaded the entire global contributor index into memory and scanned it linearly for a duplicate before appending, making per-call cost O(n) and total registration cost across n users O(n²). The scan was also redundant: `lib.rs`'s `contributor_register` entrypoint already performs an O(1) duplicate check via `Storage::get_contributor` before ever calling into this function.
-
-- Removed the linear scan; `register_contributor` now relies on the caller's O(1) check, documented in the function's doc comment.
-- New test registers many pre-existing contributors and confirms adding one more is O(1) — no scan of the whole index.
+| Issue | Area | File(s) |
+|-------|------|---------|
+| #976 | Refund-policy variant coverage | `tests/test_refund_policy.rs` |
+| #977 | Dispute-resolution fund verification | `tests/test_milestone_dispute.rs`, `tests/test_reputation_and_dispute_fee.rs` |
+| #978 | Delegate cycle-detection coverage | `tests/test_delegate_voting.rs` |
+| #979 | Fuzz tests that never called the crate | `tests/fuzz/mod.rs` |
 
 ---
 
-## Test infrastructure fixes (pre-existing, unrelated to these issues)
+## #976 — Refund policy tests cover only 2 of 5 `RefundPolicyType` variants
 
-While making the above changes testable, two pre-existing bugs surfaced: `waitlist.rs`'s and `registry.rs`'s unit tests called `Storage`-backed functions directly on a bare `Env`, which this soroban-sdk version rejects outside of `env.as_contract(...)`. This predates all four issues above (confirmed via `git stash`) and would otherwise have blocked `cargo test` for this PR. Fixed by registering the contract and wrapping each test body accordingly — no production code changes.
+`test_refund_policy.rs` previously exercised only `TimeWeighted` and the
+no-policy fallback. `ProportionalToRemaining`, `PenaltyOnCancel` and `NoRefund`
+were never referenced by name, and `NoRefund` (funder must get **exactly 0**)
+was the highest-risk untested branch.
 
-## Verification
+**Added** — one dedicated end-to-end test per remaining variant, each driven
+through the real `grant_cancel` → `refund::execute_refund` path with exact
+funder/owner split assertions and a "the two payouts sum to the gross escrow"
+check (no double-payout, no leak):
+
+- `test_full_refund_policy_returns_entire_escrow_to_funder` — funder 1000, owner 0.
+- `test_proportional_to_remaining_refunds_unreleased_escrow` — with 0 milestones
+  paid out, all escrow is unreleased, so the funder is refunded in full.
+- `test_penalty_on_cancel_applies_penalty_bps_and_splits_remainder` —
+  `penalty_bps = 2000` → funder 800, owner 200.
+- `test_no_refund_policy_sends_full_escrow_to_owner_and_zero_to_funder` —
+  funder **0**, owner 1000.
+- `test_no_refund_policy_with_min_refund_floor_still_pays_funder_the_floor` —
+  a 10% `min_refund_pct_bps` floor is honored even under `NoRefund` (funder 100,
+  owner 900).
+
+**Note on the partial ratio:** `ProportionalToRemaining` with
+`milestones_paid_out > 0` (a genuinely fractional refund) is not reachable from
+the mainline entry points — nothing increments `milestones_paid_out` without
+also completing (and thereby closing) the grant. That exact-fraction case is a
+good candidate for an inline `#[test]` in `src/refund.rs`, but `cargo test --lib`
+does not currently compile on `main` (see **CI status** below), so inline unit
+tests could not be verified and were left out of this PR.
+
+## #977 — Dispute resolution tests never verify actual fund movement
+
+`dispute::resolve_dispute` performs a real `escrow::release` (to the grant
+owner, contributor-win) or `escrow::release_to_funders` (to funders,
+funder-win) of the disputed milestone's exact amount, but every dispute test
+asserted only the returned `DisputeStatus` enum. A regression that resolved the
+status correctly while paying the wrong party — or the wrong amount — would
+have passed.
+
+**Changed** — `test_dispute_and_resolve_flow`,
+`test_dispute_raise_and_resolve_for_contributor` and
+`test_dispute_raise_and_resolve_for_funder` now snapshot token balances around
+`dispute_resolve` and assert:
+
+- the **winning** party's balance increases by exactly `milestone.amount`,
+- the **losing** party's balance is unchanged,
+- `escrow_balance` drops by exactly `milestone.amount`.
+
+These three tests were also **not executing the resolution path at all** on
+`main` — they predate two later changes and failed early:
+
+1. `milestone_vote` now requires a satisfied acceptance-criteria checklist
+   (`Error(Contract, #76) RequiredCriteriaNotMet`) — added the same
+   `checklist_define_criteria` / `checklist_submit` / `checklist_review_criterion`
+   setup that `tests/integration_lifecycle.rs::setup_checklist` already uses.
+2. `dispute_assign_arbiter` checks the global admin, which `initialize` does not
+   set (`Error(Contract, #2)`) — added `client.set_global_admin(&admin, &admin)`,
+   again matching the working `integration_lifecycle.rs` dispute test.
+
+Both are test-only setup fixes; no assertion or business logic was changed.
+
+## #978 — Delegate cycle-detection tests only cover the trivial 2-hop case
+
+`delegate::would_create_cycle` special-cases self-delegation and walks a
+delegation chain of arbitrary length, but `test_delegation_cycle_is_rejected`
+only exercised a direct `A→B, B→A` cycle.
+
+**Added:**
+
+- `test_self_delegation_is_rejected` — `delegate_vote(r, r, …)` rejected.
+- `test_three_node_delegation_cycle_is_rejected` — `A→B→C`, then `C→A` rejected.
+- `test_long_indirect_delegation_cycle_is_rejected` — an 80-node chain closed
+  into a cycle is rejected, exercising the full multi-hop walk and the
+  visited-set bookkeeping.
+
+**On the walk-limit boundary:** `would_create_cycle` hard-codes
+`max_chain_length = 256`, but a single on-chain invocation can only touch ~100
+distinct ledger entries, so a cycle walk over more than ~100 delegation records
+hits `Error(Budget, ExceededLimit)` ("total footprint ledger entries") long
+before it reaches 256 — an exact-256 test is not runnable. The 80-node test
+sits just under that real ceiling. The `max_chain_length` / long-valid-chain
+gap remains tracked in #953.
+
+## #979 — `tests/fuzz/mod.rs` "fuzz" tests never call the actual crate
+
+`prop_grant_create_no_overflow`, `prop_grant_create_total_amount_validation`,
+`prop_cancel_refund_sum_equals_escrow`, `prop_release_balance_conservation` and
+`prop_quorum_bounds` only asserted properties about arithmetic **reimplemented
+inline in the test**, so a real crate regression could never fail them.
+
+**Rewritten** to drive `StellarGrantsContractClient` / real crate functions
+with fuzzed inputs (case counts dialled down since each case spins up a fresh
+contract), following the `fees_fuzz.rs` pattern:
+
+| New name | What real code it now exercises |
+|----------|--------------------------------|
+| `prop_grant_create_rejects_overflowing_milestone_math` | `internal_grant_create`'s `checked_mul(...).ok_or(InvalidInput)` — asserts a clean `Err(Ok(_))` contract error, never a host trap from an unchecked multiply |
+| `prop_grant_create_enforces_total_covers_milestones` | `internal_grant_create`'s `total_amount < total_required` check + the stored grant echoing the inputs |
+| `prop_cancel_refund_sum_equals_escrow` | `escrow::refund_all`'s proportional split (incl. "last funder gets the remainder") via `grant_cancel` |
+| `prop_release_balance_conservation` | `escrow::release` + `refund_all` + `fees::compute_fee` via `grant_complete` — `owner_payout + funder_refund == gross escrow`, escrow fully drained |
+| `prop_quorum_bounds` | `governance::quorum_reached` (`approvals * 2 > reviewer_count`) via real milestone voting |
+
+The eight pure-math `prop_basis_points_*` / `prop_proportional_share_*` tests in
+the same file already called real crate functions and are unchanged.
+
+---
+
+## CI status — the `Contracts (Rust)` job is already red on `main`
+
+**Every CI run on `main` for the last week fails at the `Clippy (WASM, lib
+only)` step** (e.g. runs `33364533301`, `33302780551`, …). The `stellar-grants`
+library has ~34 pre-existing compile errors from other contributors' recently
+merged features:
+
+- broken hook-payload construction using `soroban_sdk::Vec<u8>` (which the
+  current soroban-sdk doesn't support) in `src/lib.rs` — 6 sites, from
+  `f0f444f`;
+- four `ContractError` variants referenced but never declared
+  (`InsufficientClawbackAllowance`, `TooManyPublicReviews`, `DaoVoteRequired`,
+  `SwapNotImplemented`) in `clawback.rs` / `open_review.rs` / `params.rs` /
+  `token_swap.rs`;
+- a removed `env.invoker()` call in `src/lockup.rs`;
+- one type mismatch in `src/params.rs`.
+
+None of this relates to these four test-only issues, and per the issue scope
+this PR does **not** fix it. Consequences:
+
+- The `Contracts (Rust)` job on this PR will show the **same** red X it shows on
+  every recent merge into `main` — it fails at clippy, before the `Test` step
+  this PR's changes live in.
+- `backend`, `frontend` and `client-sdk` CI jobs are unaffected by this PR and
+  continue to pass.
+
+### How the new tests were verified
+
+Because the library must compile to build any test target, the five affected
+test binaries were built and run locally against a **throwaway local patch**
+that fixes only the ~34 compile errors above (not included in this PR). Results:
 
 ```
-cargo fmt --check
-cargo clippy --lib -p stellar-grants -- -D warnings
-cargo test --lib -p stellar-grants -- waitlist:: provenance:: registry:: rate_limit:: pagination:: constants::
+test_refund_policy              6 passed, 1 failed   (see pre-existing failures)
+test_delegate_voting            9 passed, 0 failed
+test_milestone_dispute          2 passed, 0 failed
+test_reputation_and_dispute_fee 4 passed, 0 failed
+fuzz_amounts (this PR's 5)      5 passed, 0 failed
 ```
 
-All 54 tests across the six touched modules pass clean, including every new test added above. `cargo clippy --lib --tests -- -D warnings` reports zero errors in any file touched by this PR (all remaining clippy errors are pre-existing and confined to files this PR doesn't touch).
+`cargo fmt --all -- --check` passes.
 
-**Note on the wider test suite:** the same pre-existing `env.as_contract(...)` issue affects dozens of *other*, untouched modules across the crate — running the full `cargo test --lib` still fails several hundred pre-existing tests for reasons entirely unrelated to this PR. Out of scope here.
+### Pre-existing test failures (NOT introduced by this PR)
+
+Running the affected binaries surfaces failures that exist on `main`
+independently of this change and are out of scope here:
+
+- `test_refund_policy::test_time_weighted_refund_policy_on_partial_cancel` —
+  the `TimeWeighted` split no longer produces the expected 500/500
+  (unmodified by this PR).
+- `fuzz::prop_basis_points_partition_never_exceeds_total` and
+  `fees_fuzz::prop_proportional_share_sum_invariant` — pre-existing
+  `math::basis_points_of` rounding-invariant failures (unmodified by this PR).
 
 ---
 
-Closes #922
-Closes #923
-Closes #921
-Closes #920
+Closes #976
+Closes #977
+Closes #978
+Closes #979
