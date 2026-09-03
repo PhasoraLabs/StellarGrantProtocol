@@ -346,10 +346,14 @@ impl Storage {
         let page_count_key = DataKey::Grant(GrantKey::AuditLogPageCount(grant_id));
         let page_count: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
         let mut full_log = Vec::new(env);
-        
+
         // Also check un-sharded single log for backward compatibility
         let legacy_key = DataKey::Grant(GrantKey::AuditLog(grant_id));
-        if let Some(log) = env.storage().persistent().get::<_, Vec<AuditEntry>>(&legacy_key) {
+        if let Some(log) = env
+            .storage()
+            .persistent()
+            .get::<_, Vec<AuditEntry>>(&legacy_key)
+        {
             for entry in log.iter() {
                 full_log.push_back(entry);
             }
@@ -397,15 +401,26 @@ impl Storage {
             .extend_ttl(Self::AUDIT_TTL_THRESHOLD, Self::AUDIT_TTL_EXTEND_TO);
     }
 
-    pub fn set_snapshot(env: &Env, grant_id: u64, snapshot_id: u32, snapshot: &crate::types::StateSnapshot) {
+    pub fn set_snapshot(
+        env: &Env,
+        grant_id: u64,
+        snapshot_id: u32,
+        snapshot: &crate::types::StateSnapshot,
+    ) {
         let key = DataKey::Snapshot(grant_id, snapshot_id);
         env.storage().persistent().set(&key, snapshot);
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, Self::AUDIT_TTL_THRESHOLD, Self::AUDIT_TTL_EXTEND_TO);
+        env.storage().persistent().extend_ttl(
+            &key,
+            Self::AUDIT_TTL_THRESHOLD,
+            Self::AUDIT_TTL_EXTEND_TO,
+        );
     }
 
-    pub fn get_snapshot(env: &Env, grant_id: u64, snapshot_id: u32) -> Option<crate::types::StateSnapshot> {
+    pub fn get_snapshot(
+        env: &Env,
+        grant_id: u64,
+        snapshot_id: u32,
+    ) -> Option<crate::types::StateSnapshot> {
         let key = DataKey::Snapshot(grant_id, snapshot_id);
         env.storage().persistent().get(&key)
     }
@@ -413,9 +428,11 @@ impl Storage {
     pub fn set_snapshot_list(env: &Env, grant_id: u64, snapshots: &Vec<u32>) {
         let key = DataKey::SnapshotList(grant_id);
         env.storage().persistent().set(&key, snapshots);
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, Self::AUDIT_TTL_THRESHOLD, Self::AUDIT_TTL_EXTEND_TO);
+        env.storage().persistent().extend_ttl(
+            &key,
+            Self::AUDIT_TTL_THRESHOLD,
+            Self::AUDIT_TTL_EXTEND_TO,
+        );
     }
 
     pub fn get_snapshot_list(env: &Env, grant_id: u64) -> Vec<u32> {

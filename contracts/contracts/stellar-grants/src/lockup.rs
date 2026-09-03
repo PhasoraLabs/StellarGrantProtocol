@@ -88,11 +88,7 @@ pub fn lock_payout(
         return Err(ContractError::InvalidState);
     }
 
-    token::Client::new(env, token).transfer(
-        holder,
-        &env.current_contract_address(),
-        &amount,
-    );
+    token::Client::new(env, token).transfer(holder, &env.current_contract_address(), &amount);
 
     let now = env.ledger().timestamp();
     record.holder = holder.clone();

@@ -323,7 +323,8 @@ mod tests {
 
             let subs = Vec::new(&env);
             let cat_id =
-                create_category(&env, &admin, String::from_str(&env, "Infrastructure"), subs).unwrap();
+                create_category(&env, &admin, String::from_str(&env, "Infrastructure"), subs)
+                    .unwrap();
 
             setup_grant(&env, 10, &owner);
             setup_grant(&env, 20, &owner);
@@ -354,7 +355,8 @@ mod tests {
             let owner = Address::generate(&env);
 
             let subs = Vec::new(&env);
-            let cat_id = create_category(&env, &admin, String::from_str(&env, "DeFi"), subs).unwrap();
+            let cat_id =
+                create_category(&env, &admin, String::from_str(&env, "DeFi"), subs).unwrap();
 
             let tags = Vec::new(&env);
             for i in 0..5u64 {
@@ -396,9 +398,10 @@ mod tests {
             let owner = Address::generate(&env);
 
             let subs = Vec::new(&env);
-            let cat_a =
-                create_category(&env, &admin, String::from_str(&env, "CatA"), subs.clone()).unwrap();
-            let cat_b = create_category(&env, &admin, String::from_str(&env, "CatB"), subs).unwrap();
+            let cat_a = create_category(&env, &admin, String::from_str(&env, "CatA"), subs.clone())
+                .unwrap();
+            let cat_b =
+                create_category(&env, &admin, String::from_str(&env, "CatB"), subs).unwrap();
 
             setup_grant(&env, 1, &owner);
             let tags = Vec::new(&env);

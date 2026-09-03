@@ -401,6 +401,9 @@ mod tests {
 
         // Verify the event was emitted
         let events = env.events().all();
-        assert!(!events.events().is_empty(), "At least one event should be emitted");
+        assert!(
+            !events.events().is_empty(),
+            "At least one event should be emitted"
+        );
     }
 }

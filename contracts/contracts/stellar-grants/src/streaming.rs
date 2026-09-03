@@ -321,7 +321,14 @@ mod tests {
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{token::StellarAssetClient, Address, Env, String};
 
-    fn setup() -> (Env, Address, Address, Address, Address, soroban_sdk::Address) {
+    fn setup() -> (
+        Env,
+        Address,
+        Address,
+        Address,
+        Address,
+        soroban_sdk::Address,
+    ) {
         let env = Env::default();
         let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
@@ -341,7 +348,14 @@ mod tests {
             create_active_grant(&env, 1, &sender, &token_contract, GrantStatus::Active);
         });
 
-        (env, sender, recipient, token_contract, token_admin, contract_id)
+        (
+            env,
+            sender,
+            recipient,
+            token_contract,
+            token_admin,
+            contract_id,
+        )
     }
 
     fn create_active_grant(
