@@ -11,7 +11,11 @@ const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
   retryOnRateLimit: true,
   retryOnTimeout: true,
   retryOnNetworkError: true,
-  onRetry: () => {},
+  onRetry: (attempt: number, error: Error, delayMs: number) => {
+    console.debug(
+      `[StellarGrants] RPC retry attempt ${attempt} after ${delayMs}ms — ${error.message}`,
+    );
+  },
 };
 
 /**

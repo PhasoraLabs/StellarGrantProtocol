@@ -1,5 +1,5 @@
 /**
- * Grant metadata IPFS integration helpers (#261).
+ * Grant metadata IPFS integration helpers (#488).
  *
  * Stores rich grant metadata (descriptions, attachments, structured JSON)
  * on IPFS via Pinata and retrieves it using a list of fallback gateways to
@@ -11,7 +11,7 @@
  *
  * Usage:
  * ```typescript
- * import { uploadMetadataToIPFS, fetchMetadataFromIPFS } from "@stellargrants/sdk";
+ * import { uploadMetadataToIPFS, fetchMetadataFromIPFS } from "@stellargrants/client-sdk";
  *
  * const { cid } = await uploadMetadataToIPFS(
  *   { title: "Ocean clean-up", description: "..." },

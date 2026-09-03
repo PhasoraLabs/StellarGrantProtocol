@@ -1,3 +1,4 @@
+import type { Ref } from "vue";
 import { ref, onMounted, onUnmounted } from "vue";
 import { useStellarGrants } from "./useStellarGrants";
 import type { GrantData } from "../types";
@@ -17,11 +18,11 @@ export interface UseGrantsOptions {
  */
 export interface UseGrantsResult {
   /** Array of grant data */
-  data: GrantData[];
+  data: Ref<GrantData[]>;
   /** Whether a fetch operation is in progress */
-  isLoading: boolean;
+  isLoading: Ref<boolean>;
   /** Error from the last fetch operation, if any */
-  error: Error | null;
+  error: Ref<Error | null>;
   /** Manually trigger a refetch */
   refetch: () => Promise<void>;
 }

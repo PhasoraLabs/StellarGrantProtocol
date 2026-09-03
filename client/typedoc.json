@@ -4,5 +4,12 @@
   "tsconfig": "tsconfig.json",
   "plugin": [],
   "includeVersion": true,
-  "exclude": ["**/tests/**"]
+  "exclude": ["**/tests/**"],
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "treatWarningsAsErrors": false,
+  "readme": "none"
 }

@@ -1,3 +1,49 @@
+// ─── Contract data types (#498) ───────────────────────────────────────────
+
+export type GrantStatus = "Active" | "Cancelled" | "Completed";
+export type MilestoneState = "Pending" | "Submitted" | "Approved" | "Rejected" | "Paid";
+
+export interface GrantFundData {
+  funder: string;
+  amount: bigint;
+}
+
+/** Decoded shape returned by the `grant_get` contract method. */
+export interface GrantData {
+  id: bigint;
+  owner: string;
+  title: string;
+  description: string;
+  token: string;
+  status: GrantStatus;
+  total_amount: bigint;
+  milestone_amount: bigint;
+  reviewers: string[];
+  total_milestones: number;
+  milestones_paid_out: number;
+  escrow_balance: bigint;
+  funders: GrantFundData[];
+  reason: string | null;
+  timestamp: bigint;
+}
+
+/** Decoded shape returned by the `milestone_get` contract method. */
+export interface MilestoneData {
+  idx: number;
+  description: string;
+  amount: bigint;
+  state: MilestoneState;
+  votes: Record<string, boolean>;
+  approvals: number;
+  rejections: number;
+  reasons: Record<string, string>;
+  status_updated_at: bigint;
+  proof_url: string | null;
+  submission_timestamp: bigint;
+}
+
+// ─── Signer / wallet ──────────────────────────────────────────────────────
+
 export type StellarGrantsSigner = {
   getPublicKey(): Promise<string>;
   signTransaction(txXdr: string, networkPassphrase: string): Promise<string>;
@@ -58,6 +104,20 @@ export type StellarGrantsSDKConfig = {
    */
   wallet?: WalletAdapter;
   defaultFee?: string;
+  /**
+   * Retry configuration for RPC calls (Issue #502).
+   * Controls exponential back-off behaviour when the Soroban RPC returns
+   * rate-limit (429) or transient timeout errors.
+   *
+   * @example
+   * ```ts
+   * const sdk = new StellarGrantsSDK({
+   *   retryConfig: { maxAttempts: 5, initialDelayMs: 500 },
+   *   ...
+   * });
+   * ```
+   */
+  retryConfig?: RetryConfig;
 };
 
 export type GrantCreateInput = {
@@ -68,6 +128,7 @@ export type GrantCreateInput = {
   deadline: bigint;
   milestoneCount: number;
 };
+
 
 export type GrantFundInput = {
   grantId: number;
@@ -101,4 +162,90 @@ export type MilestoneVoteInput = {
   grantId: number;
   milestoneIdx: number;
   approve: boolean;
+};
+
+export type TransactionPollingStatus =
+  | "SUCCESS"
+  | "FAILED"
+  | "PENDING"
+  | "DUPLICATE"
+  | "TRY_AGAIN_LATER"
+  | "NOT_FOUND";
+
+export type TransactionResult = {
+  status: "SUCCESS";
+  ledger: number;
+  envelopeXdr: string;
+  resultXdr: string;
+  resultMetaXdr: string;
+  hash: string;
+};
+
+export type WaitForTransactionOptions = {
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+  maxNetworkRetries?: number;
+  onStatusChange?: (status: TransactionPollingStatus) => void;
+  onPoll?: (attempt: number, elapsedMs: number) => void;
+  signal?: AbortSignal;
+};
+
+// ── Balance monitoring types (#489) ──────────────────────────────────────────
+
+export type GrantBalance = {
+  assetCode: string;
+  assetIssuer: string;
+  isNative: boolean;
+  rawBalance: string;
+  balanceStroops: bigint;
+  formatted: string;
+};
+
+export type GrantBalances = {
+  grantId: number;
+  contractAddress: string;
+  balances: GrantBalance[];
+  ledger: number;
+  fetchedAt: Date;
+};
+
+export type BalanceChangeListenerOptions = {
+  pollInterval?: number;
+  onChange: (current: GrantBalances, previous: GrantBalances | null) => void;
+  onError?: (error: Error) => void;
+};
+
+// ── Transaction history types (#483) ─────────────────────────────────────────
+
+export type GrantOperationType =
+  | "grant_create"
+  | "grant_fund"
+  | "grant_cancel"
+  | "milestone_submit"
+  | "milestone_approve"
+  | "milestone_reject"
+  | "milestone_payout"
+  | "grant_withdraw"
+  | "unknown_contract_call";
+
+export type GrantHistoryRecord = {
+  txHash: string;
+  createdAt: string;
+  successful: boolean;
+  operationType: GrantOperationType;
+  grantId?: string;
+  sourceAccount: string;
+  feeCharged: string;
+  memo?: string;
+};
+
+export type HistoryOptions = {
+  limit?: number;
+  order?: "asc" | "desc";
+  cursor?: string;
+};
+
+export type HistoryResult = {
+  records: GrantHistoryRecord[];
+  nextCursor?: string;
 };

@@ -18,10 +18,10 @@ coverage/
 *.profdata
 
 # Project specific
-/api/node_modules
-/api/dist
-/api/.env*
+/backend/node_modules
+/backend/dist
+/backend/.env*
 /client/node_modules
-/stellargrant-fe/node_modules
-/stellargrant-fe/.next
-/stellargrant-fe/out
+/web/node_modules
+/web/.next
+/web/out

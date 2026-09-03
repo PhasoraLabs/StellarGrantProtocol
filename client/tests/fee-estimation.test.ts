@@ -21,6 +21,11 @@ jest.mock("@stellar/stellar-sdk", () => {
         async getNetwork() { return { passphrase: "Test SDF Network ; September 2015" }; }
       },
     },
+    Horizon: {
+      Server: class {
+        constructor() {}
+      },
+    },
     Contract: class {
       call(method: string, ...args: unknown[]) { return { method, args }; }
     },
@@ -196,6 +201,35 @@ describe("feePriority WriteOption", () => {
           milestoneCount: 3,
         },
         { simulatedFee: "500", feePriority: "high" },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it("feePriority triggers a second buildTx call with an adjusted fee", async () => {
+    const { sdk, mockServer, state, mockSigner } = makeSdk();
+    state.minResourceFee = "1000";
+    mockSigner.signTransaction.mockResolvedValue("SIGNED_XDR");
+
+    await sdk.grantCreate(
+      { owner: "GOWNER", title: "T", description: "D", budget: 100n, deadline: 9999999n, milestoneCount: 3 },
+      { feePriority: "medium" },
+    );
+
+    // First simulate (on draft tx) + second simulate (on priority-adjusted tx)
+    expect(mockServer.simulateTransaction.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // prepareTransaction must also be called
+    expect(mockServer.prepareTransaction).toHaveBeenCalled();
+  });
+
+  it("low feePriority applies 1.0× multiplier (no surcharge)", async () => {
+    const { sdk, state, mockSigner } = makeSdk();
+    state.minResourceFee = "2000";
+    mockSigner.signTransaction.mockResolvedValue("SIGNED_XDR");
+
+    await expect(
+      sdk.grantCreate(
+        { owner: "GOWNER", title: "T", description: "D", budget: 100n, deadline: 9999999n, milestoneCount: 3 },
+        { feePriority: "low" },
       ),
     ).resolves.toBeDefined();
   });

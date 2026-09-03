@@ -16,7 +16,7 @@ jobs:
       SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2: "1"
     defaults:
       run:
-        working-directory: stellargrant-contracts
+        working-directory: contracts
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,8 +38,11 @@ jobs:
       - name: Check (WASM)
         run: cargo check --workspace --target wasm32v1-none
 
-  api:
-    name: API (Node.js)
+      - name: Test
+        run: cargo test --workspace
+
+  backend:
+    name: Backend (Node.js)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -57,7 +60,7 @@ jobs:
           --health-retries 5
     defaults:
       run:
-        working-directory: api
+        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,7 +70,7 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
-          cache-dependency-path: api/package-lock.json
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm install
@@ -91,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: stellargrant-fe
+        working-directory: web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -101,7 +104,7 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
-          cache-dependency-path: stellargrant-fe/package-lock.json
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm install

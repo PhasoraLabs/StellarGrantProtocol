@@ -1,0 +1,583 @@
+use crate::errors::ContractError;
+use crate::storage::keys::{DataKey, MatchingKey};
+use crate::types::{MatchingAllocation, MatchingContribution, MatchingRound};
+use soroban_sdk::{token, Address, Env, Vec};
+
+const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
+const PERSISTENT_TTL_EXTEND_TO: u32 = 1_000_000;
+
+/// Integer square root using Newton's method.
+/// Accurate for all i128 values.
+pub fn isqrt(n: i128) -> i128 {
+    if n < 0 {
+        return 0;
+    }
+    if n == 0 {
+        return 0;
+    }
+
+    let mut x = n;
+    let mut y = (x + 1) / 2;
+
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+
+    x
+}
+
+/// Create a new QF matching round. Admin deposits matching pool upfront.
+pub fn create_round(
+    env: &Env,
+    admin: &Address,
+    token: &Address,
+    matching_pool: i128,
+    duration_ledgers: u32,
+    eligible_grant_ids: Vec<u64>,
+) -> Result<u32, ContractError> {
+    crate::reentrancy::protect(env)?;
+    if matching_pool <= 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
+    if eligible_grant_ids.len() == 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
+    // Get and increment round counter
+    let counter_key = DataKey::Matching(MatchingKey::Counter);
+    let mut counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+    counter = counter.saturating_add(1);
+    env.storage().persistent().set(&counter_key, &counter);
+
+    let round_id = counter;
+    let start_ledger = env.ledger().sequence();
+    let end_ledger = start_ledger.saturating_add(duration_ledgers);
+
+    let round = MatchingRound {
+        id: round_id,
+        token: token.clone(),
+        matching_pool,
+        start_ledger,
+        end_ledger,
+        eligible_grant_ids: eligible_grant_ids.clone(),
+        allocations: Vec::new(env),
+        finalized: false,
+        distributed: false,
+        created_by: admin.clone(),
+    };
+
+    // Store round
+    let round_key = DataKey::Matching(MatchingKey::Round(round_id));
+    env.storage().persistent().set(&round_key, &round);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
+
+    // Create pool entry
+    let pool_key = DataKey::Matching(MatchingKey::Pool(round_id));
+    env.storage().persistent().set(&pool_key, &matching_pool);
+    env.storage().persistent().extend_ttl(
+        &pool_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
+
+    // Transfer matching pool from admin to contract
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, token).transfer(
+            admin,
+            &env.current_contract_address(),
+            &matching_pool,
+        );
+        Ok(())
+    })?;
+
+    Ok(round_id)
+}
+
+/// Contribute to a grant within an active matching round.
+pub fn contribute(
+    env: &Env,
+    contributor: &Address,
+    round_id: u32,
+    grant_id: u64,
+    amount: i128,
+) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
+    if amount <= 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
+    let round_key = DataKey::Matching(MatchingKey::Round(round_id));
+    let mut round: MatchingRound = env
+        .storage()
+        .persistent()
+        .get(&round_key)
+        .ok_or(ContractError::InvalidInput)?;
+
+    let current_ledger = env.ledger().sequence();
+    if current_ledger < round.start_ledger || current_ledger > round.end_ledger {
+        return Err(ContractError::InvalidState);
+    }
+
+    if round.finalized {
+        return Err(ContractError::InvalidState);
+    }
+
+    // Check if grant is eligible
+    let mut is_eligible = false;
+    for i in 0..round.eligible_grant_ids.len() {
+        if let Some(gid) = round.eligible_grant_ids.get(i) {
+            if gid == grant_id {
+                is_eligible = true;
+                break;
+            }
+        }
+    }
+
+    if !is_eligible {
+        return Err(ContractError::InvalidInput);
+    }
+
+    // Get or create contribution
+    let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+        round_id,
+        contributor.clone(),
+        grant_id,
+    ));
+    let mut contribution: MatchingContribution = env
+        .storage()
+        .persistent()
+        .get(&contrib_key)
+        .unwrap_or_else(|| MatchingContribution {
+            contributor: contributor.clone(),
+            grant_id,
+            amount: 0,
+            contributed_at: 0,
+        });
+
+    contribution.amount = contribution.amount.saturating_add(amount);
+    contribution.contributed_at = env.ledger().timestamp();
+
+    env.storage().persistent().set(&contrib_key, &contribution);
+    env.storage().persistent().extend_ttl(
+        &contrib_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
+
+    // Track contributor for this grant
+    let grant_contributors_key =
+        DataKey::Matching(MatchingKey::GrantContributors(round_id, grant_id));
+    let mut contributors: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&grant_contributors_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut is_new_contributor = true;
+    for i in 0..contributors.len() {
+        if let Some(addr) = contributors.get(i) {
+            if addr == *contributor {
+                is_new_contributor = false;
+                break;
+            }
+        }
+    }
+
+    if is_new_contributor {
+        contributors.push_back(contributor.clone());
+        env.storage()
+            .persistent()
+            .set(&grant_contributors_key, &contributors);
+        env.storage().persistent().extend_ttl(
+            &grant_contributors_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
+
+    // Transfer from contributor to contract escrow
+    crate::reentrancy::protect_external_call(env, || {
+        token::Client::new(env, &round.token).transfer(
+            contributor,
+            &env.current_contract_address(),
+            &amount,
+        );
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+/// Compute QF allocations after round ends.
+/// Uses: match_i = (sum_j sqrt(c_ij))^2 / sum_k (sum_j sqrt(c_kj))^2 * pool
+pub fn compute_allocations(
+    env: &Env,
+    round_id: u32,
+) -> Result<Vec<MatchingAllocation>, ContractError> {
+    let round_key = DataKey::Matching(MatchingKey::Round(round_id));
+    let mut round: MatchingRound = env
+        .storage()
+        .persistent()
+        .get(&round_key)
+        .ok_or(ContractError::InvalidInput)?;
+
+    if round.finalized {
+        return Err(ContractError::InvalidState);
+    }
+
+    let current_ledger = env.ledger().sequence();
+    if current_ledger <= round.end_ledger {
+        return Err(ContractError::InvalidState);
+    }
+
+    let mut allocations: Vec<MatchingAllocation> = Vec::new(env);
+    let mut total_qf_score: i128 = 0;
+
+    // Compute QF scores for each eligible grant
+    for i in 0..round.eligible_grant_ids.len() {
+        if let Some(grant_id) = round.eligible_grant_ids.get(i) {
+            let (qf_score, direct_amount, unique_count) =
+                compute_grant_qf_score(env, round_id, grant_id);
+
+            total_qf_score = total_qf_score.saturating_add(qf_score);
+
+            allocations.push_back(MatchingAllocation {
+                grant_id,
+                direct_contributions: direct_amount,
+                match_amount: 0, // Will be computed below
+                unique_contributors: unique_count,
+                qf_score,
+            });
+        }
+    }
+
+    // Distribute matching pool proportionally
+    let mut final_allocations = Vec::new(env);
+    if total_qf_score > 0 {
+        for j in 0..allocations.len() {
+            if let Some(allocation) = allocations.get(j) {
+                let match_amount = (allocation.qf_score * round.matching_pool)
+                    .checked_div(total_qf_score)
+                    .unwrap_or(0);
+                final_allocations.push_back(MatchingAllocation {
+                    grant_id: allocation.grant_id,
+                    direct_contributions: allocation.direct_contributions,
+                    match_amount,
+                    unique_contributors: allocation.unique_contributors,
+                    qf_score: allocation.qf_score,
+                });
+            }
+        }
+    } else {
+        final_allocations = allocations.clone();
+    }
+
+    round.allocations = final_allocations.clone();
+    round.finalized = true;
+
+    env.storage().persistent().set(&round_key, &round);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
+
+    Ok(allocations)
+}
+
+/// Distribute match amounts to each eligible grant's escrow.
+pub fn distribute(env: &Env, round_id: u32) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
+    let round_key = DataKey::Matching(MatchingKey::Round(round_id));
+    let mut round: MatchingRound = env
+        .storage()
+        .persistent()
+        .get(&round_key)
+        .ok_or(ContractError::InvalidInput)?;
+
+    if !round.finalized {
+        return Err(ContractError::InvalidState);
+    }
+
+    if round.distributed {
+        return Err(ContractError::InvalidState);
+    }
+
+    // Distribute match amounts to each grant's escrow. A deposit failure aborts
+    // the whole call so the round is never marked distributed with some
+    // allocations left unfunded and unrecoverable.
+    for i in 0..round.allocations.len() {
+        if let Some(allocation) = round.allocations.get(i) {
+            if allocation.match_amount > 0 {
+                // Transfer match amount to grant's escrow
+                crate::escrow::deposit(
+                    env,
+                    allocation.grant_id,
+                    &env.current_contract_address(),
+                    allocation.match_amount,
+                )?;
+            }
+        }
+    }
+
+    round.distributed = true;
+
+    env.storage().persistent().set(&round_key, &round);
+    env.storage().persistent().extend_ttl(
+        &round_key,
+        PERSISTENT_TTL_THRESHOLD,
+        PERSISTENT_TTL_EXTEND_TO,
+    );
+
+    Ok(())
+}
+
+/// Get a specific round.
+pub fn get_round(env: &Env, round_id: u32) -> Result<MatchingRound, ContractError> {
+    let round_key = DataKey::Matching(MatchingKey::Round(round_id));
+    env.storage()
+        .persistent()
+        .get(&round_key)
+        .ok_or(ContractError::InvalidInput)
+}
+
+/// Get a contributor's contribution to a specific grant in a round.
+pub fn get_contribution(
+    env: &Env,
+    round_id: u32,
+    contributor: &Address,
+    grant_id: u64,
+) -> Option<MatchingContribution> {
+    let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+        round_id,
+        contributor.clone(),
+        grant_id,
+    ));
+    env.storage().persistent().get(&contrib_key)
+}
+
+/// Return all allocations for a round (post-computation).
+pub fn get_allocations(env: &Env, round_id: u32) -> Vec<MatchingAllocation> {
+    if let Ok(round) = get_round(env, round_id) {
+        round.allocations
+    } else {
+        Vec::new(env)
+    }
+}
+
+// ── Helper Functions ─────────────────────────────────────────────────────────
+
+/// Compute QF score for a grant by summing square roots of all contributions.
+/// Returns (qf_score, total_direct_contributions, unique_contributor_count)
+fn compute_grant_qf_score(env: &Env, round_id: u32, grant_id: u64) -> (i128, i128, u32) {
+    let grant_contributors_key =
+        DataKey::Matching(MatchingKey::GrantContributors(round_id, grant_id));
+    let contributors: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&grant_contributors_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let unique_contributors = contributors.len() as u32;
+    let mut total_direct: i128 = 0;
+    let mut sqrt_sum: i128 = 0;
+
+    // Sum sqrt of each contribution
+    for i in 0..contributors.len() {
+        if let Some(contributor) = contributors.get(i) {
+            let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+                round_id,
+                contributor.clone(),
+                grant_id,
+            ));
+            if let Some(contribution) = get_contribution(env, round_id, &contributor, grant_id) {
+                total_direct = total_direct.saturating_add(contribution.amount);
+                let sqrt_amount = isqrt(contribution.amount);
+                sqrt_sum = sqrt_sum.saturating_add(sqrt_amount);
+            }
+        }
+    }
+
+    // QF score is the square of the sum of square roots
+    let qf_score = sqrt_sum.checked_mul(sqrt_sum).unwrap_or(0);
+
+    (qf_score, total_direct, unique_contributors)
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn test_isqrt_zero() {
+        assert_eq!(isqrt(0), 0);
+    }
+
+    #[test]
+    fn test_isqrt_one() {
+        assert_eq!(isqrt(1), 1);
+    }
+
+    #[test]
+    fn test_isqrt_four() {
+        assert_eq!(isqrt(4), 2);
+    }
+
+    #[test]
+    fn test_isqrt_nine() {
+        assert_eq!(isqrt(9), 3);
+    }
+
+    #[test]
+    fn test_isqrt_sixteen() {
+        assert_eq!(isqrt(16), 4);
+    }
+
+    #[test]
+    fn test_isqrt_hundred() {
+        assert_eq!(isqrt(100), 10);
+    }
+
+    #[test]
+    fn test_isqrt_perfect_squares() {
+        for i in 0..100 {
+            let square = i * i;
+            assert_eq!(isqrt(square), i);
+        }
+    }
+
+    #[test]
+    fn test_isqrt_non_perfect_squares() {
+        assert_eq!(isqrt(2), 1);
+        assert_eq!(isqrt(3), 1);
+        assert_eq!(isqrt(5), 2);
+        assert_eq!(isqrt(8), 2);
+        assert_eq!(isqrt(15), 3);
+        assert_eq!(isqrt(26), 5);
+    }
+
+    #[test]
+    fn test_isqrt_negative() {
+        assert_eq!(isqrt(-1), 0);
+        assert_eq!(isqrt(-100), 0);
+    }
+
+    #[test]
+    fn test_isqrt_large() {
+        assert_eq!(isqrt(1_000_000), 1_000);
+        assert_eq!(isqrt(1_000_000_000_000), 1_000_000);
+    }
+
+    #[test]
+    fn test_matching_allocation_structure() {
+        let env = soroban_sdk::Env::default();
+        let allocation = MatchingAllocation {
+            grant_id: 1,
+            direct_contributions: 1000,
+            match_amount: 500,
+            unique_contributors: 5,
+            qf_score: 250,
+        };
+
+        assert_eq!(allocation.grant_id, 1);
+        assert_eq!(allocation.direct_contributions, 1000);
+        assert_eq!(allocation.match_amount, 500);
+        assert_eq!(allocation.unique_contributors, 5);
+        assert_eq!(allocation.qf_score, 250);
+    }
+
+    #[test]
+    fn test_matching_contribution_structure() {
+        let env = soroban_sdk::Env::default();
+        let contributor = Address::generate(&env);
+
+        let contribution = MatchingContribution {
+            contributor: contributor.clone(),
+            grant_id: 1,
+            amount: 500,
+            contributed_at: 1000,
+        };
+
+        assert_eq!(contribution.grant_id, 1);
+        assert_eq!(contribution.amount, 500);
+        assert_eq!(contribution.contributed_at, 1000);
+    }
+
+    #[test]
+    fn test_matching_round_structure() {
+        let env = soroban_sdk::Env::default();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let grant_ids = Vec::from_array(&env, [1u64, 2u64, 3u64]);
+
+        let round = MatchingRound {
+            id: 1,
+            token: token.clone(),
+            matching_pool: 10_000,
+            start_ledger: 100,
+            end_ledger: 1000,
+            eligible_grant_ids: grant_ids,
+            allocations: Vec::new(&env),
+            finalized: false,
+            distributed: false,
+            created_by: admin.clone(),
+        };
+
+        assert_eq!(round.id, 1);
+        assert_eq!(round.matching_pool, 10_000);
+        assert!(!round.finalized);
+        assert!(!round.distributed);
+    }
+
+    #[test]
+    fn test_distribute_fails_and_leaves_round_undistributed_on_deposit_failure() {
+        use soroban_sdk::testutils::Ledger;
+        use soroban_sdk::token::StellarAssetClient;
+
+        let env = soroban_sdk::Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let token_contract = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+        let stellar_asset = StellarAssetClient::new(&env, &token_contract);
+        stellar_asset.mint(&admin, &1_000_000);
+
+        let grant_with_escrow: u64 = 1;
+        let grant_without_escrow: u64 = 2;
+
+        // Only grant_with_escrow has an escrow account opened, simulating an
+        // eligible grant whose escrow doesn't exist yet.
+        let owner = Address::generate(&env);
+        crate::escrow::open(&env, grant_with_escrow, &owner, &token_contract).unwrap();
+
+        let eligible = Vec::from_array(&env, [grant_with_escrow, grant_without_escrow]);
+        let round_id = create_round(&env, &admin, &token_contract, 1_000, 1, eligible).unwrap();
+
+        let contributor = Address::generate(&env);
+        stellar_asset.mint(&contributor, &1_000_000);
+        contribute(&env, &contributor, round_id, grant_with_escrow, 400).unwrap();
+        contribute(&env, &contributor, round_id, grant_without_escrow, 100).unwrap();
+
+        env.ledger().with_mut(|li| {
+            li.sequence_number += 2;
+        });
+        compute_allocations(&env, round_id).unwrap();
+
+        let err = distribute(&env, round_id).unwrap_err();
+        assert_eq!(err, ContractError::EscrowNotFound);
+
+        // The round must not be marked distributed when a deposit failed,
+        // so the failure isn't silently discarded and funds aren't stranded.
+        let round = get_round(&env, round_id).unwrap();
+        assert!(!round.distributed);
+    }
+}

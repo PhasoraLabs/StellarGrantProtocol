@@ -1,3 +1,4 @@
+import type { InjectionKey } from "vue";
 import { StellarGrantsSDK } from "../StellarGrantsSDK";
 
 /**
@@ -20,11 +21,5 @@ export interface StellarGrantsContext {
  * Injection key symbol for StellarGrants context.
  * Used internally by provide/inject mechanism.
  */
-export const STELLAR_GRANTS_KEY = Symbol("stellar-grants") as InjectionKey<StellarGrantsContext>;
-
-/**
- * Vue injection key type helper.
- * This is a placeholder - in a real Vue project, this would be from 'vue'.
- * For SDK distribution, we use a simpler approach that works with both Vue 2 and Vue 3.
- */
-export type InjectionKey<T> = string | symbol;
+export const STELLAR_GRANTS_KEY: InjectionKey<StellarGrantsContext> =
+  Symbol("stellar-grants");

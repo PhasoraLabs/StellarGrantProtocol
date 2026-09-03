@@ -1,3 +1,4 @@
+import type { Ref } from "vue";
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useStellarGrants } from "./useStellarGrants";
 import type { GrantData } from "../types";
@@ -17,11 +18,11 @@ export interface UseGrantOptions {
  */
 export interface UseGrantResult {
   /** Grant data or null if not found */
-  data: GrantData | null;
+  data: Ref<GrantData | null>;
   /** Whether a fetch operation is in progress */
-  isLoading: boolean;
+  isLoading: Ref<boolean>;
   /** Error from the last fetch operation, if any */
-  error: Error | null;
+  error: Ref<Error | null>;
   /** Manually trigger a refetch */
   refetch: () => Promise<void>;
 }
@@ -73,9 +74,9 @@ export function useGrant(grantId: number, options: UseGrantOptions = {}): UseGra
       logger?.debug("Fetching grant", { grantId });
       
       const grant = await sdk.grantGet(grantId);
-      data.value = grant;
+      data.value = grant as any;
       
-      logger?.info("Grant fetched", { grantId, status: grant?.status });
+      logger?.info("Grant fetched", { grantId, status: (grant as any)?.status });
     } catch (err) {
       const errObj = err instanceof Error ? err : new Error(String(err));
       error.value = errObj;

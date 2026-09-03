@@ -2,8 +2,16 @@
   "name": "@stellargrants/client-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for StellarGrants Soroban contract interactions.",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
   "bin": {
     "sg": "dist/cli.js"
   },
@@ -11,7 +19,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
     "docs": "typedoc --options typedoc.json",
     "clean": "rm -rf dist",
@@ -28,7 +37,6 @@
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-base": "^13.1.0",
     "@stellar/stellar-sdk": "^13.3.0",
-    "axios": "^1.16.1",
     "commander": "^13.1.0",
     "dotenv": "^17.2.2"
   },
@@ -46,6 +54,7 @@
     "jest": "^29.7.0",
     "p-try": "^2.2.0",
     "ts-jest": "^29.2.6",
+    "tsup": "^8.5.0",
     "typescript": "^5.8.2",
     "vue": "^3.4.0"
   }
