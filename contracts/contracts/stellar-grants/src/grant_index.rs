@@ -188,65 +188,75 @@ pub fn index_counts(env: &Env, owner: Option<&Address>) -> (u32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::Events as _;
     use soroban_sdk::Env;
     extern crate alloc;
     use alloc::format;
 
-    /// Issue #698: hitting the cap used to be a silent no-op — the id was
-    /// dropped with no error and no event. A reduced cap (3, instead of the
-    /// real 10,000) keeps this test fast while still exercising the same
-    /// code path.
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
+
     #[test]
     fn test_push_to_index_respects_cap_and_surfaces_the_drop() {
         let env = Env::default();
-        let key = DataKey::Grant(GrantKey::GlobalOrder);
-        let cap = 3u32;
+        let contract_id = setup(&env);
 
-        assert!(push_to_index(&env, &key, 1, cap));
-        assert!(push_to_index(&env, &key, 2, cap));
-        assert!(push_to_index(&env, &key, 3, cap));
+        env.as_contract(&contract_id, || {
+            let key = DataKey::Grant(GrantKey::GlobalOrder);
+            let cap = 3u32;
 
-        let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
-        assert_eq!(list.len(), 3);
+            assert!(push_to_index(&env, &key, 1, cap));
+            assert!(push_to_index(&env, &key, 2, cap));
+            assert!(push_to_index(&env, &key, 3, cap));
 
-        let accepted = push_to_index(&env, &key, 4, cap);
-        assert!(!accepted, "push beyond the cap must report failure");
+            let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
+            assert_eq!(list.len(), 3);
 
-        let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
-        assert_eq!(list.len(), 3, "list must not silently grow past the cap");
-        assert!(
-            !list.contains(4),
-            "dropped id must not silently appear in the index"
-        );
+            let accepted = push_to_index(&env, &key, 4, cap);
+            assert!(!accepted, "push beyond the cap must report failure");
 
-        let events = env.events().all();
-        let mut found_cap_event = false;
-        for e in events.events() {
-            if format!("{:?}", e).contains("index_cap_reached") {
-                found_cap_event = true;
+            let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
+            assert_eq!(list.len(), 3, "list must not silently grow past the cap");
+            assert!(
+                !list.contains(4),
+                "dropped id must not silently appear in the index"
+            );
+
+            let events = env.events().all();
+            let mut found_cap_event = false;
+            for e in events.events() {
+                if format!("{:?}", e).contains("index_cap_reached") {
+                    found_cap_event = true;
+                }
             }
-        }
-        assert!(
-            found_cap_event,
-            "IndexCapReached event must be emitted instead of silently dropping the entry"
-        );
+            assert!(
+                found_cap_event,
+                "IndexCapReached event must be emitted instead of silently dropping the entry"
+            );
+        });
     }
 
     #[test]
     fn test_push_to_index_dedupes_without_double_counting_against_cap() {
         let env = Env::default();
-        let key = DataKey::Grant(GrantKey::GlobalOrder);
-        let cap = 2u32;
+        let contract_id = setup(&env);
 
-        assert!(push_to_index(&env, &key, 1, cap));
-        assert!(push_to_index(&env, &key, 2, cap));
+        env.as_contract(&contract_id, || {
+            let key = DataKey::Grant(GrantKey::GlobalOrder);
+            let cap = 2u32;
 
-        // Re-pushing an id already in a full list is a no-op success, not a
-        // cap breach — it must not emit a spurious IndexCapReached event.
-        assert!(push_to_index(&env, &key, 1, cap));
+            assert!(push_to_index(&env, &key, 1, cap));
+            assert!(push_to_index(&env, &key, 2, cap));
 
-        let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
-        assert_eq!(list.len(), 2);
+            // Re-pushing an id already in a full list is a no-op success, not a
+            // cap breach — it must not emit a spurious IndexCapReached event.
+            assert!(push_to_index(&env, &key, 1, cap));
+
+            let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
+            assert_eq!(list.len(), 2);
+        });
     }
 }

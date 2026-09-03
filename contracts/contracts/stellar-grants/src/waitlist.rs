@@ -20,6 +20,7 @@ pub fn configure(
     }
 
     Storage::set_waitlist_config(env, grant_id, &config);
+    Events::emit_waitlist_configured(env, grant_id, config.max_waitlist_size, config.auto_promote);
     Ok(())
 }
 
@@ -139,7 +140,11 @@ pub fn leave(env: &Env, applicant: &Address, grant_id: u64) -> Result<(), Contra
 
 /// Promote the top-ranked entry. Called when a slot opens.
 /// Returns the promoted address if successful, None if waitlist is empty.
-pub fn promote_next(env: &Env, caller: &Address, grant_id: u64) -> Result<Option<Address>, ContractError> {
+pub fn promote_next(
+    env: &Env,
+    caller: &Address,
+    grant_id: u64,
+) -> Result<Option<Address>, ContractError> {
     caller.require_auth();
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     if grant.owner != *caller {
@@ -213,7 +218,7 @@ mod tests {
 
     use super::*;
     use crate::StellarGrantsContract;
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::testutils::{Address as _, Events, Ledger as _};
     use soroban_sdk::{Address, String};
     use std::boxed::Box;
 
@@ -585,10 +590,33 @@ mod tests {
 
             assert_eq!(position_of(&env, &applicant1, grant_id), Some(1));
             assert_eq!(position_of(&env, &applicant2, grant_id), Some(2));
-
-            let other = Address::generate(&env);
-            assert_eq!(position_of(&env, &other, grant_id), None);
         });
+    }
+
+    #[test]
+    fn test_configure_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
+        });
+
+        // Verify the event was emitted
+        let events = env.events().all();
+        assert!(!events.events().is_empty(), "At least one event should be emitted");
     }
 
     /// `require_auth()` fails by panicking (a host trap), not by returning

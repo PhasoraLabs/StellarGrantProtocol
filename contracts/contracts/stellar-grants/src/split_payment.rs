@@ -143,111 +143,129 @@ mod tests {
     #[test]
     fn test_register_split() {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let owner = Address::generate(&env);
         let r1 = Address::generate(&env);
         let r2 = Address::generate(&env);
 
-        setup_grant(&env, &owner, 1, 3, GrantStatus::Active);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 3, GrantStatus::Active);
 
-        let recipients = vec![
-            &env,
-            SplitRecipient {
-                recipient: r1.clone(),
-                share_bps: 6000,
-            },
-            SplitRecipient {
-                recipient: r2.clone(),
-                share_bps: 4000,
-            },
-        ];
+            let recipients = vec![
+                &env,
+                SplitRecipient {
+                    recipient: r1.clone(),
+                    share_bps: 6000,
+                },
+                SplitRecipient {
+                    recipient: r2.clone(),
+                    share_bps: 4000,
+                },
+            ];
 
-        register_split(&env, &owner, 1, 0, recipients).unwrap();
+            register_split(&env, &owner, 1, 0, recipients).unwrap();
 
-        assert!(has_split(&env, 1, 0));
-        let split = get_split(&env, 1, 0).unwrap();
-        assert_eq!(split.recipients.len(), 2);
+            assert!(has_split(&env, 1, 0));
+            let split = get_split(&env, 1, 0).unwrap();
+            assert_eq!(split.recipients.len(), 2);
+        });
     }
 
     #[test]
     fn test_register_split_inactive_grant() {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let owner = Address::generate(&env);
         let r1 = Address::generate(&env);
 
-        setup_grant(&env, &owner, 1, 3, GrantStatus::Cancelled);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 3, GrantStatus::Cancelled);
 
-        let recipients = vec![
-            &env,
-            SplitRecipient {
-                recipient: r1,
-                share_bps: 10000,
-            },
-        ];
+            let recipients = vec![
+                &env,
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 10000,
+                },
+            ];
 
-        let res = register_split(&env, &owner, 1, 0, recipients);
-        assert_eq!(res, Err(ContractError::InvalidState));
+            let res = register_split(&env, &owner, 1, 0, recipients);
+            assert_eq!(res, Err(ContractError::InvalidState));
+        });
     }
 
     #[test]
     #[should_panic]
     fn test_register_split_bps_not_10000() {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let owner = Address::generate(&env);
         let r1 = Address::generate(&env);
 
-        setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
 
-        let recipients = vec![
-            &env,
-            SplitRecipient {
-                recipient: r1,
-                share_bps: 5000,
-            },
-        ];
+            let recipients = vec![
+                &env,
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 5000,
+                },
+            ];
 
-        register_split(&env, &owner, 1, 0, recipients).unwrap();
+            register_split(&env, &owner, 1, 0, recipients).unwrap();
+        });
     }
 
     #[test]
     #[should_panic]
     fn test_register_split_empty_recipients() {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let owner = Address::generate(&env);
 
-        setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
 
-        let recipients = Vec::new(&env);
-        register_split(&env, &owner, 1, 0, recipients).unwrap();
+            let recipients = Vec::new(&env);
+            register_split(&env, &owner, 1, 0, recipients).unwrap();
+        });
     }
 
     #[test]
     #[should_panic]
     fn test_register_split_milestone_out_of_bounds() {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let owner = Address::generate(&env);
         let r1 = Address::generate(&env);
 
-        setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
 
-        let recipients = vec![
-            &env,
-            SplitRecipient {
-                recipient: r1,
-                share_bps: 10000,
-            },
-        ];
+            let recipients = vec![
+                &env,
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 10000,
+                },
+            ];
 
-        register_split(&env, &owner, 1, 5, recipients).unwrap();
+            register_split(&env, &owner, 1, 5, recipients).unwrap();
+        });
     }
 
     #[test]
     fn test_has_split_returns_false_when_none() {
         let env = Env::default();
-        assert!(!has_split(&env, 999, 0));
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            assert!(!has_split(&env, 999, 0));
+        });
     }
 }

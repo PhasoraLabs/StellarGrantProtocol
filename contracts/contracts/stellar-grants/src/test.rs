@@ -882,7 +882,9 @@ mod tests {
 
         let reviewer = Address::generate(&env);
         let voter = Address::generate(&env);
-        let grant_id = 1u64;
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let grant_id = create_client_grant(&env, &client, &owner, &token, Vec::new(&env));
         let milestone_idx = 0u32;
 
         // Unpaused: submission succeeds.

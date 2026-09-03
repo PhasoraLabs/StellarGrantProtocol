@@ -148,8 +148,14 @@ mod test {
     use crate::constants::MAX_FORK_DEPTH;
     use crate::storage::Storage;
     use crate::types::{Grant, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{vec, Address, Env, String};
+
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
 
     fn setup_grant(env: &Env, id: u64, owner: &Address) {
         let grant = Grant {
@@ -192,137 +198,150 @@ mod test {
         Storage::set_milestone(env, grant_id, idx, &milestone);
     }
 
-    /// #875: inherit_milestones = true must genuinely copy each submitted
-    /// milestone's description onto the new grant (with approval state
-    /// reset), and only then may ForkRecord.inherited_fields claim
-    /// "milestones" was inherited.
     #[test]
     fn test_fork_grant_copies_milestone_data_when_inherited() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let caller = Address::generate(&env);
-        let token = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
-        setup_milestone(&env, 1, 0, "Design doc");
-        setup_milestone(&env, 1, 1, "MVP implementation");
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let caller = Address::generate(&env);
+            let token = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
+            setup_milestone(&env, 1, 0, "Design doc");
+            setup_milestone(&env, 1, 1, "MVP implementation");
 
-        let new_grant_id = fork_grant(
-            &env,
-            &caller,
-            1,
-            String::from_str(&env, "Forked Grant"),
-            String::from_str(&env, "Forked Desc"),
-            2000,
-            &token,
-            false,
-            true,
-        )
-        .unwrap();
+            let new_grant_id = fork_grant(
+                &env,
+                &caller,
+                1,
+                String::from_str(&env, "Forked Grant"),
+                String::from_str(&env, "Forked Desc"),
+                2000,
+                &token,
+                false,
+                true,
+            )
+            .unwrap();
 
-        let record = get_fork_record(&env, new_grant_id).unwrap();
-        assert!(record
-            .inherited_fields
-            .contains(String::from_str(&env, "milestones")));
+            let record = get_fork_record(&env, new_grant_id).unwrap();
+            assert!(record
+                .inherited_fields
+                .contains(String::from_str(&env, "milestones")));
 
-        let copied_0 = Storage::get_milestone(&env, new_grant_id, 0).unwrap();
-        assert_eq!(copied_0.description, String::from_str(&env, "Design doc"));
-        assert_eq!(copied_0.state, MilestoneState::Pending);
-        assert_eq!(copied_0.approvals, 0);
-        assert!(copied_0.proof_url.is_none());
+            let copied_0 = Storage::get_milestone(&env, new_grant_id, 0).unwrap();
+            assert_eq!(copied_0.description, String::from_str(&env, "Design doc"));
+            assert_eq!(copied_0.state, MilestoneState::Pending);
+            assert_eq!(copied_0.approvals, 0);
+            assert!(copied_0.proof_url.is_none());
 
-        let copied_1 = Storage::get_milestone(&env, new_grant_id, 1).unwrap();
-        assert_eq!(
-            copied_1.description,
-            String::from_str(&env, "MVP implementation")
-        );
-        assert_eq!(copied_1.state, MilestoneState::Pending);
+            let copied_1 = Storage::get_milestone(&env, new_grant_id, 1).unwrap();
+            assert_eq!(
+                copied_1.description,
+                String::from_str(&env, "MVP implementation")
+            );
+            assert_eq!(copied_1.state, MilestoneState::Pending);
+        });
     }
 
     #[test]
     fn test_fork_grant_no_milestones_copied_does_not_claim_inherited() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let caller = Address::generate(&env);
-        let token = Address::generate(&env);
-        // No milestones ever submitted on the original grant.
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let caller = Address::generate(&env);
+            let token = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let new_grant_id = fork_grant(
-            &env,
-            &caller,
-            1,
-            String::from_str(&env, "Forked Grant"),
-            String::from_str(&env, "Forked Desc"),
-            2000,
-            &token,
-            false,
-            true,
-        )
-        .unwrap();
+            let new_grant_id = fork_grant(
+                &env,
+                &caller,
+                1,
+                String::from_str(&env, "Forked Grant"),
+                String::from_str(&env, "Forked Desc"),
+                2000,
+                &token,
+                false,
+                true,
+            )
+            .unwrap();
 
-        let record = get_fork_record(&env, new_grant_id).unwrap();
-        assert!(!record
-            .inherited_fields
-            .contains(String::from_str(&env, "milestones")));
+            let record = get_fork_record(&env, new_grant_id).unwrap();
+            assert!(!record
+                .inherited_fields
+                .contains(String::from_str(&env, "milestones")));
+        });
     }
 
     #[test]
     fn test_fork_grant() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let caller = Address::generate(&env);
-        let token = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let caller = Address::generate(&env);
+            let token = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let new_grant_id = fork_grant(
-            &env,
-            &caller,
-            1,
-            String::from_str(&env, "Forked Grant"),
-            String::from_str(&env, "Forked Desc"),
-            2000,
-            &token,
-            true,
-            true,
-        )
-        .unwrap();
+            let new_grant_id = fork_grant(
+                &env,
+                &caller,
+                1,
+                String::from_str(&env, "Forked Grant"),
+                String::from_str(&env, "Forked Desc"),
+                2000,
+                &token,
+                true,
+                true,
+            )
+            .unwrap();
 
-        // Verify fork record
-        let record = get_fork_record(&env, new_grant_id).unwrap();
-        assert_eq!(record.original_grant_id, 1);
-        assert_eq!(record.forked_by, caller);
+            let record = get_fork_record(&env, new_grant_id).unwrap();
+            assert_eq!(record.original_grant_id, 1);
+            assert_eq!(record.forked_by, caller);
 
-        // Verify children
-        let children = get_forks(&env, 1);
-        assert_eq!(children.len(), 1);
-        assert_eq!(children.get(0).unwrap(), new_grant_id);
+            let children = get_forks(&env, 1);
+            assert_eq!(children.len(), 1);
+            assert_eq!(children.get(0).unwrap(), new_grant_id);
 
-        // Verify depth and descendant
-        assert_eq!(fork_depth(&env, new_grant_id), 1);
-        assert!(is_descendant(&env, 1, new_grant_id));
+            assert_eq!(fork_depth(&env, new_grant_id), 1);
+            assert!(is_descendant(&env, 1, new_grant_id));
+        });
     }
 
     #[test]
     fn test_fork_depth_limit() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let token = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
 
-        setup_grant(&env, 1, &owner);
-        let mut current_id = 1;
+            setup_grant(&env, 1, &owner);
+            let mut current_id = 1;
 
-        // Reach max depth
-        for _ in 0..MAX_FORK_DEPTH {
+            for _ in 0..MAX_FORK_DEPTH {
+                let caller = Address::generate(&env);
+                current_id = fork_grant(
+                    &env,
+                    &caller,
+                    current_id,
+                    String::from_str(&env, "Fork"),
+                    String::from_str(&env, "Desc"),
+                    100,
+                    &token,
+                    false,
+                    false,
+                )
+                .unwrap();
+            }
+
             let caller = Address::generate(&env);
-            current_id = fork_grant(
+            let result = fork_grant(
                 &env,
                 &caller,
                 current_id,
@@ -332,66 +351,53 @@ mod test {
                 &token,
                 false,
                 false,
-            )
-            .unwrap();
-        }
-
-        // Exceed max depth
-        let caller = Address::generate(&env);
-        let result = fork_grant(
-            &env,
-            &caller,
-            current_id,
-            String::from_str(&env, "Fork"),
-            String::from_str(&env, "Desc"),
-            100,
-            &token,
-            false,
-            false,
-        );
-        assert_eq!(result, Err(ContractError::InvalidInput));
+            );
+            assert_eq!(result, Err(ContractError::InvalidInput));
+        });
     }
 
     #[test]
     fn test_fork_multiple_children() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let token = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let caller1 = Address::generate(&env);
-        let child1 = fork_grant(
-            &env,
-            &caller1,
-            1,
-            String::from_str(&env, "Fork 1"),
-            String::from_str(&env, "Desc"),
-            100,
-            &token,
-            false,
-            false,
-        )
-        .unwrap();
+            let caller1 = Address::generate(&env);
+            let child1 = fork_grant(
+                &env,
+                &caller1,
+                1,
+                String::from_str(&env, "Fork 1"),
+                String::from_str(&env, "Desc"),
+                100,
+                &token,
+                false,
+                false,
+            )
+            .unwrap();
 
-        let caller2 = Address::generate(&env);
-        let child2 = fork_grant(
-            &env,
-            &caller2,
-            1,
-            String::from_str(&env, "Fork 2"),
-            String::from_str(&env, "Desc"),
-            100,
-            &token,
-            false,
-            false,
-        )
-        .unwrap();
+            let caller2 = Address::generate(&env);
+            let child2 = fork_grant(
+                &env,
+                &caller2,
+                1,
+                String::from_str(&env, "Fork 2"),
+                String::from_str(&env, "Desc"),
+                100,
+                &token,
+                false,
+                false,
+            )
+            .unwrap();
 
-        let children = get_forks(&env, 1);
-        assert_eq!(children.len(), 2);
-        assert_eq!(children.get(0).unwrap(), child1);
-        assert_eq!(children.get(1).unwrap(), child2);
+            let children = get_forks(&env, 1);
+            assert_eq!(children.len(), 2);
+            assert_eq!(children.get(0).unwrap(), child1);
+            assert_eq!(children.get(1).unwrap(), child2);
+        });
     }
 }

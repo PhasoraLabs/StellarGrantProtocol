@@ -211,7 +211,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -228,10 +228,13 @@
                   {
                     "vec": [
                       {
-                        "symbol": "AuditLog"
+                        "symbol": "AuditLogPage"
                       },
                       {
                         "u64": "1"
+                      },
+                      {
+                        "u32": 0
                       }
                     ]
                   }

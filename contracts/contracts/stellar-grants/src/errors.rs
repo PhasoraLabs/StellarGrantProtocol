@@ -193,4 +193,5 @@ pub enum ContractError {
     TooManyPublicReviews = 148,
     // DAO vote gate
     DaoVoteRequired = 149,
+    BountySubmissionLimitExceeded = 150,
 }

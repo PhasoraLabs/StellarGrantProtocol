@@ -316,6 +316,10 @@ impl StellarGrantsContract {
         registry::register_contributor(&env, &contributor, &name)?;
 
         metrics::increment(&env, MetricField::ContributorsRegistered, 1);
+        if hooks::has_hooks(&env, HookEvent::ContributorRegistered) {
+            let payload = soroban_sdk::Bytes::new(&env);
+            hooks::trigger(&env, HookEvent::ContributorRegistered, payload);
+        }
 
         Ok(())
     }
@@ -424,8 +428,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id)
-                .ok_or(ContractError::InvalidState)?;
+            let mut escrow_state =
+                Storage::get_escrow_state(&env, grant_id).ok_or(ContractError::InvalidState)?;
             if escrow_state.lifecycle == EscrowLifecycleState::Released {
                 return Err(ContractError::GrantAlreadyReleased);
             }
@@ -453,8 +457,8 @@ impl StellarGrantsContract {
                 return Err(ContractError::InvalidState);
             }
 
-            let mut escrow_state = Storage::get_escrow_state(&env, grant_id)
-                .ok_or(ContractError::InvalidState)?;
+            let mut escrow_state =
+                Storage::get_escrow_state(&env, grant_id).ok_or(ContractError::InvalidState)?;
             if escrow_state.mode != EscrowMode::HighSecurity {
                 return Err(ContractError::InvalidState);
             }
@@ -616,8 +620,8 @@ impl StellarGrantsContract {
         if multisig_pending {
             // Grant stays Active with escrow untouched (beyond what was
             // already paid out above) until execute_escrow_release runs.
-            let mut escrow_state = Storage::get_escrow_state(env, grant_id)
-                .ok_or(ContractError::InvalidState)?;
+            let mut escrow_state =
+                Storage::get_escrow_state(env, grant_id).ok_or(ContractError::InvalidState)?;
             escrow_state.lifecycle = EscrowLifecycleState::AwaitingMultisig;
             escrow_state.quorum_ready = true;
             Storage::set_escrow_state(env, grant_id, &escrow_state);
@@ -652,8 +656,8 @@ impl StellarGrantsContract {
         // Issue #817: keep the data_export staleness/filter API fresh.
         data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
 
-        let mut escrow_state = Storage::get_escrow_state(env, grant_id)
-            .ok_or(ContractError::InvalidState)?;
+        let mut escrow_state =
+            Storage::get_escrow_state(env, grant_id).ok_or(ContractError::InvalidState)?;
         escrow_state.lifecycle = EscrowLifecycleState::Released;
         escrow_state.quorum_ready = true;
         Storage::set_escrow_state(env, grant_id, &escrow_state);
@@ -785,7 +789,11 @@ impl StellarGrantsContract {
                 );
                 metrics::increment(&env, MetricField::MilestonesApproved, 1);
                 if hooks::has_hooks(&env, HookEvent::MilestoneApproved) {
-                    hooks::trigger(&env, HookEvent::MilestoneApproved, Bytes::new(&env));
+                    let mut payload_data = [0u8; 12];
+                    payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
+                    payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
+                    let payload = soroban_sdk::Bytes::from_slice(&env, &payload_data);
+                    hooks::trigger(&env, HookEvent::MilestoneApproved, payload);
                 }
                 // Mint soulbound NFT certificate for the contributor (#570)
                 let meta = NftMetadata {
@@ -1661,6 +1669,7 @@ impl StellarGrantsContract {
         claim_id: u32,
         payout_amount: i128,
     ) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
         if Storage::get_global_admin(&env) != Some(admin.clone()) {
             return Err(ContractError::Unauthorized);
         }
@@ -1673,6 +1682,7 @@ impl StellarGrantsContract {
         admin: Address,
         claim_id: u32,
     ) -> Result<(), ContractError> {
+        emergency::require_not_paused(&env)?;
         if Storage::get_global_admin(&env) != Some(admin.clone()) {
             return Err(ContractError::Unauthorized);
         }
@@ -1873,13 +1883,13 @@ impl StellarGrantsContract {
         // Issue #726: capture a tamper-evident state snapshot when a dispute is raised.
         snapshot::capture(&env, grant_id, SnapshotTrigger::DisputeRaised, &caller)?;
         metrics::increment(&env, MetricField::DisputesRaised, 1);
-        // Issue #699: notify subscribers watching this grant.
-        notification::emit_notification(
-            &env,
-            NotificationEvent::DisputeRaised,
-            &SubscriptionScope::PerGrant(grant_id),
-            reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
-        );
+        if hooks::has_hooks(&env, HookEvent::DisputeRaised) {
+            let mut payload_data = [0u8; 12];
+            payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
+            payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
+            let payload = soroban_sdk::Bytes::from_slice(&env, &payload_data);
+            hooks::trigger(&env, HookEvent::DisputeRaised, payload);
+        }
         Ok(())
     }
 
@@ -1943,6 +1953,13 @@ impl StellarGrantsContract {
             }
         }
         metrics::increment(&env, MetricField::DisputesResolved, 1);
+        if hooks::has_hooks(&env, HookEvent::DisputeResolved) {
+            let mut payload_data = [0u8; 12];
+            payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
+            payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
+            let payload = soroban_sdk::Bytes::from_slice(&env, &payload_data);
+            hooks::trigger(&env, HookEvent::DisputeResolved, payload);
+        }
         Ok(outcome)
     }
 
@@ -2292,6 +2309,10 @@ impl StellarGrantsContract {
         metrics::increment(&env, MetricField::BountiesAwarded, 1);
         let bounty = bounty::get_bounty(&env, bounty_id).ok_or(ContractError::BountyNotFound)?;
         metrics::update_token_locked(&env, &bounty.token, -bounty.prize_amount);
+        if hooks::has_hooks(&env, HookEvent::BountyAwarded) {
+            let payload = soroban_sdk::Bytes::from_slice(&env, &bounty_id.to_le_bytes());
+            hooks::trigger(&env, HookEvent::BountyAwarded, payload);
+        }
         Ok(())
     }
 
@@ -3330,7 +3351,15 @@ impl StellarGrantsContract {
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
         emergency::require_not_paused(&env)?;
-        invoice::approve_invoice(&env, &reviewer, grant_id, milestone_idx)
+        invoice::approve_invoice(&env, &reviewer, grant_id, milestone_idx)?;
+        if hooks::has_hooks(&env, HookEvent::MilestonePaid) {
+            let mut payload_data = [0u8; 12];
+            payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
+            payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
+            let payload = soroban_sdk::Bytes::from_slice(&env, &payload_data);
+            hooks::trigger(&env, HookEvent::MilestonePaid, payload);
+        }
+        Ok(())
     }
 
     /// Reject an invoice with a reason. Reviewer only.
@@ -3990,7 +4019,11 @@ impl StellarGrantsContract {
         syndication::record_payout_allocation(&env, &caller, grant_id, milestone_idx, payout)
     }
 
-    pub fn syndicate_payout_allocation(env: Env, grant_id: u64, milestone_idx: u32) -> Vec<(Address, i128)> {
+    pub fn syndicate_payout_allocation(
+        env: Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Vec<(Address, i128)> {
         syndication::get_payout_allocation(&env, grant_id, milestone_idx)
     }
 
@@ -4634,7 +4667,11 @@ impl StellarGrantsContract {
 
     /// Promote the top-ranked entry. Called when a slot opens.
     /// Returns the promoted address if successful, None if waitlist is empty.
-    pub fn promote_from_waitlist(env: Env, caller: Address, grant_id: u64) -> Result<Option<Address>, ContractError> {
+    pub fn promote_from_waitlist(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+    ) -> Result<Option<Address>, ContractError> {
         waitlist::promote_next(&env, &caller, grant_id)
     }
 
@@ -5043,7 +5080,8 @@ pub(crate) fn internal_grant_create(
     metrics::increment(env, MetricField::GrantsActive, 1);
 
     if hooks::has_hooks(env, HookEvent::GrantCreated) {
-        hooks::trigger(env, HookEvent::GrantCreated, Bytes::new(env));
+        let payload = soroban_sdk::Bytes::from_slice(env, &grant_id.to_le_bytes());
+        hooks::trigger(env, HookEvent::GrantCreated, payload);
     }
 
     provenance::record(

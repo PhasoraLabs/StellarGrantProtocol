@@ -59,9 +59,7 @@ pub fn get_license(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Licen
 mod tests {
     use super::*;
     use crate::storage::Storage;
-    use crate::types::{
-        Grant, GrantStatus, Milestone, MilestoneState,
-    };
+    use crate::types::{Grant, GrantStatus, Milestone, MilestoneState};
     use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Vec};
 
     fn setup() -> (Env, Address, Address, Address) {

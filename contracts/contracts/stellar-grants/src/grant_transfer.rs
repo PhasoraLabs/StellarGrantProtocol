@@ -109,8 +109,14 @@ mod test {
     use super::*;
     use crate::storage::Storage;
     use crate::types::{Grant, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{vec, Address, Env, String};
+
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
 
     fn create_test_grant(env: &Env, owner: &Address, reviewer: &Address) -> u64 {
         let grant_id = 1;
@@ -139,170 +145,166 @@ mod test {
     #[test]
     fn test_propose_and_accept_owner_transfer() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let reviewer = Address::generate(&env);
-        let new_owner = Address::generate(&env);
-        let grant_id = create_test_grant(&env, &owner, &reviewer);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let new_owner = Address::generate(&env);
+            let grant_id = create_test_grant(&env, &owner, &reviewer);
 
-        // Current owner proposes transfer
-        let result = propose_transfer(
-            &env,
-            &owner,
-            grant_id,
-            new_owner.clone(),
-            TransferableRole::Owner,
-            None,
-        );
-        assert_eq!(result, Ok(()));
+            let result = propose_transfer(
+                &env,
+                &owner,
+                grant_id,
+                new_owner.clone(),
+                TransferableRole::Owner,
+                None,
+            );
+            assert_eq!(result, Ok(()));
 
-        // Check proposal exists
-        let proposal = get_transfer_proposal(&env, grant_id).unwrap();
-        assert_eq!(proposal.proposed_new_holder, new_owner);
+            let proposal = get_transfer_proposal(&env, grant_id).unwrap();
+            assert_eq!(proposal.proposed_new_holder, new_owner);
 
-        // New owner accepts
-        let accept_res = accept_transfer(&env, &new_owner, grant_id);
-        assert_eq!(accept_res, Ok(()));
+            let accept_res = accept_transfer(&env, &new_owner, grant_id);
+            assert_eq!(accept_res, Ok(()));
 
-        // Check grant is updated and proposal cleared
-        let grant = Storage::get_grant(&env, grant_id).unwrap();
-        assert_eq!(grant.owner, new_owner);
-        assert!(get_transfer_proposal(&env, grant_id).is_none());
+            let grant = Storage::get_grant(&env, grant_id).unwrap();
+            assert_eq!(grant.owner, new_owner);
+            assert!(get_transfer_proposal(&env, grant_id).is_none());
+        });
     }
 
     #[test]
     fn test_propose_transfer_unauthorized_caller() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let reviewer = Address::generate(&env);
-        let random_caller = Address::generate(&env);
-        let new_owner = Address::generate(&env);
-        let grant_id = create_test_grant(&env, &owner, &reviewer);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let random_caller = Address::generate(&env);
+            let new_owner = Address::generate(&env);
+            let grant_id = create_test_grant(&env, &owner, &reviewer);
 
-        // Random caller cannot propose transfer
-        let result = propose_transfer(
-            &env,
-            &random_caller,
-            grant_id,
-            new_owner.clone(),
-            TransferableRole::Owner,
-            None,
-        );
-        assert_eq!(result, Err(ContractError::Unauthorized));
+            let result = propose_transfer(
+                &env,
+                &random_caller,
+                grant_id,
+                new_owner.clone(),
+                TransferableRole::Owner,
+                None,
+            );
+            assert_eq!(result, Err(ContractError::Unauthorized));
+        });
     }
 
     #[test]
     fn test_accept_transfer_unauthorized_caller() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let reviewer = Address::generate(&env);
-        let new_owner = Address::generate(&env);
-        let random_caller = Address::generate(&env);
-        let grant_id = create_test_grant(&env, &owner, &reviewer);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let new_owner = Address::generate(&env);
+            let random_caller = Address::generate(&env);
+            let grant_id = create_test_grant(&env, &owner, &reviewer);
 
-        propose_transfer(
-            &env,
-            &owner,
-            grant_id,
-            new_owner.clone(),
-            TransferableRole::Owner,
-            None,
-        )
-        .unwrap();
+            propose_transfer(
+                &env,
+                &owner,
+                grant_id,
+                new_owner.clone(),
+                TransferableRole::Owner,
+                None,
+            )
+            .unwrap();
 
-        // Random caller cannot accept transfer
-        let accept_res = accept_transfer(&env, &random_caller, grant_id);
-        assert_eq!(accept_res, Err(ContractError::Unauthorized));
+            let accept_res = accept_transfer(&env, &random_caller, grant_id);
+            assert_eq!(accept_res, Err(ContractError::Unauthorized));
+        });
     }
 
     #[test]
     fn test_propose_and_accept_reviewer_transfer() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let reviewer = Address::generate(&env);
-        let new_reviewer = Address::generate(&env);
-        let grant_id = create_test_grant(&env, &owner, &reviewer);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let new_reviewer = Address::generate(&env);
+            let grant_id = create_test_grant(&env, &owner, &reviewer);
 
-        // Current reviewer proposes transfer to replace themselves
-        let result = propose_transfer(
-            &env,
-            &reviewer,
-            grant_id,
-            new_reviewer.clone(),
-            TransferableRole::Reviewer,
-            Some(reviewer.clone()),
-        );
-        assert_eq!(result, Ok(()));
+            let result = propose_transfer(
+                &env,
+                &reviewer,
+                grant_id,
+                new_reviewer.clone(),
+                TransferableRole::Reviewer,
+                Some(reviewer.clone()),
+            );
+            assert_eq!(result, Ok(()));
 
-        // New reviewer accepts
-        let accept_res = accept_transfer(&env, &new_reviewer, grant_id);
-        assert_eq!(accept_res, Ok(()));
+            let accept_res = accept_transfer(&env, &new_reviewer, grant_id);
+            assert_eq!(accept_res, Ok(()));
 
-        // Check grant is updated
-        let grant = Storage::get_grant(&env, grant_id).unwrap();
-        assert_eq!(grant.reviewers.get(0).unwrap(), new_reviewer);
-        assert!(get_transfer_proposal(&env, grant_id).is_none());
+            let grant = Storage::get_grant(&env, grant_id).unwrap();
+            assert_eq!(grant.reviewers.get(0).unwrap(), new_reviewer);
+            assert!(get_transfer_proposal(&env, grant_id).is_none());
+        });
     }
 
     #[test]
     fn test_owner_and_reviewer_proposals_coexist() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        let reviewer = Address::generate(&env);
-        let new_owner = Address::generate(&env);
-        let new_reviewer = Address::generate(&env);
-        let grant_id = create_test_grant(&env, &owner, &reviewer);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let new_owner = Address::generate(&env);
+            let new_reviewer = Address::generate(&env);
+            let grant_id = create_test_grant(&env, &owner, &reviewer);
 
-        // Owner proposes ownership transfer
-        let owner_result = propose_transfer(
-            &env,
-            &owner,
-            grant_id,
-            new_owner.clone(),
-            TransferableRole::Owner,
-            None,
-        );
-        assert_eq!(owner_result, Ok(()));
+            let owner_result = propose_transfer(
+                &env,
+                &owner,
+                grant_id,
+                new_owner.clone(),
+                TransferableRole::Owner,
+                None,
+            );
+            assert_eq!(owner_result, Ok(()));
 
-        // Reviewer proposes their replacement (should not overwrite owner's proposal)
-        let reviewer_result = propose_transfer(
-            &env,
-            &reviewer,
-            grant_id,
-            new_reviewer.clone(),
-            TransferableRole::Reviewer,
-            Some(reviewer.clone()),
-        );
-        assert_eq!(reviewer_result, Ok(()));
+            let reviewer_result = propose_transfer(
+                &env,
+                &reviewer,
+                grant_id,
+                new_reviewer.clone(),
+                TransferableRole::Reviewer,
+                Some(reviewer.clone()),
+            );
+            assert_eq!(reviewer_result, Ok(()));
 
-        // Check both proposals exist independently
-        let owner_proposal =
-            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Owner);
-        assert!(owner_proposal.is_some());
-        assert_eq!(owner_proposal.unwrap().proposed_new_holder, new_owner);
+            let owner_proposal =
+                Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Owner);
+            assert!(owner_proposal.is_some());
+            assert_eq!(owner_proposal.unwrap().proposed_new_holder, new_owner);
 
-        let reviewer_proposal =
-            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
-        assert!(reviewer_proposal.is_some());
-        assert_eq!(reviewer_proposal.unwrap().proposed_new_holder, new_reviewer);
+            let reviewer_proposal =
+                Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+            assert!(reviewer_proposal.is_some());
+            assert_eq!(reviewer_proposal.unwrap().proposed_new_holder, new_reviewer);
 
-        // Accept owner transfer
-        accept_transfer(&env, &new_owner, grant_id).unwrap();
-        let grant = Storage::get_grant(&env, grant_id).unwrap();
-        assert_eq!(grant.owner, new_owner);
+            accept_transfer(&env, &new_owner, grant_id).unwrap();
+            let grant = Storage::get_grant(&env, grant_id).unwrap();
+            assert_eq!(grant.owner, new_owner);
 
-        // Reviewer proposal should still exist
-        let reviewer_proposal =
-            Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
-        assert!(reviewer_proposal.is_some());
+            let reviewer_proposal =
+                Storage::get_transfer_proposal(&env, grant_id, &TransferableRole::Reviewer);
+            assert!(reviewer_proposal.is_some());
+        });
     }
 }

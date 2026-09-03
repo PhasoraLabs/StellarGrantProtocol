@@ -157,8 +157,14 @@ fn is_scope_admin(env: &Env, caller: &Address, scope: &WhitelistScope) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Grant, GrantFund, GrantStatus};
+    use crate::types::{Grant, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
+
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
 
     fn make_grant(env: &Env, owner: &Address) -> Grant {
         Grant {
@@ -184,107 +190,126 @@ mod tests {
     #[test]
     fn test_open_mode_always_allows() {
         let env = Env::default();
-        let addr = Address::generate(&env);
-        let scope = WhitelistScope::GlobalContributor;
+        let contract_id = setup(&env);
 
-        // Default is Open.
-        assert!(is_allowed(&env, &addr, &scope));
+        env.as_contract(&contract_id, || {
+            let addr = Address::generate(&env);
+            let scope = WhitelistScope::GlobalContributor;
+
+            // Default is Open.
+            assert!(is_allowed(&env, &addr, &scope));
+        });
     }
 
     #[test]
     fn test_restricted_mode_blocks_non_member() {
         let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let member = Address::generate(&env);
-        let non_member = Address::generate(&env);
-        let scope = WhitelistScope::GlobalContributor;
+        let contract_id = setup(&env);
 
-        Storage::set_global_admin(&env, &admin);
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            let member = Address::generate(&env);
+            let non_member = Address::generate(&env);
+            let scope = WhitelistScope::GlobalContributor;
 
-        // Set Restricted mode.
-        set_mode(&env, &admin, &scope, WhitelistMode::Restricted).unwrap();
-        assert_eq!(get_mode(&env, &scope), WhitelistMode::Restricted);
+            Storage::set_global_admin(&env, &admin);
 
-        // Non-member should be blocked.
-        assert!(!is_allowed(&env, &non_member, &scope));
+            // Set Restricted mode.
+            set_mode(&env, &admin, &scope, WhitelistMode::Restricted).unwrap();
+            assert_eq!(get_mode(&env, &scope), WhitelistMode::Restricted);
 
-        // Add member.
-        add(&env, &admin, &member, &scope).unwrap();
-        assert!(is_allowed(&env, &member, &scope));
+            // Non-member should be blocked.
+            assert!(!is_allowed(&env, &non_member, &scope));
+
+            // Add member.
+            add(&env, &admin, &member, &scope).unwrap();
+            assert!(is_allowed(&env, &member, &scope));
+        });
     }
 
     #[test]
     fn test_add_remove_roundtrip() {
         let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let addr = Address::generate(&env);
-        let scope = WhitelistScope::GlobalReviewer;
+        let contract_id = setup(&env);
 
-        Storage::set_global_admin(&env, &admin);
-        set_mode(&env, &admin, &scope, WhitelistMode::Restricted).unwrap();
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            let addr = Address::generate(&env);
+            let scope = WhitelistScope::GlobalReviewer;
 
-        // Add.
-        add(&env, &admin, &addr, &scope).unwrap();
-        assert!(is_allowed(&env, &addr, &scope));
+            Storage::set_global_admin(&env, &admin);
+            set_mode(&env, &admin, &scope, WhitelistMode::Restricted).unwrap();
 
-        // Remove.
-        remove(&env, &admin, &addr, &scope).unwrap();
-        assert!(!is_allowed(&env, &addr, &scope));
+            // Add.
+            add(&env, &admin, &addr, &scope).unwrap();
+            assert!(is_allowed(&env, &addr, &scope));
+
+            // Remove.
+            remove(&env, &admin, &addr, &scope).unwrap();
+            assert!(!is_allowed(&env, &addr, &scope));
+        });
     }
 
     #[test]
     fn test_global_vs_per_grant_scope() {
         let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let owner = Address::generate(&env);
-        let addr = Address::generate(&env);
+        let contract_id = setup(&env);
 
-        let global_scope = WhitelistScope::GlobalReviewer;
-        let per_grant_scope = WhitelistScope::GrantReviewer(1);
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            let owner = Address::generate(&env);
+            let addr = Address::generate(&env);
 
-        Storage::set_global_admin(&env, &admin);
-        Storage::set_grant(&env, 1, &make_grant(&env, &owner));
+            let global_scope = WhitelistScope::GlobalReviewer;
+            let per_grant_scope = WhitelistScope::GrantReviewer(1);
 
-        // Set global scope to restricted; add addr to per-grant only.
-        set_mode(&env, &admin, &global_scope, WhitelistMode::Restricted).unwrap();
-        add(&env, &owner, &addr, &per_grant_scope).unwrap();
+            Storage::set_global_admin(&env, &admin);
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner));
 
-        // Global scope: addr not in global list -> blocked.
-        assert!(!is_allowed(&env, &addr, &global_scope));
+            // Set global scope to restricted; add addr to per-grant only.
+            set_mode(&env, &admin, &global_scope, WhitelistMode::Restricted).unwrap();
+            add(&env, &owner, &addr, &per_grant_scope).unwrap();
 
-        // Per-grant scope: addr IS in per-grant list -> allowed.
-        assert!(is_allowed(&env, &addr, &per_grant_scope));
+            // Global scope: addr not in global list -> blocked.
+            assert!(!is_allowed(&env, &addr, &global_scope));
+
+            // Per-grant scope: addr IS in per-grant list -> allowed.
+            assert!(is_allowed(&env, &addr, &per_grant_scope));
+        });
     }
 
     #[test]
     fn test_unauthorized_add_rejected() {
         let env = Env::default();
-        env.mock_all_auths();
-        let stranger = Address::generate(&env);
-        let addr = Address::generate(&env);
-        let scope = WhitelistScope::GlobalContributor;
+        let contract_id = setup(&env);
 
-        assert_eq!(
-            add(&env, &stranger, &addr, &scope),
-            Err(ContractError::Unauthorized)
-        );
+        env.as_contract(&contract_id, || {
+            let stranger = Address::generate(&env);
+            let addr = Address::generate(&env);
+            let scope = WhitelistScope::GlobalContributor;
+
+            assert_eq!(
+                add(&env, &stranger, &addr, &scope),
+                Err(ContractError::Unauthorized)
+            );
+        });
     }
 
     #[test]
     fn test_grant_owner_can_manage_per_grant_scope() {
         let env = Env::default();
-        env.mock_all_auths();
-        let owner = Address::generate(&env);
-        let addr = Address::generate(&env);
-        let scope = WhitelistScope::GrantReviewer(1);
+        let contract_id = setup(&env);
 
-        Storage::set_grant(&env, 1, &make_grant(&env, &owner));
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let addr = Address::generate(&env);
+            let scope = WhitelistScope::GrantReviewer(1);
 
-        // Grant owner can add to per-grant scope even without global admin.
-        add(&env, &owner, &addr, &scope).unwrap();
-        assert!(is_allowed(&env, &addr, &scope));
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner));
+
+            // Grant owner can add to per-grant scope even without global admin.
+            add(&env, &owner, &addr, &scope).unwrap();
+            assert!(is_allowed(&env, &addr, &scope));
+        });
     }
 }

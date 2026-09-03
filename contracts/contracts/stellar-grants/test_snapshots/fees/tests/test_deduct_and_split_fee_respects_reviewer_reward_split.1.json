@@ -313,6 +313,14 @@
                     "val": {
                       "i128": "0"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_votes_recorded"
+                    },
+                    "val": {
+                      "i128": "0"
+                    }
                   }
                 ]
               }

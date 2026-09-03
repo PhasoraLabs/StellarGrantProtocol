@@ -1684,7 +1684,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -1751,7 +1751,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -1843,10 +1843,13 @@
                   {
                     "vec": [
                       {
-                        "symbol": "AuditLog"
+                        "symbol": "AuditLogPage"
                       },
                       {
                         "u64": "1"
+                      },
+                      {
+                        "u32": 0
                       }
                     ]
                   }
@@ -2114,10 +2117,13 @@
                   {
                     "vec": [
                       {
-                        "symbol": "AuditLog"
+                        "symbol": "AuditLogPage"
                       },
                       {
                         "u64": "2"
+                      },
+                      {
+                        "u32": 0
                       }
                     ]
                   }
@@ -3722,7 +3728,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -3871,7 +3877,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 1000000
       },
       {
         "entry": {
@@ -6715,6 +6721,14 @@
                     },
                     "val": {
                       "i128": "0"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_votes_recorded"
+                    },
+                    "val": {
+                      "i128": "2"
                     }
                   }
                 ]

@@ -72,7 +72,7 @@ pub fn export_grants(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total_filtered;
+    let has_more = offset.saturating_add(capped) < total_filtered;
 
     ExportGrantPage {
         items: page_items,
@@ -188,7 +188,7 @@ pub fn export_milestones_since(
         i += 1;
     }
 
-    let has_more = (offset + capped) < total;
+    let has_more = offset.saturating_add(capped) < total;
 
     ExportMilestonePage {
         items: page_items,
@@ -302,5 +302,19 @@ mod tests {
         assert_eq!(cap_limit(0), 0);
         assert_eq!(cap_limit(25), 25);
         assert_eq!(cap_limit(100), constants::MAX_EXPORT_PAGE_SIZE);
+    }
+
+    #[test]
+    fn test_export_grants_overflow() {
+        let (env, _admin) = setup();
+        let result = export_grants(&env, u32::MAX - 5, 10, None);
+        assert!(!result.has_more);
+    }
+
+    #[test]
+    fn test_export_milestones_since_overflow() {
+        let (env, _admin) = setup();
+        let result = export_milestones_since(&env, 0, u32::MAX - 5, 10);
+        assert!(!result.has_more);
     }
 }

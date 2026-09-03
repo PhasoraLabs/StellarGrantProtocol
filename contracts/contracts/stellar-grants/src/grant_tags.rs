@@ -235,8 +235,14 @@ fn hash_tag(env: &Env, tag: &String) -> u32 {
 mod tests {
     use super::*;
     use crate::types::{Grant, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Address, Env, String, Vec};
+
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
 
     fn setup_grant(env: &Env, grant_id: u64, owner: &Address) {
         let grant = Grant {
@@ -280,117 +286,129 @@ mod tests {
     #[test]
     fn test_find_by_tag_no_collision_for_same_length_tags() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
-        setup_grant(&env, 2, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
+            setup_grant(&env, 2, &owner);
 
-        let mut tags1 = Vec::new(&env);
-        tags1.push_back(String::from_str(&env, "rust"));
-        tag_grant(&env, &owner, 1, None, None, tags1).unwrap();
+            let mut tags1 = Vec::new(&env);
+            tags1.push_back(String::from_str(&env, "rust"));
+            tag_grant(&env, &owner, 1, None, None, tags1).unwrap();
 
-        let mut tags2 = Vec::new(&env);
-        tags2.push_back(String::from_str(&env, "defi"));
-        tag_grant(&env, &owner, 2, None, None, tags2).unwrap();
+            let mut tags2 = Vec::new(&env);
+            tags2.push_back(String::from_str(&env, "defi"));
+            tag_grant(&env, &owner, 2, None, None, tags2).unwrap();
 
-        let rust_results = find_by_tag(&env, &String::from_str(&env, "rust"), 0, 50);
-        let defi_results = find_by_tag(&env, &String::from_str(&env, "defi"), 0, 50);
+            let rust_results = find_by_tag(&env, &String::from_str(&env, "rust"), 0, 50);
+            let defi_results = find_by_tag(&env, &String::from_str(&env, "defi"), 0, 50);
 
-        assert_eq!(rust_results.len(), 1);
-        assert_eq!(rust_results.get(0).unwrap(), 1);
-        assert_eq!(defi_results.len(), 1);
-        assert_eq!(defi_results.get(0).unwrap(), 2);
+            assert_eq!(rust_results.len(), 1);
+            assert_eq!(rust_results.get(0).unwrap(), 1);
+            assert_eq!(defi_results.len(), 1);
+            assert_eq!(defi_results.get(0).unwrap(), 2);
+        });
     }
 
     #[test]
     fn test_find_by_category_returns_tagged_grants() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let admin = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let owner = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let owner = Address::generate(&env);
 
-        let subs = Vec::new(&env);
-        let cat_id =
-            create_category(&env, &admin, String::from_str(&env, "Infrastructure"), subs).unwrap();
+            let subs = Vec::new(&env);
+            let cat_id =
+                create_category(&env, &admin, String::from_str(&env, "Infrastructure"), subs).unwrap();
 
-        setup_grant(&env, 10, &owner);
-        setup_grant(&env, 20, &owner);
-        setup_grant(&env, 30, &owner);
+            setup_grant(&env, 10, &owner);
+            setup_grant(&env, 20, &owner);
+            setup_grant(&env, 30, &owner);
 
-        let tags = Vec::new(&env);
-        tag_grant(&env, &owner, 10, Some(cat_id), None, tags.clone()).unwrap();
-        tag_grant(&env, &owner, 20, Some(cat_id), None, tags.clone()).unwrap();
+            let tags = Vec::new(&env);
+            tag_grant(&env, &owner, 10, Some(cat_id), None, tags.clone()).unwrap();
+            tag_grant(&env, &owner, 20, Some(cat_id), None, tags.clone()).unwrap();
 
-        let results = find_by_category(&env, cat_id, 0, 50);
-        assert_eq!(results.len(), 2);
-        assert_eq!(results.get(0).unwrap(), 10);
-        assert_eq!(results.get(1).unwrap(), 20);
+            let results = find_by_category(&env, cat_id, 0, 50);
+            assert_eq!(results.len(), 2);
+            assert_eq!(results.get(0).unwrap(), 10);
+            assert_eq!(results.get(1).unwrap(), 20);
 
-        let results_30 = find_by_category(&env, cat_id, 0, 50);
-        assert!(!results_30.iter().any(|id| id == 30));
+            let results_30 = find_by_category(&env, cat_id, 0, 50);
+            assert!(!results_30.iter().any(|id| id == 30));
+        });
     }
 
     #[test]
     fn test_find_by_category_pagination() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let admin = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let owner = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let owner = Address::generate(&env);
 
-        let subs = Vec::new(&env);
-        let cat_id = create_category(&env, &admin, String::from_str(&env, "DeFi"), subs).unwrap();
+            let subs = Vec::new(&env);
+            let cat_id = create_category(&env, &admin, String::from_str(&env, "DeFi"), subs).unwrap();
 
-        let tags = Vec::new(&env);
-        for i in 0..5u64 {
-            setup_grant(&env, i, &owner);
-            tag_grant(&env, &owner, i, Some(cat_id), None, tags.clone()).unwrap();
-        }
+            let tags = Vec::new(&env);
+            for i in 0..5u64 {
+                setup_grant(&env, i, &owner);
+                tag_grant(&env, &owner, i, Some(cat_id), None, tags.clone()).unwrap();
+            }
 
-        let page1 = find_by_category(&env, cat_id, 0, 2);
-        assert_eq!(page1.len(), 2);
-        assert_eq!(page1.get(0).unwrap(), 0);
-        assert_eq!(page1.get(1).unwrap(), 1);
+            let page1 = find_by_category(&env, cat_id, 0, 2);
+            assert_eq!(page1.len(), 2);
+            assert_eq!(page1.get(0).unwrap(), 0);
+            assert_eq!(page1.get(1).unwrap(), 1);
 
-        let page2 = find_by_category(&env, cat_id, 2, 2);
-        assert_eq!(page2.len(), 2);
-        assert_eq!(page2.get(0).unwrap(), 2);
-        assert_eq!(page2.get(1).unwrap(), 3);
+            let page2 = find_by_category(&env, cat_id, 2, 2);
+            assert_eq!(page2.len(), 2);
+            assert_eq!(page2.get(0).unwrap(), 2);
+            assert_eq!(page2.get(1).unwrap(), 3);
+        });
     }
 
     #[test]
     fn test_find_by_category_invalid_category_returns_empty() {
         let env = Env::default();
-        let results = find_by_category(&env, 999, 0, 50);
-        assert_eq!(results.len(), 0);
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let results = find_by_category(&env, 999, 0, 50);
+            assert_eq!(results.len(), 0);
+        });
     }
 
     #[test]
     fn test_category_index_cleaned_on_retag() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let admin = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        let owner = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            let owner = Address::generate(&env);
 
-        let subs = Vec::new(&env);
-        let cat_a =
-            create_category(&env, &admin, String::from_str(&env, "CatA"), subs.clone()).unwrap();
-        let cat_b = create_category(&env, &admin, String::from_str(&env, "CatB"), subs).unwrap();
+            let subs = Vec::new(&env);
+            let cat_a =
+                create_category(&env, &admin, String::from_str(&env, "CatA"), subs.clone()).unwrap();
+            let cat_b = create_category(&env, &admin, String::from_str(&env, "CatB"), subs).unwrap();
 
-        setup_grant(&env, 1, &owner);
-        let tags = Vec::new(&env);
+            setup_grant(&env, 1, &owner);
+            let tags = Vec::new(&env);
 
-        tag_grant(&env, &owner, 1, Some(cat_a), None, tags.clone()).unwrap();
-        assert_eq!(find_by_category(&env, cat_a, 0, 50).len(), 1);
+            tag_grant(&env, &owner, 1, Some(cat_a), None, tags.clone()).unwrap();
+            assert_eq!(find_by_category(&env, cat_a, 0, 50).len(), 1);
 
-        tag_grant(&env, &owner, 1, Some(cat_b), None, tags).unwrap();
-        assert_eq!(find_by_category(&env, cat_a, 0, 50).len(), 0);
-        assert_eq!(find_by_category(&env, cat_b, 0, 50).len(), 1);
+            tag_grant(&env, &owner, 1, Some(cat_b), None, tags).unwrap();
+            assert_eq!(find_by_category(&env, cat_a, 0, 50).len(), 0);
+            assert_eq!(find_by_category(&env, cat_b, 0, 50).len(), 1);
+        });
     }
 }

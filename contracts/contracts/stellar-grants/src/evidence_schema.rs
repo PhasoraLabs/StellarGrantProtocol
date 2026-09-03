@@ -109,8 +109,14 @@ mod test {
     use super::*;
     use crate::storage::Storage;
     use crate::types::{EvidenceFieldType, Grant, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{vec, Address, Env, Map, String};
+
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
 
     fn setup_grant(env: &Env, id: u64, owner: &Address) {
         let grant = Grant {
@@ -137,112 +143,120 @@ mod test {
     #[test]
     fn test_set_and_get_schema() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let fields = vec![
-            &env,
-            EvidenceField {
-                name: String::from_str(&env, "github_pr"),
-                field_type: EvidenceFieldType::Url,
-                required: true,
-            },
-        ];
+            let fields = vec![
+                &env,
+                EvidenceField {
+                    name: String::from_str(&env, "github_pr"),
+                    field_type: EvidenceFieldType::Url,
+                    required: true,
+                },
+            ];
 
-        let result = set_schema(&env, &owner, 1, 0, fields.clone());
-        assert_eq!(result, Ok(()));
+            let result = set_schema(&env, &owner, 1, 0, fields.clone());
+            assert_eq!(result, Ok(()));
 
-        let schema = get_schema(&env, 1, 0).unwrap();
-        assert_eq!(schema.grant_id, 1);
-        assert_eq!(schema.milestone_idx, 0);
-        assert_eq!(schema.fields.len(), 1);
+            let schema = get_schema(&env, 1, 0).unwrap();
+            assert_eq!(schema.grant_id, 1);
+            assert_eq!(schema.milestone_idx, 0);
+            assert_eq!(schema.fields.len(), 1);
+        });
     }
 
     #[test]
     fn test_submit_evidence_with_schema() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let fields = vec![
-            &env,
-            EvidenceField {
-                name: String::from_str(&env, "github_pr"),
-                field_type: EvidenceFieldType::Url,
-                required: true,
-            },
-            EvidenceField {
-                name: String::from_str(&env, "notes"),
-                field_type: EvidenceFieldType::Text,
-                required: false,
-            },
-        ];
-        set_schema(&env, &owner, 1, 0, fields).unwrap();
+            let fields = vec![
+                &env,
+                EvidenceField {
+                    name: String::from_str(&env, "github_pr"),
+                    field_type: EvidenceFieldType::Url,
+                    required: true,
+                },
+                EvidenceField {
+                    name: String::from_str(&env, "notes"),
+                    field_type: EvidenceFieldType::Text,
+                    required: false,
+                },
+            ];
+            set_schema(&env, &owner, 1, 0, fields).unwrap();
 
-        // Missing required field
-        let mut invalid_values = Map::new(&env);
-        invalid_values.set(
-            String::from_str(&env, "notes"),
-            String::from_str(&env, "some notes"),
-        );
-        let result = submit_evidence(&env, &owner, 1, 0, invalid_values);
-        assert_eq!(result, Err(ContractError::InvalidInput));
+            // Missing required field
+            let mut invalid_values = Map::new(&env);
+            invalid_values.set(
+                String::from_str(&env, "notes"),
+                String::from_str(&env, "some notes"),
+            );
+            let result = submit_evidence(&env, &owner, 1, 0, invalid_values);
+            assert_eq!(result, Err(ContractError::InvalidInput));
 
-        // Valid submission
-        let mut valid_values = Map::new(&env);
-        valid_values.set(
-            String::from_str(&env, "github_pr"),
-            String::from_str(&env, "https://github.com"),
-        );
-        let result = submit_evidence(&env, &owner, 1, 0, valid_values);
-        assert_eq!(result, Ok(()));
+            // Valid submission
+            let mut valid_values = Map::new(&env);
+            valid_values.set(
+                String::from_str(&env, "github_pr"),
+                String::from_str(&env, "https://github.com"),
+            );
+            let result = submit_evidence(&env, &owner, 1, 0, valid_values);
+            assert_eq!(result, Ok(()));
 
-        // Validation succeeds
-        let validate_result = validate_evidence(&env, 1, 0);
-        assert_eq!(validate_result, Ok(()));
+            // Validation succeeds
+            let validate_result = validate_evidence(&env, 1, 0);
+            assert_eq!(validate_result, Ok(()));
+        });
     }
 
     #[test]
     fn test_submit_evidence_without_schema() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        // Validation succeeds without any schema
-        let validate_result = validate_evidence(&env, 1, 0);
-        assert_eq!(validate_result, Ok(()));
+            // Validation succeeds without any schema
+            let validate_result = validate_evidence(&env, 1, 0);
+            assert_eq!(validate_result, Ok(()));
 
-        let mut values = Map::new(&env);
-        values.set(
-            String::from_str(&env, "anything"),
-            String::from_str(&env, "value"),
-        );
+            let mut values = Map::new(&env);
+            values.set(
+                String::from_str(&env, "anything"),
+                String::from_str(&env, "value"),
+            );
 
-        let submit_result = submit_evidence(&env, &owner, 1, 0, values);
-        assert_eq!(submit_result, Ok(()));
+            let submit_result = submit_evidence(&env, &owner, 1, 0, values);
+            assert_eq!(submit_result, Ok(()));
+        });
     }
 
     #[test]
     fn test_submit_evidence_rejects_out_of_range_milestone() {
         let env = Env::default();
-        env.mock_all_auths();
+        let contract_id = setup(&env);
 
-        let owner = Address::generate(&env);
-        setup_grant(&env, 1, &owner);
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            setup_grant(&env, 1, &owner);
 
-        let mut values = Map::new(&env);
-        values.set(
-            String::from_str(&env, "anything"),
-            String::from_str(&env, "value"),
-        );
+            let mut values = Map::new(&env);
+            values.set(
+                String::from_str(&env, "anything"),
+                String::from_str(&env, "value"),
+            );
 
-        let result = submit_evidence(&env, &owner, 1, 999_999, values);
-        assert_eq!(result, Err(ContractError::MilestoneIndexOutOfBounds));
+            let result = submit_evidence(&env, &owner, 1, 999_999, values);
+            assert_eq!(result, Err(ContractError::MilestoneIndexOutOfBounds));
+        });
     }
 }

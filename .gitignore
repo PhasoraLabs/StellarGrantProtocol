@@ -25,3 +25,7 @@ coverage/
 /web/node_modules
 /web/.next
 /web/out
+.next
+/.next
+/stellargrant-fe/.next
+

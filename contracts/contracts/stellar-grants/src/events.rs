@@ -1762,6 +1762,52 @@ impl Events {
         event.publish(env);
     }
 
+    // ── Issue #945: Scoring rubric event emitters ───────────────────────────
+
+    pub fn emit_rubric_defined(env: &Env, rubric_id: u32, name: String, created_by: Address) {
+        let event = RubricDefined {
+            rubric_id,
+            name,
+            created_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #946: Checklist event emitters ────────────────────────────────
+
+    pub fn emit_criteria_defined(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        criteria_count: u32,
+    ) {
+        let event = CriteriaDefined {
+            grant_id,
+            milestone_idx,
+            criteria_count,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    // ── Issue #947: Waitlist configuration event emitters ─────────────────
+
+    pub fn emit_waitlist_configured(
+        env: &Env,
+        grant_id: u64,
+        max_waitlist_size: u32,
+        auto_promote: bool,
+    ) {
+        let event = WaitlistConfigured {
+            grant_id,
+            max_waitlist_size,
+            auto_promote,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
     // ── Issue #955: Reviewer event emitters ────────────────────────────────
 
     pub fn emit_reviewer_added_to_grant(env: &Env, grant_id: u64, reviewer: Address) {
@@ -1865,6 +1911,39 @@ pub struct ReviewerAddedToGrant {
 pub struct ReviewerRemovedFromGrant {
     pub grant_id: u64,
     pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #945: Scoring rubric events ───────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RubricDefined {
+    pub rubric_id: u32,
+    pub name: String,
+    pub created_by: Address,
+    pub timestamp: u64,
+}
+
+// ── Issue #946: Checklist events ────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CriteriaDefined {
+    pub grant_id: u64,
+    pub milestone_idx: u32,
+    pub criteria_count: u32,
+    pub timestamp: u64,
+}
+
+// ── Issue #947: Waitlist configuration events ───────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitlistConfigured {
+    pub grant_id: u64,
+    pub max_waitlist_size: u32,
+    pub auto_promote: bool,
     pub timestamp: u64,
 }
 
