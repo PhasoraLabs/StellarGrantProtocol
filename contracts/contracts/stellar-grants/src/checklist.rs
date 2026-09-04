@@ -180,7 +180,7 @@ pub fn get_criterion_status(
 mod tests {
     use super::*;
     use crate::StellarGrantsContract;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::{Address as _, Events};
     use soroban_sdk::Env;
 
     fn setup_grant(env: &Env, owner: &Address, reviewer: &Address) -> u64 {
@@ -401,6 +401,9 @@ mod tests {
 
         // Verify the event was emitted
         let events = env.events().all();
-        assert!(events.len() > 0, "At least one event should be emitted");
+        assert!(
+            !events.events().is_empty(),
+            "At least one event should be emitted"
+        );
     }
 }

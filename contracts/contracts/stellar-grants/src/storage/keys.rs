@@ -10,6 +10,8 @@ pub enum GrantKey {
     Counter,
     CounterValue,
     AuditLog(u64),
+    AuditLogPageCount(u64),
+    AuditLogPage(u64, u32),
     Tags(u64),
     TagIndex(u32),
     CategoryList,
@@ -344,6 +346,11 @@ pub enum DataKey {
 
     // Migration guard
     V2KeysMigrated,
+
+    // Issue #941, #942, #943 storage keys
+    Snapshot(u64, u32),
+    SnapshotList(u64),
+    SplitRecipients(u64, u32),
 }
 
 // ── Legacy DataKey (v1) — used only by migrate_storage_keys_v2 ───────────────

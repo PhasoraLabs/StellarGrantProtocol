@@ -79,6 +79,14 @@
                   },
                   {
                     "key": {
+                      "symbol": "expired"
+                    },
+                    "val": {
+                      "bool": false
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "expired_at"
                     },
                     "val": {

@@ -209,6 +209,8 @@ pub enum AuditAction {
     AdminChanged = 10,
     ContractPaused = 11,
     ContractUnpaused = 12,
+    SplitRegistered = 13,
+    SnapshotCaptured = 14,
 }
 
 #[contracttype]

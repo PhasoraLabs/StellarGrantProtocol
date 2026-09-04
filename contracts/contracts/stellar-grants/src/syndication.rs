@@ -461,8 +461,8 @@ mod tests {
         let f = setup();
         form(&f);
 
-        // 60/40 of a 1000 target → 6000 / 4000 bps
-        join(&f, &f.member_a, 600);
+        // 500/400 of a 1000 target -> 5000 / 4000 bps
+        join(&f, &f.member_a, 500);
         join(&f, &f.member_b, 400);
 
         f.env.as_contract(&f.contract_id, || {
@@ -470,9 +470,9 @@ mod tests {
             assert_eq!(members.len(), 2);
 
             let a = get_member(&f.env, GRANT_ID, &f.member_a).unwrap();
-            assert_eq!(a.deposited_amount, 600);
-            assert_eq!(a.committed_amount, 600);
-            assert_eq!(a.share_bps, 6_000);
+            assert_eq!(a.deposited_amount, 500);
+            assert_eq!(a.committed_amount, 500);
+            assert_eq!(a.share_bps, 5_000);
             assert!(!a.is_lead);
 
             let b = get_member(&f.env, GRANT_ID, &f.member_b).unwrap();
@@ -487,8 +487,8 @@ mod tests {
 
         f.env.as_contract(&f.contract_id, || {
             let a2 = get_member(&f.env, GRANT_ID, &f.member_a).unwrap();
-            assert_eq!(a2.deposited_amount, 700);
-            assert_eq!(a2.share_bps, 7_000);
+            assert_eq!(a2.deposited_amount, 600);
+            assert_eq!(a2.share_bps, 6_000);
             assert_eq!(get_syndicate(&f.env, GRANT_ID).unwrap().member_count, 2);
         });
     }

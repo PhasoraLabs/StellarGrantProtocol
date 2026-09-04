@@ -307,116 +307,134 @@ fn build_token_summaries(
 mod tests {
     use super::*;
     use crate::types::{EscrowAccount, FunderLedger, Grant, GrantFund, GrantStatus};
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{String, Vec};
 
-    /// Issue #697: `get_report`, `token_summary`, and `dashboard_summary` used
-    /// to hard-code `grant_summaries(env, funder, 0, 50)`, silently dropping
-    /// everything past a funder's 50th grant. Seed more than 50 grants for one
-    /// funder and assert every one of them is reflected in the aggregates.
+    fn setup(env: &Env) -> Address {
+        env.mock_all_auths();
+        env.register(StellarGrantsContract, ())
+    }
+
     #[test]
     fn test_funder_with_more_than_50_grants_gets_complete_report() {
         let env = Env::default();
-        let funder = Address::generate(&env);
-        let owner = Address::generate(&env);
-        let token = Address::generate(&env);
+        let contract_id = setup(&env);
 
-        let total_grants: u64 = 55;
-        for _ in 0..total_grants {
-            let grant_id = Storage::increment_grant_counter(&env);
-            let grant = Grant {
-                id: grant_id,
-                owner: owner.clone(),
-                title: String::from_str(&env, "Grant"),
-                description: String::from_str(&env, "Test"),
-                token: token.clone(),
-                status: GrantStatus::Active,
-                total_amount: 100,
-                milestone_amount: 100,
-                reviewers: Vec::new(&env),
-                total_milestones: 1,
-                milestones_paid_out: 0,
-                escrow_balance: 100,
-                funders: Vec::new(&env),
-                reason: None,
-                timestamp: env.ledger().timestamp(),
-                require_compliance: None,
-            };
-            Storage::set_grant(&env, grant_id, &grant);
+        env.as_contract(&contract_id, || {
+            let funder = Address::generate(&env);
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
 
-            Storage::set_escrow_account(
-                &env,
-                grant_id,
-                &EscrowAccount {
+            let total_grants: u64 = 55;
+            for _ in 0..total_grants {
+                let grant_id = Storage::increment_grant_counter(&env);
+                let grant = Grant {
+                    id: grant_id,
                     owner: owner.clone(),
+                    title: String::from_str(&env, "Grant"),
+                    description: String::from_str(&env, "Test"),
                     token: token.clone(),
-                    balance: 100,
-                    total_deposited: 100,
-                    total_released: 0,
-                    locked: false,
-                },
+                    status: GrantStatus::Active,
+                    total_amount: 100,
+                    milestone_amount: 100,
+                    reviewers: Vec::new(&env),
+                    total_milestones: 1,
+                    milestones_paid_out: 0,
+                    escrow_balance: 100,
+                    funders: Vec::new(&env),
+                    reason: None,
+                    timestamp: env.ledger().timestamp(),
+                    require_compliance: None,
+                };
+                Storage::set_grant(&env, grant_id, &grant);
+
+                Storage::set_escrow_account(
+                    &env,
+                    grant_id,
+                    &EscrowAccount {
+                        owner: owner.clone(),
+                        token: token.clone(),
+                        balance: 100,
+                        total_deposited: 100,
+                        total_released: 0,
+                        locked: false,
+                    },
+                );
+
+                Storage::set_funder_ledger(
+                    &env,
+                    grant_id,
+                    &funder,
+                    &FunderLedger {
+                        funder: funder.clone(),
+                        contributed: 100,
+                        refunded: 0,
+                        last_contribution_at: env.ledger().timestamp(),
+                    },
+                );
+            }
+
+            let report = get_report(&env, &funder).unwrap();
+            assert_eq!(report.total_grants_funded, total_grants as u32);
+            assert_eq!(report.active_grants, total_grants as u32);
+            assert_eq!(report.grant_summaries.len(), total_grants as u32);
+
+            let (count, committed, escrowed, _paid) = dashboard_summary(&env, &funder);
+            assert_eq!(count, total_grants as u32);
+            assert_eq!(committed, 100 * total_grants as i128);
+            assert_eq!(escrowed, 100 * total_grants as i128);
+
+            let ts = token_summary(&env, &funder, &token);
+            assert_eq!(ts.total_committed, 100 * total_grants as i128);
+            assert_eq!(
+                total_in_escrow(&env, &funder, &token),
+                100 * total_grants as i128
             );
-
-            Storage::set_funder_ledger(
-                &env,
-                grant_id,
-                &funder,
-                &FunderLedger {
-                    funder: funder.clone(),
-                    contributed: 100,
-                    refunded: 0,
-                    last_contribution_at: env.ledger().timestamp(),
-                },
-            );
-        }
-
-        let report = get_report(&env, &funder).unwrap();
-        assert_eq!(report.total_grants_funded, total_grants as u32);
-        assert_eq!(report.active_grants, total_grants as u32);
-        assert_eq!(report.grant_summaries.len(), total_grants as u32);
-
-        let (count, committed, escrowed, _paid) = dashboard_summary(&env, &funder);
-        assert_eq!(count, total_grants as u32);
-        assert_eq!(committed, 100 * total_grants as i128);
-        assert_eq!(escrowed, 100 * total_grants as i128);
-
-        let ts = token_summary(&env, &funder, &token);
-        assert_eq!(ts.total_committed, 100 * total_grants as i128);
-        assert_eq!(
-            total_in_escrow(&env, &funder, &token),
-            100 * total_grants as i128
-        );
+        });
     }
 
     #[test]
     fn test_unknown_funder_returns_empty_report() {
         let env = Env::default();
-        let funder = Address::generate(&env);
-        let report = get_report(&env, &funder).unwrap();
-        assert_eq!(report.total_grants_funded, 0);
-        assert_eq!(report.active_grants, 0);
-        assert_eq!(report.completed_grants, 0);
-        assert_eq!(report.grant_summaries.len(), 0);
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let funder = Address::generate(&env);
+            let report = get_report(&env, &funder).unwrap();
+            assert_eq!(report.total_grants_funded, 0);
+            assert_eq!(report.active_grants, 0);
+            assert_eq!(report.completed_grants, 0);
+            assert_eq!(report.grant_summaries.len(), 0);
+        });
     }
 
     #[test]
     fn test_dashboard_summary_empty() {
         let env = Env::default();
-        let funder = Address::generate(&env);
-        let (count, committed, escrowed, paid) = dashboard_summary(&env, &funder);
-        assert_eq!(count, 0);
-        assert_eq!(committed, 0);
-        assert_eq!(escrowed, 0);
-        assert_eq!(paid, 0);
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let funder = Address::generate(&env);
+            let (count, committed, escrowed, paid) = dashboard_summary(&env, &funder);
+            assert_eq!(count, 0);
+            assert_eq!(committed, 0);
+            assert_eq!(escrowed, 0);
+            assert_eq!(paid, 0);
+        });
     }
 
     #[test]
     fn test_token_summary_empty() {
         let env = Env::default();
-        let funder = Address::generate(&env);
-        let token = Address::generate(&env);
-        let ts = token_summary(&env, &funder, &token);
-        assert_eq!(ts.total_committed, 0);
-        assert_eq!(ts.total_paid_out, 0);
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let funder = Address::generate(&env);
+            let token = Address::generate(&env);
+            let ts = token_summary(&env, &funder, &token);
+            assert_eq!(ts.total_committed, 0);
+            assert_eq!(ts.total_paid_out, 0);
+        });
     }
 }

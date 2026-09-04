@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
+use crate::storage::Storage;
 use crate::types::{ContractError, MilestoneState, SnapshotTrigger, StateSnapshot};
-use crate::Storage;
 
 #[contracttype]
 pub enum SnapshotKey {
@@ -25,6 +25,14 @@ pub fn capture(
     captured_by: &Address,
 ) -> Result<u32, ContractError> {
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+
+    let is_related = grant.owner == *captured_by
+        || grant.reviewers.contains(captured_by.clone())
+        || Storage::get_global_admin(env) == Some(captured_by.clone());
+    if !is_related {
+        return Err(ContractError::Unauthorized);
+    }
+
     let id = next_id(env, grant_id);
     let mut states: Vec<MilestoneState> = Vec::new(env);
     for idx in 0..grant.total_milestones {
@@ -46,6 +54,7 @@ pub fn capture(
         captured_at_ledger: env.ledger().sequence(),
         captured_by: captured_by.clone(),
     };
+
     env.storage()
         .persistent()
         .set(&SnapshotKey::One(grant_id, id), &snapshot);
@@ -58,6 +67,7 @@ pub fn capture(
     env.storage()
         .persistent()
         .set(&SnapshotKey::List(grant_id), &ids);
+
     Ok(id)
 }
 

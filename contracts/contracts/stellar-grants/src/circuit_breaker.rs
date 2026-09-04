@@ -35,16 +35,13 @@ fn require_emergency_pauser(env: &Env, caller: &Address) -> Result<(), ContractE
     Ok(())
 }
 
-pub fn trip(
+pub fn trip_internal(
     env: &Env,
     caller: &Address,
     module: ProtocolModule,
     reason: String,
     auto_reset_ledger: Option<u32>,
 ) -> Result<(), ContractError> {
-    caller.require_auth();
-    require_emergency_pauser(env, caller)?;
-
     let state = BreakerState {
         module: module.clone(),
         tripped: true,
@@ -63,6 +60,18 @@ pub fn trip(
     .publish(env);
 
     Ok(())
+}
+
+pub fn trip(
+    env: &Env,
+    caller: &Address,
+    module: ProtocolModule,
+    reason: String,
+    auto_reset_ledger: Option<u32>,
+) -> Result<(), ContractError> {
+    caller.require_auth();
+    require_emergency_pauser(env, caller)?;
+    trip_internal(env, caller, module, reason, auto_reset_ledger)
 }
 
 pub fn reset(env: &Env, caller: &Address, module: ProtocolModule) -> Result<(), ContractError> {

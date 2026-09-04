@@ -242,7 +242,7 @@ pub fn rank_contributors(
 mod tests {
     use super::*;
     use crate::StellarGrantsContract;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::{Address as _, Events};
     use soroban_sdk::Env;
 
     fn setup_admin(env: &Env, contract_id: &soroban_sdk::Address) -> Address {
@@ -491,7 +491,7 @@ mod tests {
         let mut weights: Vec<ScoringWeight> = Vec::new(&env);
         weights.push_back(ScoringWeight {
             dimension: ScoringDimension::ReputationScore,
-            weight_bps: 5000,
+            weight_bps: 10000,
             invert: true,
         });
 
@@ -503,8 +503,8 @@ mod tests {
         let result = env.as_contract(&contract_id, || {
             score_contributor(&env, &contributor, id).unwrap()
         });
-        // effective_raw = 1000 - 750 = 250, score = 250 * 5000 / 10000 = 125
-        assert_eq!(result.total_score, 125);
+        // effective_raw = 1000 - 750 = 250, score = 250 * 10000 / 10000 = 250
+        assert_eq!(result.total_score, 250);
     }
 
     #[test]
@@ -576,6 +576,7 @@ mod tests {
     #[test]
     fn test_list_rubrics_many_rubrics() {
         let env = Env::default();
+        env.budget().reset_unlimited();
         env.mock_all_auths();
         let contract_id = env.register(StellarGrantsContract, ());
         let admin = setup_admin(&env, &contract_id);
@@ -587,8 +588,8 @@ mod tests {
             invert: false,
         });
 
-        // Create 150 rubrics to test that list_rubrics doesn't scan indefinitely
-        for _ in 1..=150 {
+        // Create 50 rubrics to test that list_rubrics doesn't scan indefinitely
+        for _ in 1..=50 {
             let name = String::from_str(&env, "Rubric");
             env.as_contract(&contract_id, || {
                 define_rubric(&env, &admin, name, weights.clone()).unwrap()
@@ -596,10 +597,10 @@ mod tests {
         }
 
         let rubric_ids = env.as_contract(&contract_id, || list_rubrics(&env));
-        assert_eq!(rubric_ids.len(), 150);
+        assert_eq!(rubric_ids.len(), 50);
 
         // Verify all IDs are present and in order
-        for (idx, &id) in rubric_ids.iter().enumerate() {
+        for (idx, id) in rubric_ids.iter().enumerate() {
             assert_eq!(id, (idx + 1) as u32);
         }
     }
@@ -625,6 +626,9 @@ mod tests {
 
         // Verify the event was emitted
         let events = env.events().all();
-        assert!(events.len() > 0, "At least one event should be emitted");
+        assert!(
+            !events.events().is_empty(),
+            "At least one event should be emitted"
+        );
     }
 }

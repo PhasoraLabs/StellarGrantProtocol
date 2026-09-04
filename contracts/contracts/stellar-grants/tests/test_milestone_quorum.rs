@@ -11,7 +11,7 @@ fn test_milestone_voting_quorum_and_events() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, stellar_grants::StellarGrantsContract);
+    let contract_id = env.register(stellar_grants::StellarGrantsContract, ());
     let client = StellarGrantsContractClient::new(&env, &contract_id);
     let owner = <Address as TestAddress>::generate(&env);
     let admin = <Address as TestAddress>::generate(&env);
@@ -48,13 +48,8 @@ fn test_milestone_voting_quorum_and_events() {
         &String::from_str(&env, "proof"),
     );
 
-    // Advance past the community review period so reviewer voting is allowed
-    let ts = env.ledger().timestamp();
-    env.ledger()
-        .set_timestamp(ts.saturating_add(COMMUNITY_REVIEW_PERIOD).saturating_add(1));
-
     let res1 = client.milestone_vote(&grant_id, &0, &reviewers.get(0).unwrap(), &true, &None);
-    assert!(!res1); // Quorum not reached yet
+    assert!(!res1); // Quorum not reached yet (1/2)
     let res2 = client.milestone_vote(&grant_id, &0, &reviewers.get(1).unwrap(), &true, &None);
     assert!(res2);
 
@@ -71,7 +66,7 @@ fn test_milestone_vote_after_quorum_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, stellar_grants::StellarGrantsContract);
+    let contract_id = env.register(stellar_grants::StellarGrantsContract, ());
     let client = StellarGrantsContractClient::new(&env, &contract_id);
     let owner = <Address as TestAddress>::generate(&env);
     let admin = <Address as TestAddress>::generate(&env);
@@ -120,7 +115,7 @@ fn test_milestone_double_voting_panics() {
     use stellar_grants::StellarGrantsContractClient;
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, stellar_grants::StellarGrantsContract);
+    let contract_id = env.register(stellar_grants::StellarGrantsContract, ());
     let client = StellarGrantsContractClient::new(&env, &contract_id);
     let owner = <Address as TestAddress>::generate(&env);
     let admin = <Address as TestAddress>::generate(&env);

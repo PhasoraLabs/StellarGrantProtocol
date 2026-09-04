@@ -340,19 +340,57 @@ impl Storage {
 
     const AUDIT_TTL_THRESHOLD: u32 = 100_000;
     const AUDIT_TTL_EXTEND_TO: u32 = 1_000_000;
+    pub const MAX_ENTRIES_PER_PAGE: u32 = 200;
 
     pub fn get_audit_log(env: &Env, grant_id: u64) -> Vec<AuditEntry> {
-        env.storage()
+        let page_count_key = DataKey::Grant(GrantKey::AuditLogPageCount(grant_id));
+        let page_count: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
+        let mut full_log = Vec::new(env);
+
+        // Also check un-sharded single log for backward compatibility
+        let legacy_key = DataKey::Grant(GrantKey::AuditLog(grant_id));
+        if let Some(log) = env
+            .storage()
             .persistent()
-            .get(&DataKey::Grant(GrantKey::AuditLog(grant_id)))
-            .unwrap_or_else(|| Vec::new(env))
+            .get::<_, Vec<AuditEntry>>(&legacy_key)
+        {
+            for entry in log.iter() {
+                full_log.push_back(entry);
+            }
+        }
+
+        for page_num in 0..=page_count {
+            let page_key = DataKey::Grant(GrantKey::AuditLogPage(grant_id, page_num));
+            if let Some(page) = env
+                .storage()
+                .persistent()
+                .get::<_, Vec<AuditEntry>>(&page_key)
+            {
+                for entry in page.iter() {
+                    full_log.push_back(entry);
+                }
+            }
+        }
+        full_log
     }
 
     pub fn append_audit_entry(env: &Env, grant_id: u64, entry: &AuditEntry) {
-        let key = DataKey::Grant(GrantKey::AuditLog(grant_id));
-        let mut log = Self::get_audit_log(env, grant_id);
-        log.push_back(entry.clone());
-        env.storage().persistent().set(&key, &log);
+        let page_count_key = DataKey::Grant(GrantKey::AuditLogPageCount(grant_id));
+        let mut page_num: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
+        let page_key = DataKey::Grant(GrantKey::AuditLogPage(grant_id, page_num));
+        let mut page: Vec<AuditEntry> = env
+            .storage()
+            .persistent()
+            .get(&page_key)
+            .unwrap_or_else(|| Vec::new(env));
+        if page.len() >= Self::MAX_ENTRIES_PER_PAGE {
+            page_num += 1;
+            env.storage().persistent().set(&page_count_key, &page_num);
+            page = Vec::new(env);
+        }
+        page.push_back(entry.clone());
+        let key = DataKey::Grant(GrantKey::AuditLogPage(grant_id, page_num));
+        env.storage().persistent().set(&key, &page);
         env.storage().persistent().extend_ttl(
             &key,
             Self::AUDIT_TTL_THRESHOLD,
@@ -361,6 +399,67 @@ impl Storage {
         env.storage()
             .instance()
             .extend_ttl(Self::AUDIT_TTL_THRESHOLD, Self::AUDIT_TTL_EXTEND_TO);
+    }
+
+    pub fn set_snapshot(
+        env: &Env,
+        grant_id: u64,
+        snapshot_id: u32,
+        snapshot: &crate::types::StateSnapshot,
+    ) {
+        let key = DataKey::Snapshot(grant_id, snapshot_id);
+        env.storage().persistent().set(&key, snapshot);
+        env.storage().persistent().extend_ttl(
+            &key,
+            Self::AUDIT_TTL_THRESHOLD,
+            Self::AUDIT_TTL_EXTEND_TO,
+        );
+    }
+
+    pub fn get_snapshot(
+        env: &Env,
+        grant_id: u64,
+        snapshot_id: u32,
+    ) -> Option<crate::types::StateSnapshot> {
+        let key = DataKey::Snapshot(grant_id, snapshot_id);
+        env.storage().persistent().get(&key)
+    }
+
+    pub fn set_snapshot_list(env: &Env, grant_id: u64, snapshots: &Vec<u32>) {
+        let key = DataKey::SnapshotList(grant_id);
+        env.storage().persistent().set(&key, snapshots);
+        env.storage().persistent().extend_ttl(
+            &key,
+            Self::AUDIT_TTL_THRESHOLD,
+            Self::AUDIT_TTL_EXTEND_TO,
+        );
+    }
+
+    pub fn get_snapshot_list(env: &Env, grant_id: u64) -> Vec<u32> {
+        let key = DataKey::SnapshotList(grant_id);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn set_split_recipients(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        recipients: &Vec<crate::types::SplitRecipient>,
+    ) {
+        let key = DataKey::SplitRecipients(grant_id, milestone_idx);
+        env.storage().persistent().set(&key, recipients);
+    }
+
+    pub fn get_split_recipients(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Option<Vec<crate::types::SplitRecipient>> {
+        let key = DataKey::SplitRecipients(grant_id, milestone_idx);
+        env.storage().persistent().get(&key)
     }
 
     // ── Emergency Pause (#521) ───────────────────────────────────────────────
@@ -2474,67 +2573,82 @@ mod tests {
     #[test]
     fn test_global_admin_roundtrip() {
         let env = Env::default();
-        assert!(Storage::get_global_admin(&env).is_none());
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            assert!(Storage::get_global_admin(&env).is_none());
 
-        let admin = Address::generate(&env);
-        Storage::set_global_admin(&env, &admin);
-        assert_eq!(Storage::get_global_admin(&env).unwrap(), admin);
+            let admin = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+            assert_eq!(Storage::get_global_admin(&env).unwrap(), admin);
+        });
     }
 
     #[test]
     fn test_council_roundtrip() {
         let env = Env::default();
-        assert!(Storage::get_council(&env).is_none());
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            assert!(Storage::get_council(&env).is_none());
 
-        let council = Address::generate(&env);
-        Storage::set_council(&env, &council);
-        assert_eq!(Storage::get_council(&env).unwrap(), council);
+            let council = Address::generate(&env);
+            Storage::set_council(&env, &council);
+            assert_eq!(Storage::get_council(&env).unwrap(), council);
+        });
     }
 
     #[test]
     fn test_grant_counter_increments() {
         let env = Env::default();
-        let id1 = Storage::increment_grant_counter(&env);
-        let id2 = Storage::increment_grant_counter(&env);
-        let id3 = Storage::increment_grant_counter(&env);
-        assert_eq!(id1, 1);
-        assert_eq!(id2, 2);
-        assert_eq!(id3, 3);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let id1 = Storage::increment_grant_counter(&env);
+            let id2 = Storage::increment_grant_counter(&env);
+            let id3 = Storage::increment_grant_counter(&env);
+            assert_eq!(id1, 1);
+            assert_eq!(id2, 2);
+            assert_eq!(id3, 3);
+        });
     }
 
     #[test]
     fn test_grant_not_found_returns_none() {
         let env = Env::default();
-        assert!(Storage::get_grant(&env, 999).is_none());
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            assert!(Storage::get_grant(&env, 999).is_none());
+        });
     }
 
     #[test]
     fn test_set_and_get_grant() {
         let env = Env::default();
-        let owner = Address::generate(&env);
-        let grant = crate::types::Grant {
-            id: 1,
-            owner: owner.clone(),
-            title: soroban_sdk::String::from_str(&env, "Test Grant"),
-            description: soroban_sdk::String::from_str(&env, "Test"),
-            token: Address::generate(&env),
-            status: crate::types::GrantStatus::Active,
-            total_amount: 0,
-            milestone_amount: 0,
-            reviewers: soroban_sdk::Vec::new(&env),
-            total_milestones: 3,
-            milestones_paid_out: 0,
-            escrow_balance: 0,
-            funders: soroban_sdk::Vec::new(&env),
-            reason: None,
-            timestamp: env.ledger().timestamp(),
-            require_compliance: None,
-        };
-        Storage::set_grant(&env, 1, &grant);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let grant = crate::types::Grant {
+                id: 1,
+                owner: owner.clone(),
+                title: soroban_sdk::String::from_str(&env, "Test Grant"),
+                description: soroban_sdk::String::from_str(&env, "Test"),
+                token: Address::generate(&env),
+                status: crate::types::GrantStatus::Active,
+                total_amount: 0,
+                milestone_amount: 0,
+                reviewers: soroban_sdk::Vec::new(&env),
+                total_milestones: 3,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: soroban_sdk::Vec::new(&env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            Storage::set_grant(&env, 1, &grant);
 
-        let loaded = Storage::get_grant(&env, 1).unwrap();
-        assert_eq!(loaded.owner, owner);
-        assert_eq!(loaded.total_milestones, 3);
+            let loaded = Storage::get_grant(&env, 1).unwrap();
+            assert_eq!(loaded.owner, owner);
+            assert_eq!(loaded.total_milestones, 3);
+        });
     }
 
     fn advance_ledger_sequence(env: &Env, by: u32) {
@@ -2600,47 +2714,59 @@ mod tests {
     #[test]
     fn test_contributor_index_empty_by_default() {
         let env = Env::default();
-        let index = Storage::get_contributor_index(&env);
-        assert_eq!(index.len(), 0);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let index = Storage::get_contributor_index(&env);
+            assert_eq!(index.len(), 0);
+        });
     }
 
     #[test]
     fn test_reviewer_allowlist_roundtrip() {
         let env = Env::default();
-        let allowlist = Storage::get_reviewer_allowlist(&env);
-        assert_eq!(allowlist.len(), 0);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let allowlist = Storage::get_reviewer_allowlist(&env);
+            assert_eq!(allowlist.len(), 0);
 
-        let reviewer = Address::generate(&env);
-        let mut list = soroban_sdk::Vec::new(&env);
-        list.push_back(reviewer.clone());
-        Storage::set_reviewer_allowlist(&env, &list);
+            let reviewer = Address::generate(&env);
+            let mut list = soroban_sdk::Vec::new(&env);
+            list.push_back(reviewer.clone());
+            Storage::set_reviewer_allowlist(&env, &list);
 
-        let loaded = Storage::get_reviewer_allowlist(&env);
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded.get(0).unwrap(), reviewer);
+            let loaded = Storage::get_reviewer_allowlist(&env);
+            assert_eq!(loaded.len(), 1);
+            assert_eq!(loaded.get(0).unwrap(), reviewer);
+        });
     }
 
     #[test]
     fn test_payment_split_roundtrip() {
         let env = Env::default();
-        let addr = Address::generate(&env);
-        let split = PaymentSplit {
-            grant_id: 1,
-            milestone_idx: 0,
-            recipients: soroban_sdk::Vec::new(&env),
-            registered_by: addr,
-            registered_at: 12345,
-        };
-        Storage::set_payment_split(&env, 1, 0, &split);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let addr = Address::generate(&env);
+            let split = PaymentSplit {
+                grant_id: 1,
+                milestone_idx: 0,
+                recipients: soroban_sdk::Vec::new(&env),
+                registered_by: addr,
+                registered_at: 12345,
+            };
+            Storage::set_payment_split(&env, 1, 0, &split);
 
-        let loaded = Storage::get_payment_split(&env, 1, 0).unwrap();
-        assert_eq!(loaded.grant_id, 1);
-        assert_eq!(loaded.registered_at, 12345);
+            let loaded = Storage::get_payment_split(&env, 1, 0).unwrap();
+            assert_eq!(loaded.grant_id, 1);
+            assert_eq!(loaded.registered_at, 12345);
+        });
     }
 
     #[test]
     fn test_payment_split_none_for_missing() {
         let env = Env::default();
-        assert!(Storage::get_payment_split(&env, 999, 0).is_none());
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            assert!(Storage::get_payment_split(&env, 999, 0).is_none());
+        });
     }
 }

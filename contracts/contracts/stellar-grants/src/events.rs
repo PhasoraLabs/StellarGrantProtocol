@@ -2050,4 +2050,22 @@ impl Events {
         };
         event.publish(env);
     }
+
+    // ── Issue #943: Split payment registered event ─────────────────────────────
+
+    pub fn emit_split_registered(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        recipient_count: u32,
+    ) {
+        env.events().publish(
+            (
+                soroban_sdk::symbol_short!("split_reg"),
+                grant_id,
+                milestone_idx,
+            ),
+            recipient_count,
+        );
+    }
 }

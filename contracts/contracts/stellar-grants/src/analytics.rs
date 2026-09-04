@@ -195,7 +195,7 @@ pub fn get_window(env: &Env, metric: Symbol) -> Option<RollingWindow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Grant, GrantStatus, MilestoneState};
+    use crate::types::{Grant, GrantStatus, Milestone, MilestoneState};
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{Address, Map, String};
 

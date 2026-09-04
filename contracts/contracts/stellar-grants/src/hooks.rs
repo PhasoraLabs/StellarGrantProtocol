@@ -154,62 +154,94 @@ pub fn has_hooks(env: &Env, event: HookEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{StellarGrantsContract, StellarGrantsContractClient};
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Address, Bytes, Env};
 
-    #[test]
-    fn test_register_and_deactivate_hook() {
+    struct Fixture<'a> {
+        env: Env,
+        contract_id: Address,
+        client: StellarGrantsContractClient<'a>,
+        admin: Address,
+    }
+
+    fn setup<'a>() -> Fixture<'a> {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
-        let target = Address::generate(&env);
+        client.set_global_admin(&admin, &admin);
+        Fixture {
+            env,
+            contract_id,
+            client,
+            admin,
+        }
+    }
 
-        let idx =
-            register_hook(&env, &admin, HookEvent::GrantCreated, target.clone(), 1000).unwrap();
+    #[test]
+    fn test_register_and_deactivate_hook() {
+        let f = setup();
+        let target = Address::generate(&f.env);
+
+        let idx = f
+            .client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &1000);
         assert_eq!(idx, 0);
-        assert!(has_hooks(&env, HookEvent::GrantCreated));
 
-        deactivate_hook(&env, &admin, HookEvent::GrantCreated, 0).unwrap();
-        assert!(!has_hooks(&env, HookEvent::GrantCreated));
+        f.env.as_contract(&f.contract_id, || {
+            assert!(has_hooks(&f.env, HookEvent::GrantCreated));
+        });
+
+        f.client
+            .deactivate_hook(&f.admin, &HookEvent::GrantCreated, &0);
+
+        f.env.as_contract(&f.contract_id, || {
+            assert!(!has_hooks(&f.env, HookEvent::GrantCreated));
+        });
     }
 
     #[test]
     fn test_max_hooks_limit_enforced() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
+        let f = setup();
 
         for _ in 0..MAX_HOOKS_PER_EVENT {
-            let target = Address::generate(&env);
-            register_hook(&env, &admin, HookEvent::MilestoneApproved, target, 1000).unwrap();
+            let target = Address::generate(&f.env);
+            f.client
+                .register_hook(&f.admin, &HookEvent::MilestoneApproved, &target, &1000);
         }
-        let extra = Address::generate(&env);
-        let err =
-            register_hook(&env, &admin, HookEvent::MilestoneApproved, extra, 1000).unwrap_err();
+        let extra = Address::generate(&f.env);
+        let err = f
+            .client
+            .try_register_hook(&f.admin, &HookEvent::MilestoneApproved, &extra, &1000)
+            .unwrap_err()
+            .unwrap();
         assert_eq!(err, ContractError::HookLimitExceeded);
     }
 
     #[test]
     fn test_deactivated_hook_skipped_in_get_hooks() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let target = Address::generate(&env);
+        let f = setup();
+        let target = Address::generate(&f.env);
 
-        register_hook(&env, &admin, HookEvent::GrantCreated, target, 500).unwrap();
-        deactivate_hook(&env, &admin, HookEvent::GrantCreated, 0).unwrap();
+        f.client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &500);
+        f.client
+            .deactivate_hook(&f.admin, &HookEvent::GrantCreated, &0);
 
-        let hooks = get_hooks(&env, HookEvent::GrantCreated);
+        let hooks = f.client.get_hooks(&HookEvent::GrantCreated);
         assert_eq!(hooks.len(), 1);
         assert!(!hooks.get(0).unwrap().is_active);
     }
 
     #[test]
     fn test_trigger_empty_hooks_returns_empty_results() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let payload = Bytes::new(&env);
-        let results = trigger(&env, HookEvent::DisputeResolved, payload);
-        assert_eq!(results.len(), 0);
+        let f = setup();
+        let payload = Bytes::new(&f.env);
+        f.env.as_contract(&f.contract_id, || {
+            let results = trigger(&f.env, HookEvent::DisputeResolved, payload);
+            assert_eq!(results.len(), 0);
+        });
     }
 }

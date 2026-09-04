@@ -224,7 +224,7 @@ pub fn batch_cancel_grants(
     Ok(build_batch_result(results))
 }
 
-fn try_cancel_grant(
+pub fn try_cancel_grant(
     env: &Env,
     caller: &Address,
     grant_id: u64,
@@ -250,7 +250,9 @@ fn try_cancel_grant(
     if total_refundable > 0 {
         let mut total_contributions: i128 = 0;
         for fund_entry in grant.funders.iter() {
-            total_contributions += fund_entry.amount;
+            total_contributions = total_contributions
+                .checked_add(fund_entry.amount)
+                .ok_or(ContractError::InvalidInput)?;
         }
 
         if total_contributions <= 0 {
@@ -369,21 +371,21 @@ mod tests {
 
     #[test]
     fn test_validate_batch_size_empty() {
-        let env = setup_env();
+        let _env = setup_env();
         let result = validate_batch_size(0);
         assert_eq!(result, Err(ContractError::BatchEmpty));
     }
 
     #[test]
     fn test_validate_batch_size_too_large() {
-        let env = setup_env();
+        let _env = setup_env();
         let result = validate_batch_size(constants::MAX_BATCH_SIZE + 1);
         assert_eq!(result, Err(ContractError::BatchTooLarge));
     }
 
     #[test]
     fn test_validate_batch_size_valid() {
-        let env = setup_env();
+        let _env = setup_env();
         let result = validate_batch_size(1);
         assert_eq!(result, Ok(()));
         let result = validate_batch_size(constants::MAX_BATCH_SIZE);

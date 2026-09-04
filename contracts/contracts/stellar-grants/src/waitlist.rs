@@ -218,7 +218,7 @@ mod tests {
 
     use super::*;
     use crate::StellarGrantsContract;
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::testutils::{Address as _, Events, Ledger as _};
     use soroban_sdk::{Address, String};
     use std::boxed::Box;
 
@@ -616,7 +616,10 @@ mod tests {
 
         // Verify the event was emitted
         let events = env.events().all();
-        assert!(events.len() > 0, "At least one event should be emitted");
+        assert!(
+            !events.events().is_empty(),
+            "At least one event should be emitted"
+        );
     }
 
     /// `require_auth()` fails by panicking (a host trap), not by returning

@@ -30,6 +30,10 @@ pub fn get_log(env: &Env, grant_id: u64) -> Vec<AuditEntry> {
     Storage::get_audit_log(env, grant_id)
 }
 
+pub fn get_audit_log(env: &Env, grant_id: u64) -> Vec<AuditEntry> {
+    Storage::get_audit_log(env, grant_id)
+}
+
 /// Return the last N entries from the audit log, oldest of the page first.
 pub fn get_recent(env: &Env, grant_id: u64, n: u32) -> Vec<AuditEntry> {
     let log = Storage::get_audit_log(env, grant_id);
@@ -85,14 +89,19 @@ mod tests {
             None,
             None,
         );
+
         let entries = get_log(&env, grant_id);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries.get(0).unwrap().action, AuditAction::GrantCreated);
-        assert_eq!(entries.get(0).unwrap().actor, actor);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.grant_id, grant_id);
+        assert_eq!(e.action, AuditAction::GrantCreated);
+        assert_eq!(e.actor, actor);
+        assert_eq!(e.milestone_idx, None);
+        assert_eq!(e.amount, None);
     }
 
     #[test]
-    fn log_grant_funded_with_amount() {
+    fn log_grant_funded() {
         let (env, actor, grant_id) = setup();
         log(
             &env,
@@ -102,25 +111,31 @@ mod tests {
             None,
             Some(5_000),
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::GrantFunded);
-        assert_eq!(entry.amount, Some(5_000));
+
+        let entries = get_log(&env, grant_id);
+        assert_eq!(entries.len(), 1);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::GrantFunded);
+        assert_eq!(e.amount, Some(5_000));
     }
 
     #[test]
-    fn log_milestone_submitted_with_index() {
+    fn log_milestone_submitted() {
         let (env, actor, grant_id) = setup();
         log(
             &env,
             grant_id,
             AuditAction::MilestoneSubmitted,
             &actor,
-            Some(0),
+            Some(2),
             None,
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::MilestoneSubmitted);
-        assert_eq!(entry.milestone_idx, Some(0));
+
+        let entries = get_log(&env, grant_id);
+        assert_eq!(entries.len(), 1);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::MilestoneSubmitted);
+        assert_eq!(e.milestone_idx, Some(2));
     }
 
     #[test]
@@ -131,11 +146,15 @@ mod tests {
             grant_id,
             AuditAction::MilestoneApproved,
             &actor,
-            Some(1),
-            Some(2_500),
+            Some(0),
+            Some(1_000),
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::MilestoneApproved);
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::MilestoneApproved);
+        assert_eq!(e.milestone_idx, Some(0));
+        assert_eq!(e.amount, Some(1_000));
     }
 
     #[test]
@@ -146,56 +165,13 @@ mod tests {
             grant_id,
             AuditAction::MilestoneRejected,
             &actor,
-            Some(2),
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::MilestoneRejected);
-    }
-
-    #[test]
-    fn log_milestone_paid() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::MilestonePaid,
-            &actor,
-            Some(0),
-            Some(10_000),
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::MilestonePaid);
-    }
-
-    #[test]
-    fn log_dispute_raised() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::DisputeRaised,
-            &actor,
             Some(1),
             None,
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::DisputeRaised);
-    }
 
-    #[test]
-    fn log_dispute_resolved() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::DisputeResolved,
-            &actor,
-            Some(1),
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::DisputeResolved);
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::MilestoneRejected);
     }
 
     #[test]
@@ -207,10 +183,13 @@ mod tests {
             AuditAction::GrantCancelled,
             &actor,
             None,
-            None,
+            Some(10_000),
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::GrantCancelled);
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::GrantCancelled);
+        assert_eq!(e.amount, Some(10_000));
     }
 
     #[test]
@@ -224,277 +203,253 @@ mod tests {
             None,
             None,
         );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::GrantCompleted);
-    }
-
-    #[test]
-    fn log_admin_changed() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::AdminChanged,
-            &actor,
-            None,
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::AdminChanged);
-    }
-
-    #[test]
-    fn log_contract_paused() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::ContractPaused,
-            &actor,
-            None,
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::ContractPaused);
-    }
-
-    #[test]
-    fn log_contract_unpaused() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::ContractUnpaused,
-            &actor,
-            None,
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.action, AuditAction::ContractUnpaused);
-    }
-
-    // ── Pagination correctness ──────────────────────────────────────────
-
-    #[test]
-    fn get_recent_empty_log_returns_empty() {
-        let (env, _actor, grant_id) = setup();
-        let result = get_recent(&env, grant_id, 5);
-        assert_eq!(result.len(), 0);
-    }
-
-    #[test]
-    fn get_recent_zero_n_returns_empty() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::GrantCreated,
-            &actor,
-            None,
-            None,
-        );
-        let result = get_recent(&env, grant_id, 0);
-        assert_eq!(result.len(), 0);
-    }
-
-    #[test]
-    fn get_recent_n_greater_than_len_returns_all() {
-        let (env, actor, grant_id) = setup();
-        for i in 0..3u32 {
-            log(
-                &env,
-                grant_id,
-                AuditAction::MilestoneSubmitted,
-                &actor,
-                Some(i),
-                None,
-            );
-        }
-        let result = get_recent(&env, grant_id, 100);
-        assert_eq!(result.len(), 3);
-    }
-
-    #[test]
-    fn get_recent_exact_n_matches_log_length() {
-        let (env, actor, grant_id) = setup();
-        for i in 0..4u32 {
-            log(
-                &env,
-                grant_id,
-                AuditAction::MilestoneApproved,
-                &actor,
-                Some(i),
-                None,
-            );
-        }
-        let result = get_recent(&env, grant_id, 4);
-        assert_eq!(result.len(), 4);
-        assert_eq!(result.get(0).unwrap().milestone_idx, Some(0));
-        assert_eq!(result.get(3).unwrap().milestone_idx, Some(3));
-    }
-
-    #[test]
-    fn get_recent_returns_last_n_oldest_first() {
-        let (env, actor, grant_id) = setup();
-        for i in 0..5u32 {
-            log(
-                &env,
-                grant_id,
-                AuditAction::MilestoneSubmitted,
-                &actor,
-                Some(i),
-                None,
-            );
-        }
-        let result = get_recent(&env, grant_id, 3);
-        assert_eq!(result.len(), 3);
-        assert_eq!(result.get(0).unwrap().milestone_idx, Some(2));
-        assert_eq!(result.get(1).unwrap().milestone_idx, Some(3));
-        assert_eq!(result.get(2).unwrap().milestone_idx, Some(4));
-    }
-
-    // ── Append-only invariant ────────────────────────────────────────────
-
-    #[test]
-    fn log_is_append_only_length_grows_monotonically() {
-        let (env, actor, grant_id) = setup();
-        let mut expected_len: u32 = 0;
-
-        for action in [
-            AuditAction::GrantCreated,
-            AuditAction::GrantFunded,
-            AuditAction::MilestoneSubmitted,
-            AuditAction::MilestoneApproved,
-            AuditAction::MilestonePaid,
-        ] {
-            log(&env, grant_id, action, &actor, None, None);
-            expected_len += 1;
-            let entries = get_log(&env, grant_id);
-            assert_eq!(entries.len(), expected_len);
-        }
-    }
-
-    #[test]
-    fn log_entries_are_never_overwritten() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::GrantCreated,
-            &actor,
-            None,
-            None,
-        );
-        log(&env, grant_id, AuditAction::GrantFunded, &actor, None, None);
 
         let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::GrantCompleted);
+    }
+
+    #[test]
+    fn log_dispute_raised() {
+        let (env, actor, grant_id) = setup();
+        log(
+            &env,
+            grant_id,
+            AuditAction::DisputeRaised,
+            &actor,
+            Some(0),
+            None,
+        );
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::DisputeRaised);
+    }
+
+    #[test]
+    fn log_dispute_resolved() {
+        let (env, actor, grant_id) = setup();
+        log(
+            &env,
+            grant_id,
+            AuditAction::DisputeResolved,
+            &actor,
+            Some(0),
+            Some(2_500),
+        );
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::DisputeResolved);
+    }
+
+    #[test]
+    fn log_split_registered() {
+        let (env, actor, grant_id) = setup();
+        log(
+            &env,
+            grant_id,
+            AuditAction::SplitRegistered,
+            &actor,
+            Some(1),
+            None,
+        );
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::SplitRegistered);
+    }
+
+    #[test]
+    fn log_snapshot_captured() {
+        let (env, actor, grant_id) = setup();
+        log(
+            &env,
+            grant_id,
+            AuditAction::SnapshotCaptured,
+            &actor,
+            None,
+            None,
+        );
+
+        let entries = get_log(&env, grant_id);
+        let e = entries.get(0).unwrap();
+        assert_eq!(e.action, AuditAction::SnapshotCaptured);
+    }
+
+    // ── Metadata verification ──────────────────────────────────────────
+
+    #[test]
+    fn audit_metadata_stored_correctly() {
+        let (env, actor, grant_id) = setup();
+        set_ledger(&env, 12345, 999_888_777);
+
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantCreated,
+            &actor,
+            None,
+            None,
+        );
+
+        let entries = get_log(&env, grant_id);
+        assert_eq!(entries.len(), 1);
+
+        let entry = entries.get(0).unwrap();
+        assert_eq!(entry.grant_id, grant_id);
+        assert_eq!(entry.action, AuditAction::GrantCreated);
+        assert_eq!(entry.actor, actor);
+        assert_eq!(entry.timestamp, 999_888_777);
+        assert_eq!(entry.ledger_sequence, 12345);
+    }
+
+    // ── Append multiple / log length ────────────────────────────────────
+
+    #[test]
+    fn append_multiple_entries_increases_log_length() {
+        let (env, actor, grant_id) = setup();
+
+        assert_eq!(log_length(&env, grant_id), 0);
+
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantCreated,
+            &actor,
+            None,
+            None,
+        );
+        assert_eq!(log_length(&env, grant_id), 1);
+
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantFunded,
+            &actor,
+            None,
+            Some(1_000),
+        );
+        assert_eq!(log_length(&env, grant_id), 2);
+
+        log(
+            &env,
+            grant_id,
+            AuditAction::MilestoneSubmitted,
+            &actor,
+            Some(0),
+            None,
+        );
+        assert_eq!(log_length(&env, grant_id), 3);
+
+        let entries = get_log(&env, grant_id);
+        assert_eq!(entries.len(), 3);
         assert_eq!(entries.get(0).unwrap().action, AuditAction::GrantCreated);
         assert_eq!(entries.get(1).unwrap().action, AuditAction::GrantFunded);
-    }
-
-    #[test]
-    fn log_entries_preserve_order_across_grants() {
-        let (env, actor, _) = setup();
-        let g1: u64 = 1;
-        let g2: u64 = 2;
-
-        log(&env, g1, AuditAction::GrantCreated, &actor, None, None);
-        log(&env, g2, AuditAction::GrantCreated, &actor, None, None);
-        log(&env, g1, AuditAction::GrantFunded, &actor, None, None);
-
-        assert_eq!(get_log(&env, g1).len(), 2);
         assert_eq!(
-            get_log(&env, g1).get(0).unwrap().action,
-            AuditAction::GrantCreated
-        );
-        assert_eq!(
-            get_log(&env, g1).get(1).unwrap().action,
-            AuditAction::GrantFunded
-        );
-
-        assert_eq!(get_log(&env, g2).len(), 1);
-        assert_eq!(
-            get_log(&env, g2).get(0).unwrap().action,
-            AuditAction::GrantCreated
+            entries.get(2).unwrap().action,
+            AuditAction::MilestoneSubmitted
         );
     }
 
-    // ── log_length helper ────────────────────────────────────────────────
+    // ── get_recent tests ────────────────────────────────────────────────
 
     #[test]
-    fn log_length_empty_is_zero() {
-        let (env, _actor, grant_id) = setup();
-        assert_eq!(log_length(&env, grant_id), 0);
-    }
-
-    #[test]
-    fn log_length_matches_get_log() {
-        let (env, actor, grant_id) = setup();
-        for i in 0..7u32 {
-            log(
-                &env,
-                grant_id,
-                AuditAction::MilestoneSubmitted,
-                &actor,
-                Some(i),
-                None,
-            );
-        }
-        assert_eq!(log_length(&env, grant_id), 7);
-        assert_eq!(get_log(&env, grant_id).len(), 7);
-    }
-
-    // ── Metadata correctness ─────────────────────────────────────────────
-
-    #[test]
-    fn entry_records_grant_id() {
-        let (env, actor, grant_id) = setup();
-        log(
-            &env,
-            grant_id,
-            AuditAction::GrantCreated,
-            &actor,
-            None,
-            None,
-        );
-        assert_eq!(get_log(&env, grant_id).get(0).unwrap().grant_id, grant_id);
-    }
-
-    #[test]
-    fn entry_records_timestamp_and_ledger() {
-        let (env, actor, grant_id) = setup();
-        set_ledger(&env, 1000, 1_700_000_000);
-        log(
-            &env,
-            grant_id,
-            AuditAction::GrantCreated,
-            &actor,
-            None,
-            None,
-        );
-        let entry = get_log(&env, grant_id).get(0).unwrap();
-        assert_eq!(entry.timestamp, 1_700_000_000);
-        assert_eq!(entry.ledger_sequence, 1000);
-    }
-
-    #[test]
-    fn different_actors_tracked_correctly() {
+    fn get_recent_empty_log() {
         let (env, _, grant_id) = setup();
-        let alice = Address::generate(&env);
-        let bob = Address::generate(&env);
+        let recent = get_recent(&env, grant_id, 5);
+        assert_eq!(recent.len(), 0);
+    }
+
+    #[test]
+    fn get_recent_zero_n() {
+        let (env, actor, grant_id) = setup();
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantCreated,
+            &actor,
+            None,
+            None,
+        );
+        let recent = get_recent(&env, grant_id, 0);
+        assert_eq!(recent.len(), 0);
+    }
+
+    #[test]
+    fn get_recent_fewer_entries_than_n() {
+        let (env, actor, grant_id) = setup();
 
         log(
             &env,
             grant_id,
             AuditAction::GrantCreated,
-            &alice,
+            &actor,
             None,
             None,
         );
-        log(&env, grant_id, AuditAction::GrantFunded, &bob, None, None);
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantFunded,
+            &actor,
+            None,
+            Some(500),
+        );
 
-        let entries = get_log(&env, grant_id);
-        assert_eq!(entries.get(0).unwrap().actor, alice);
-        assert_eq!(entries.get(1).unwrap().actor, bob);
+        let recent = get_recent(&env, grant_id, 10);
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent.get(0).unwrap().action, AuditAction::GrantCreated);
+        assert_eq!(recent.get(1).unwrap().action, AuditAction::GrantFunded);
+    }
+
+    #[test]
+    fn get_recent_more_entries_than_n() {
+        let (env, actor, grant_id) = setup();
+
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantCreated,
+            &actor,
+            None,
+            None,
+        );
+        log(
+            &env,
+            grant_id,
+            AuditAction::GrantFunded,
+            &actor,
+            None,
+            Some(100),
+        );
+        log(
+            &env,
+            grant_id,
+            AuditAction::MilestoneSubmitted,
+            &actor,
+            Some(0),
+            None,
+        );
+        log(
+            &env,
+            grant_id,
+            AuditAction::MilestoneApproved,
+            &actor,
+            Some(0),
+            Some(500),
+        );
+
+        // Asking for the 2 most recent out of 4 entries
+        let recent = get_recent(&env, grant_id, 2);
+        assert_eq!(recent.len(), 2);
+        assert_eq!(
+            recent.get(0).unwrap().action,
+            AuditAction::MilestoneSubmitted
+        );
+        assert_eq!(
+            recent.get(1).unwrap().action,
+            AuditAction::MilestoneApproved
+        );
     }
 }

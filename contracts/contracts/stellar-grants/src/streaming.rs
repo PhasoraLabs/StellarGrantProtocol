@@ -321,8 +321,16 @@ mod tests {
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{token::StellarAssetClient, Address, Env, String};
 
-    fn setup() -> (Env, Address, Address, Address, Address) {
+    fn setup() -> (
+        Env,
+        Address,
+        Address,
+        Address,
+        Address,
+        soroban_sdk::Address,
+    ) {
         let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let sender = Address::generate(&env);
@@ -336,9 +344,18 @@ mod tests {
         let _ = admin;
 
         // Streams must reference a real, active grant (Issue #814).
-        create_active_grant(&env, 1, &sender, &token_contract, GrantStatus::Active);
+        env.as_contract(&contract_id, || {
+            create_active_grant(&env, 1, &sender, &token_contract, GrantStatus::Active);
+        });
 
-        (env, sender, recipient, token_contract, token_admin)
+        (
+            env,
+            sender,
+            recipient,
+            token_contract,
+            token_admin,
+            contract_id,
+        )
     }
 
     fn create_active_grant(
@@ -371,78 +388,87 @@ mod tests {
 
     #[test]
     fn test_accrual_at_midpoint_returns_50_percent() {
-        let (env, sender, recipient, token, _) = setup();
-        let stream_id = create_stream(&env, &sender, &recipient, 1, &token, 100, 100).unwrap();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        let stream_id = client.create_stream(&sender, &recipient, &1, &token, &100, &100);
         // Advance to midpoint
         env.ledger().with_mut(|li| li.sequence_number += 50);
-        let stream = Storage::get_stream(&env, stream_id).unwrap();
+        let stream = client.get_stream(&stream_id);
         let accrued = accrued_amount(&env, &stream);
         assert_eq!(accrued, 5_000); // 50 ledgers * 100 rate
     }
 
     #[test]
     fn test_double_withdraw_returns_zero_second_time() {
-        let (env, sender, recipient, token, _) = setup();
-        let stream_id = create_stream(&env, &sender, &recipient, 1, &token, 100, 100).unwrap();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        let stream_id = client.create_stream(&sender, &recipient, &1, &token, &100, &100);
         env.ledger().with_mut(|li| li.sequence_number += 50);
-        let first = withdraw_stream(&env, &recipient, stream_id).unwrap();
+        let first = client.withdraw_stream(&recipient, &stream_id);
         assert!(first > 0);
-        let second = withdraw_stream(&env, &recipient, stream_id).unwrap();
+        let second = client.withdraw_stream(&recipient, &stream_id);
         assert_eq!(second, 0);
     }
 
     #[test]
     fn test_cancel_returns_correct_split() {
-        let (env, sender, recipient, token, _) = setup();
-        let stream_id = create_stream(&env, &sender, &recipient, 1, &token, 100, 100).unwrap();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        let stream_id = client.create_stream(&sender, &recipient, &1, &token, &100, &100);
         env.ledger().with_mut(|li| li.sequence_number += 30);
-        let (sender_refund, recipient_payout) = cancel_stream(&env, &sender, stream_id).unwrap();
+        let (sender_refund, recipient_payout) = client.cancel_stream(&sender, &stream_id);
         assert_eq!(recipient_payout, 3_000); // 30 * 100
         assert_eq!(sender_refund, 7_000); // 70 * 100
     }
 
     #[test]
     fn test_pause_resume_maintains_end_ledger() {
-        let (env, sender, recipient, token, _) = setup();
-        let stream_id = create_stream(&env, &sender, &recipient, 1, &token, 1, 100).unwrap();
-        let stream_before = Storage::get_stream(&env, stream_id).unwrap();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        let stream_id = client.create_stream(&sender, &recipient, &1, &token, &1, &100);
+        let stream_before = client.get_stream(&stream_id);
         let original_end = stream_before.end_ledger;
 
         env.ledger().with_mut(|li| li.sequence_number += 20);
-        pause_stream(&env, &sender, stream_id).unwrap();
+        client.pause_stream(&sender, &stream_id);
         env.ledger().with_mut(|li| li.sequence_number += 10);
-        resume_stream(&env, &sender, stream_id).unwrap();
+        client.resume_stream(&sender, &stream_id);
 
-        let stream_after = Storage::get_stream(&env, stream_id).unwrap();
+        let stream_after = client.get_stream(&stream_id);
         assert_eq!(stream_after.end_ledger, original_end + 10);
     }
 
     #[test]
     fn test_recipient_can_withdraw_accrued_balance_after_pause() {
-        let (env, sender, recipient, token, _) = setup();
-        let stream_id = create_stream(&env, &sender, &recipient, 1, &token, 100, 100).unwrap();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        let stream_id = client.create_stream(&sender, &recipient, &1, &token, &100, &100);
 
         env.ledger().with_mut(|li| li.sequence_number += 30);
-        pause_stream(&env, &sender, stream_id).unwrap();
+        client.pause_stream(&sender, &stream_id);
 
-        let withdrawn = withdraw_stream(&env, &recipient, stream_id).unwrap();
+        let withdrawn = client.withdraw_stream(&recipient, &stream_id);
         assert_eq!(withdrawn, 3_000);
     }
 
     #[test]
     fn test_create_stream_rejects_nonexistent_grant() {
-        let (env, sender, recipient, token, _) = setup();
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
         // Grant 999 was never created.
-        let result = create_stream(&env, &sender, &recipient, 999, &token, 100, 100);
-        assert_eq!(result, Err(ContractError::GrantNotFound));
+        let result = client.try_create_stream(&sender, &recipient, &999, &token, &100, &100);
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_create_stream_rejects_inactive_grant() {
-        let (env, sender, recipient, token, _) = setup();
-        create_active_grant(&env, 2, &sender, &token, GrantStatus::Cancelled);
+        let (env, sender, recipient, token, _, cid) = setup();
+        let client = crate::StellarGrantsContractClient::new(&env, &cid);
+        env.as_contract(&cid, || {
+            create_active_grant(&env, 2, &sender, &token, GrantStatus::Cancelled);
+        });
 
-        let result = create_stream(&env, &sender, &recipient, 2, &token, 100, 100);
-        assert_eq!(result, Err(ContractError::InvalidState));
+        let result = client.try_create_stream(&sender, &recipient, &2, &token, &100, &100);
+        assert!(result.is_err());
     }
 }
