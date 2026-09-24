@@ -54,7 +54,7 @@ The StellarGrants contract is organized into modular components:
 
 - **`lib.rs`**: Main contract implementation with public functions
 - **`types.rs`**: Data structures, error types, and type definitions
-- **`storage.rs`**: Storage key helpers and data persistence
+- **`storage/`**: Storage module (`mod.rs`, `keys.rs`, `helpers.rs`) for key enums, persistence helpers, and data access
 - **`events.rs`**: Event definitions and emission helpers
 - **`test.rs`**: Unit tests for contract functions
 
@@ -95,7 +95,10 @@ StellarGrant/
 │       │   ├── lib.rs           # Main contract implementation
 │       │   ├── types.rs         # Data structures and errors
 │       │   ├── events.rs        # Event definitions
-│       │   ├── storage.rs       # Storage helpers
+│       │   ├── storage/         # Storage module
+│       │   │   ├── mod.rs       # Public storage interface re-exports
+│       │   │   ├── keys.rs      # Typed DataKey contracttype enums
+│       │   │   └── helpers.rs   # Persistent storage read/write helpers
 │       │   └── test.rs          # Unit tests
 │       ├── Cargo.toml           # Contract dependencies
 │       └── Makefile             # Build commands
