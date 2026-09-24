@@ -371,7 +371,7 @@ let grant_id = client.grant_create(
     &10000i128,  // Total amount
     &2500i128,   // Per milestone
     &4u32,       // Number of milestones
-    &reviewers,  // Authorized reviewers
+    &reviewers,  // Addresses allowed to vote on milestones
 )?;
 ```
 
@@ -388,13 +388,15 @@ client.grant_fund(&grant_id, &funder, &10000i128)?;
 ### Submitting a Milestone
 
 ```rust
+let recipient = Address::generate(&env);
+
 client.milestone_submit(
     &grant_id,
     &0u32, // Milestone index
-    &owner, // Recipient (grant owner)
+    &recipient, // Recipient (grant owner)
     &String::from_str(&env, "Completed feature X"),
     &String::from_str(&env, "https://github.com/..."), // Proof URL
-)?;
+);
 ```
 
 ### Voting on a Milestone
@@ -406,7 +408,7 @@ let approved = client.milestone_vote(
     &0u32,
     &reviewer,
     &true, // Approve
-    &None, // Optional feedback
+    &Some(String::from_str(&env, "Milestone verified against the proof URL")), // Optional feedback
 )?;
 
 // If quorum reached, approved = true and payout triggered automatically
