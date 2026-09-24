@@ -351,20 +351,25 @@ The **global admin** is the contract-wide role used for council rotation, WASM u
 ### Creating a Grant
 
 ```rust
-use soroban_sdk::{Address, String, Env};
+use soroban_sdk::{Address, String, Env, Vec};
 
 let env = Env::default();
 let contract_id = env.register_contract(None, StellarGrantsContract);
 let client = StellarGrantsContractClient::new(&env, &contract_id);
 
 let owner = Address::generate(&env);
+let token = Address::generate(&env);
+let reviewers = soroban_sdk::vec![&env, Address::generate(&env), Address::generate(&env)];
+
 let grant_id = client.grant_create(
     &owner,
     &String::from_str(&env, "Open Source Project Grant"),
     &String::from_str(&env, "Funding for Q1 development milestones"),
+    &token,      // Token address for grant payouts
     &10000i128,  // Total amount
     &2500i128,   // Per milestone
     &4u32,       // Number of milestones
+    &reviewers,  // Reviewer committee addresses
 )?;
 ```
 
@@ -381,9 +386,12 @@ client.grant_fund(&grant_id, &funder, &10000i128)?;
 ### Submitting a Milestone
 
 ```rust
+let recipient = Address::generate(&env);
+
 client.milestone_submit(
     &grant_id,
     &0u32, // Milestone index
+    &recipient, // Recipient address
     &String::from_str(&env, "Completed feature X"),
     &String::from_str(&env, "https://github.com/..."), // Proof URL
 )?;
@@ -397,6 +405,7 @@ let approved = client.milestone_vote(
     &0u32,
     &reviewer,
     &true, // Approve
+    &Some(String::from_str(&env, "Milestone deliverables verified")), // Feedback
 )?;
 
 // If quorum reached, approved = true and payout triggered automatically
