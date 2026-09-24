@@ -751,8 +751,9 @@ mod tests {
     fn test_join_syndicate_requires_active_grant() {
         let f = setup();
         f.env.as_contract(&f.contract_id, || {
-            let mut grant =
-                Storage::get_grant(&f.env, GRANT_ID).ok_or(ContractError::GrantNotFound).unwrap();
+            let mut grant = Storage::get_grant(&f.env, GRANT_ID)
+                .ok_or(ContractError::GrantNotFound)
+                .unwrap();
             grant.status = crate::types::GrantStatus::Cancelled;
             Storage::set_grant(&f.env, GRANT_ID, &grant);
         });

@@ -21,10 +21,7 @@ pub fn register_contributor(
     name: &String,
 ) -> Result<(), ContractError> {
     let page_count_key = crate::storage::DataKey::User(crate::storage::UserKey::RegistryPageCount);
-    let mut page_num: u32 = env.storage()
-        .persistent()
-        .get(&page_count_key)
-        .unwrap_or(0);
+    let mut page_num: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
 
     let mut page = Storage::get_contributor_index_page(env, page_num);
 
@@ -111,10 +108,7 @@ pub fn is_approved_reviewer(env: &Env, address: &Address) -> bool {
 /// Paginated list of all registered contributor addresses.
 pub fn get_contributors_page(env: &Env, offset: u32, limit: u32) -> Vec<RegistryEntry> {
     let page_count_key = crate::storage::DataKey::User(crate::storage::UserKey::RegistryPageCount);
-    let page_count: u32 = env.storage()
-        .persistent()
-        .get(&page_count_key)
-        .unwrap_or(0);
+    let page_count: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
 
     let mut result = Vec::new(env);
     let mut entries_skipped = 0u32;
@@ -140,10 +134,7 @@ pub fn get_contributors_page(env: &Env, offset: u32, limit: u32) -> Vec<Registry
 /// Total count of registered contributors.
 pub fn contributor_count(env: &Env) -> u32 {
     let page_count_key = crate::storage::DataKey::User(crate::storage::UserKey::RegistryPageCount);
-    let page_count: u32 = env.storage()
-        .persistent()
-        .get(&page_count_key)
-        .unwrap_or(0);
+    let page_count: u32 = env.storage().persistent().get(&page_count_key).unwrap_or(0);
 
     let mut total = 0u32;
     for page_num in 0..=page_count {

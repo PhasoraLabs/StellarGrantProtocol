@@ -241,9 +241,12 @@ pub fn migrate_storage_keys_v2(env: &Env) -> Result<(), ContractError> {
                 page_num = page_idx;
             }
 
-            let mut page = env.storage()
+            let mut page = env
+                .storage()
                 .persistent()
-                .get::<_, soroban_sdk::Vec<crate::types::RegistryEntry>>(&DataKey::User(UserKey::RegistryPage(page_idx)))
+                .get::<_, soroban_sdk::Vec<crate::types::RegistryEntry>>(&DataKey::User(
+                    UserKey::RegistryPage(page_idx),
+                ))
                 .unwrap_or_else(|| soroban_sdk::Vec::new(env));
             page.push_back(entry);
             env.storage()

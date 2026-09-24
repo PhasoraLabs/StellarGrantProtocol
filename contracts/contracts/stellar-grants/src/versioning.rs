@@ -659,7 +659,11 @@ mod tests {
                     String::from_str(&env, "total_amount"),
                     String::from_str(&env, "total_milestones"),
                 ],
-                vec![&env, String::from_str(&env, "20000"), String::from_str(&env, "6")],
+                vec![
+                    &env,
+                    String::from_str(&env, "20000"),
+                    String::from_str(&env, "6"),
+                ],
                 String::from_str(&env, "more checkpoints, bigger budget"),
             )
             .expect("amendment should be proposed");

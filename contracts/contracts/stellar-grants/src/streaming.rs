@@ -486,8 +486,9 @@ mod tests {
         env.ledger().with_mut(|li| li.sequence_number += 30);
 
         env.as_contract(&cid, || {
-            let mut grant =
-                Storage::get_grant(&env, 1).ok_or(ContractError::GrantNotFound).unwrap();
+            let mut grant = Storage::get_grant(&env, 1)
+                .ok_or(ContractError::GrantNotFound)
+                .unwrap();
             grant.status = GrantStatus::Cancelled;
             Storage::set_grant(&env, 1, &grant);
         });
