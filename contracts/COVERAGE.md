@@ -1,6 +1,6 @@
 # Code Coverage
 
-This document describes the automated code coverage setup for the `contracts` workspace.
+This document describes the code coverage setup and local measurement workflows for the `contracts` workspace.
 
 ---
 
@@ -63,22 +63,21 @@ cargo tarpaulin --workspace --lib --target x86_64-unknown-linux-gnu --engine llv
 
 ---
 
-## CI Integration
+## CI Integration Status
 
-Coverage runs automatically on:
-- Every **pull request**
-- Every **push to `main`**
+> ℹ️ **Current Status: Local-Only Workflow**  
+> Code coverage is currently a **local-only workflow** (`cargo-tarpaulin` / `cargo llvm-cov`) using the configuration in `contracts/.tarpaulin.toml`. The active `.github/workflows/ci.yml` pipeline runs the `contracts` verification suite (formatting, clippy checks, and `cargo test`), but does not currently include an automated Tarpaulin coverage generation or Codecov upload job.
 
-The coverage job in `.github/workflows/ci.yml`:
+### Planned CI Pipeline Workflow
 
-1. Sets up Rust with `llvm-tools-preview` component
-2. Caches dependencies with `Swatinem/rust-cache`
-3. Installs `cargo-tarpaulin`
-4. Runs coverage on the **native host target** (`x86_64-unknown-linux-gnu`) — not WASM
-5. Uploads `cobertura.xml` as a GitHub Actions artifact (retained for 7 days)
-6. Uploads the report to [Codecov](https://codecov.io) with the `unittests` flag
+When automated coverage is enabled in `.github/workflows/ci.yml`, the scheduled pipeline will:
 
-> ⚠️ The `contracts` job (WASM build) is completely separate and **not affected** by the coverage pipeline.
+1. Set up Rust with the `llvm-tools-preview` component
+2. Cache dependencies with `Swatinem/rust-cache`
+3. Install `cargo-tarpaulin`
+4. Run coverage on the native host target (`x86_64-unknown-linux-gnu`) using `contracts/.tarpaulin.toml`
+5. Upload `cobertura.xml` as a GitHub Actions artifact
+6. Upload the report to [Codecov](https://codecov.io) with the `unittests` flag
 
 ---
 
