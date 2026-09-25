@@ -102,6 +102,10 @@ pub struct Milestone {
     /// to prevent premature approval or impossible-to-reach quorum when
     /// reviewers are added or removed mid-vote.
     pub reviewer_count_snapshot: u32,
+    /// Count of approval votes (headcount, not reputation-weighted) for quorum calculation.
+    pub approval_count: u32,
+    /// Count of rejection votes (headcount, not reputation-weighted) for quorum calculation.
+    pub rejection_count: u32,
 }
 
 #[contracttype]

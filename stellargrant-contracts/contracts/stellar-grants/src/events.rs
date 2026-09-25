@@ -727,12 +727,7 @@ impl Events {
         event.publish(env);
     }
 
-    pub fn emit_clawback_approved(
-        env: &Env,
-        grant_id: u64,
-        milestone_idx: u32,
-        approver: Address,
-    ) {
+    pub fn emit_clawback_approved(env: &Env, grant_id: u64, milestone_idx: u32, approver: Address) {
         let event = ClawbackApproved {
             grant_id,
             milestone_idx,

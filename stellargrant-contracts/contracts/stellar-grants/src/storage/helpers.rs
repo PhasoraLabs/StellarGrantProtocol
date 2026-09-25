@@ -3,8 +3,8 @@ use super::keys::{
     DataKey, EscrowKey, GrantKey, GrantTimerKey, InsuranceKey, MilestoneKey, UserKey, VotingKey,
 };
 use crate::types::{
-    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState, ChecklistSubmission,
-    ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion,
+    AcceptanceCriteria, Amendment, AnalyticsSnapshot, AuditEntry, BreakerState,
+    ChecklistSubmission, ClawbackRequest, ComplianceAttestation, ContractError, ContractVersion,
     ContributorProfile, CrowdfundCampaign, CrowdfundPledge, DexConfig, Dispute, EscrowAccount,
     EscrowState, EvidenceSchema, FunderLedger, Grant, GrantCategory, GrantTag, GrantVersion,
     HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, LicenseRecord,
@@ -543,9 +543,12 @@ impl Storage {
     }
 
     pub fn remove_clawback(env: &Env, grant_id: u64, milestone_idx: u32) {
-        env.storage().persistent().remove(&DataKey::Milestone(
-            MilestoneKey::Clawback(grant_id, milestone_idx),
-        ));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Milestone(MilestoneKey::Clawback(
+                grant_id,
+                milestone_idx,
+            )));
     }
 
     // ── Issue #516: ProtocolConfig ────────────────────────────────────────────
@@ -2059,10 +2062,8 @@ impl Storage {
         milestone_idx: u32,
         conditions: &Vec<ReleaseCondition>,
     ) {
-        let key = DataKey::ConditionalRelease(ConditionalReleaseKey::Conditions(
-            grant_id,
-            milestone_idx,
-        ));
+        let key =
+            DataKey::ConditionalRelease(ConditionalReleaseKey::Conditions(grant_id, milestone_idx));
         env.storage().persistent().set(&key, conditions);
         Self::bump(env, &key);
     }
@@ -2085,9 +2086,12 @@ impl Storage {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Option<AutoApproveRecord> {
-        env.storage().persistent().get(&DataKey::AutoApprove(
-            AutoApproveKey::Record(grant_id, milestone_idx),
-        ))
+        env.storage()
+            .persistent()
+            .get(&DataKey::AutoApprove(AutoApproveKey::Record(
+                grant_id,
+                milestone_idx,
+            )))
     }
 
     pub fn set_auto_approve_record(

@@ -81,16 +81,18 @@ pub fn cast_vote(
     milestone.votes.set(reviewer.clone(), approve);
     if approve {
         milestone.approvals += reputation;
+        milestone.approval_count += 1;
     } else {
         milestone.rejections += reputation;
+        milestone.rejection_count += 1;
     }
 
     // Use the snapshotted reviewer count from submission time to prevent
     // quorum miscalculation when reviewers are added/removed mid-vote (#624).
     let total_weight = milestone.reviewer_count_snapshot;
 
-    let approval_quorum = quorum_reached(milestone.approvals, total_weight);
-    let rejection_quorum = quorum_reached(milestone.rejections, total_weight);
+    let approval_quorum = quorum_reached(milestone.approval_count, total_weight);
+    let rejection_quorum = quorum_reached(milestone.rejection_count, total_weight);
     let vote_finalized = approval_quorum || rejection_quorum;
 
     let total_votes = milestone.approvals + milestone.rejections;
@@ -238,6 +240,8 @@ mod tests {
             submission_timestamp: 0,
             deadline: None,
             reviewer_count_snapshot: 3,
+            approval_count: 3,
+            rejection_count: 0,
         };
         let result = VoteResult {
             approved: true,
@@ -265,6 +269,8 @@ mod tests {
             submission_timestamp: 0,
             deadline: None,
             reviewer_count_snapshot: 3,
+            approval_count: 0,
+            rejection_count: 3,
         };
         let result = VoteResult {
             approved: false,
@@ -273,5 +279,19 @@ mod tests {
         };
         finalize_milestone(&mut milestone, &result);
         assert_eq!(milestone.state, MilestoneState::Rejected);
+    }
+
+    #[test]
+    fn test_high_reputation_cannot_bypass_quorum() {
+        // Test that a single high-reputation reviewer cannot unilaterally satisfy quorum
+        // on a 5-reviewer grant, which should require 3 approval votes.
+        // Even with reputation=100, approval_count=1 should not reach quorum.
+        assert!(!quorum_reached(1, 5)); // 1 vote out of 5 reviewers
+        assert!(quorum_reached(3, 5)); // 3 votes out of 5 reviewers (proper quorum)
+
+        // Verify reputation-weighted sum would have incorrectly reached quorum
+        // approvals * 2 > total_reviewers: 100 * 2 > 5 = true (incorrect!)
+        // But with vote counts: 1 * 2 > 5 = false (correct!)
+        assert!(!quorum_reached(1, 5));
     }
 }

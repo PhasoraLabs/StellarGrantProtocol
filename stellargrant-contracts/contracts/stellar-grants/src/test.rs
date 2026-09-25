@@ -76,6 +76,8 @@ mod tests {
                 submission_timestamp: env.ledger().timestamp(),
                 deadline: None,
                 reviewer_count_snapshot: 1,
+                approval_count: 0,
+                rejection_count: 0,
             };
             Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
         });
