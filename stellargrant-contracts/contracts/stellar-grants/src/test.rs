@@ -76,6 +76,7 @@ mod tests {
                 submission_timestamp: env.ledger().timestamp(),
                 deadline: None,
                 reviewer_count_snapshot: 1,
+                reviewer_list_snapshot: Vec::new(env),
                 approval_count: 0,
                 rejection_count: 0,
             };

@@ -4317,6 +4317,7 @@ fn apply_milestone_submission(
         submission_timestamp: env.ledger().timestamp(),
         deadline: None,
         reviewer_count_snapshot: grant.reviewers.len(),
+        reviewer_list_snapshot: grant.reviewers.clone(),
         approval_count: 0,
         rejection_count: 0,
     };

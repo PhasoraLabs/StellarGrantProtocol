@@ -63,7 +63,15 @@ pub fn cast_vote(
     if milestone.state != MilestoneState::Submitted {
         env.panic_with_error(ContractError::MilestoneNotSubmitted);
     }
-    if !grant.reviewers.contains(reviewer.clone()) {
+    // Check eligibility against the reviewer list snapshot taken at submission time (#1145).
+    // This prevents reviewers added mid-vote from voting on the milestone.
+    // Fallback to live list for pre-existing milestones without a snapshot.
+    let eligible_reviewers = if milestone.reviewer_list_snapshot.is_empty() {
+        &grant.reviewers
+    } else {
+        &milestone.reviewer_list_snapshot
+    };
+    if !eligible_reviewers.contains(reviewer.clone()) {
         env.panic_with_error(ContractError::Unauthorized);
     }
     if milestone.votes.contains_key(reviewer.clone()) {
@@ -240,6 +248,7 @@ mod tests {
             submission_timestamp: 0,
             deadline: None,
             reviewer_count_snapshot: 3,
+            reviewer_list_snapshot: soroban_sdk::Vec::new(&env),
             approval_count: 3,
             rejection_count: 0,
         };
@@ -269,6 +278,7 @@ mod tests {
             submission_timestamp: 0,
             deadline: None,
             reviewer_count_snapshot: 3,
+            reviewer_list_snapshot: soroban_sdk::Vec::new(&env),
             approval_count: 0,
             rejection_count: 3,
         };
@@ -293,5 +303,83 @@ mod tests {
         // approvals * 2 > total_reviewers: 100 * 2 > 5 = true (incorrect!)
         // But with vote counts: 1 * 2 > 5 = false (correct!)
         assert!(!quorum_reached(1, 5));
+    }
+
+    #[test]
+    fn test_reviewer_added_mid_vote_cannot_vote() {
+        // Test the exploit scenario from #1145:
+        // 1. Grant has 3 reviewers, majority = 2
+        // 2. One legitimate reviewer votes approve (1/3, no quorum)
+        // 3. Owner adds a 4th reviewer mid-vote
+        // 4. The new reviewer tries to vote - should fail with Unauthorized
+        let env = soroban_sdk::Env::default();
+        let reviewer1 = soroban_sdk::Address::generate(&env);
+        let reviewer2 = soroban_sdk::Address::generate(&env);
+        let reviewer3 = soroban_sdk::Address::generate(&env);
+        let reviewer4 = soroban_sdk::Address::generate(&env); // added mid-vote
+        let owner = soroban_sdk::Address::generate(&env);
+
+        let mut reviewers_snapshot = soroban_sdk::Vec::new(&env);
+        reviewers_snapshot.push_back(reviewer1.clone());
+        reviewers_snapshot.push_back(reviewer2.clone());
+        reviewers_snapshot.push_back(reviewer3.clone());
+
+        let mut grant = crate::types::Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: soroban_sdk::Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 1000,
+            milestone_amount: 500,
+            reviewers: reviewers_snapshot.clone(),
+            total_milestones: 1,
+            milestones_paid_out: 0,
+            escrow_balance: 500,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+
+        let mut milestone = crate::types::Milestone {
+            idx: 0,
+            description: soroban_sdk::String::from_str(&env, "test"),
+            amount: 100,
+            state: MilestoneState::Submitted,
+            votes: soroban_sdk::Map::new(&env),
+            approvals: 0,
+            rejections: 0,
+            reasons: soroban_sdk::Map::new(&env),
+            status_updated_at: 0,
+            proof_url: None,
+            submission_timestamp: 0,
+            deadline: None,
+            reviewer_count_snapshot: 3,
+            reviewer_list_snapshot: reviewers_snapshot.clone(),
+            approval_count: 0,
+            rejection_count: 0,
+        };
+
+        // Reviewer1 votes approve - should succeed
+        let result = cast_vote(&env, &mut grant, &mut milestone, &reviewer1, true, None);
+        assert!(result.is_ok());
+        assert_eq!(milestone.approval_count, 1);
+        assert!(!result.unwrap().quorum_reached); // 1/3, no quorum
+
+        // Simulate adding reviewer4 to the grant mid-vote
+        grant.reviewers.push_back(reviewer4.clone());
+
+        // Reviewer4 tries to vote - should fail with Unauthorized
+        // because they're not in the reviewer_list_snapshot
+        let result = cast_vote(&env, &mut grant, &mut milestone, &reviewer4, true, None);
+        assert!(result.is_err());
+
+        // Reviewer2 (original reviewer) can still vote
+        let result = cast_vote(&env, &mut grant, &mut milestone, &reviewer2, true, None);
+        assert!(result.is_ok());
+        assert_eq!(milestone.approval_count, 2);
+        assert!(result.unwrap().quorum_reached); // 2/3, quorum reached
     }
 }

@@ -102,6 +102,10 @@ pub struct Milestone {
     /// to prevent premature approval or impossible-to-reach quorum when
     /// reviewers are added or removed mid-vote.
     pub reviewer_count_snapshot: u32,
+    /// Snapshot of the reviewer address list at submission time (#1145).
+    /// Eligibility checks use this list instead of the live reviewer list
+    /// to prevent reviewers added mid-vote from voting on the milestone.
+    pub reviewer_list_snapshot: Vec<Address>,
     /// Count of approval votes (headcount, not reputation-weighted) for quorum calculation.
     pub approval_count: u32,
     /// Count of rejection votes (headcount, not reputation-weighted) for quorum calculation.

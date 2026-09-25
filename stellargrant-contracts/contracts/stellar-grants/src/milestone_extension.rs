@@ -116,7 +116,16 @@ pub fn vote_extension(
     }
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
-    if !grant.reviewers.contains(reviewer.clone()) {
+    // Check eligibility against the reviewer list snapshot taken at submission time (#1145).
+    // This prevents reviewers added mid-vote from voting on the extension request.
+    let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
+        .ok_or(ContractError::MilestoneNotFound)?;
+    let eligible_reviewers = if milestone.reviewer_list_snapshot.is_empty() {
+        &grant.reviewers
+    } else {
+        &milestone.reviewer_list_snapshot
+    };
+    if !eligible_reviewers.contains(reviewer.clone()) {
         return Err(ContractError::Unauthorized);
     }
     if request.reviewer_votes.contains_key(reviewer.clone()) {

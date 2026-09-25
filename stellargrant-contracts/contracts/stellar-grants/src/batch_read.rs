@@ -66,6 +66,7 @@ pub fn grant_detail(env: &Env, grant_id: u64) -> Result<GrantDetailView, Contrac
                 submission_timestamp: 0,
                 deadline: None,
                 reviewer_count_snapshot: 0,
+                reviewer_list_snapshot: soroban_sdk::Vec::new(env),
                 approval_count: 0,
                 rejection_count: 0,
             });
