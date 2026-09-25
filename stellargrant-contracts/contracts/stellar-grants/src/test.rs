@@ -523,6 +523,41 @@ mod tests {
     }
 
     #[test]
+    fn test_syndicate_payout_allocation_validates_against_milestone_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
+        let owner = Address::generate(&env);
+        let member1 = Address::generate(&env);
+        let member2 = Address::generate(&env);
+        let grant_id = create_client_grant(&env, &client, &owner, &token_id, Vec::new(&env));
+
+        token_admin.mint(&member1, &500);
+        token_admin.mint(&member2, &500);
+
+        client.form_syndicate(&owner, &grant_id, &1000, &100, &5, &10);
+        client.join_syndicate(&member1, &grant_id, &500);
+        client.join_syndicate(&member2, &grant_id, &500);
+        client.close_syndicate(&owner, &grant_id);
+
+        // Create a milestone with amount 100
+        create_milestone(&env, &contract_id, grant_id, 0, MilestoneState::Approved);
+
+        // Try to record payout allocation with amount exceeding milestone amount
+        let result = client.try_record_payout_allocation(&grant_id, &0, &200);
+        assert_eq!(result, Err(Ok(ContractError::InvalidInput.into())));
+
+        // Valid payout (equal to milestone amount) should succeed
+        client.record_payout_allocation(&grant_id, &0, &100);
+
+        // Valid payout (less than milestone amount) should also succeed
+        client.record_payout_allocation(&grant_id, &0, &50);
+    }
+
+    #[test]
     fn test_versioning_create_propose_approve_apply_v2_exists() {
         let env = Env::default();
         env.mock_all_auths();

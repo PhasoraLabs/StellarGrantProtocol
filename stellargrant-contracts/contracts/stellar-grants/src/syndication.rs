@@ -173,6 +173,12 @@ pub fn record_payout_allocation(
         return Err(ContractError::InvalidState);
     }
 
+    let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
+        .ok_or(ContractError::MilestoneNotFound)?;
+    if payout > milestone.amount {
+        return Err(ContractError::InvalidInput);
+    }
+
     let mut allocations: Vec<(Address, i128)> = Vec::new(env);
     for member in get_members(env, grant_id).iter() {
         let amount = payout
