@@ -3,8 +3,9 @@ mod tests {
     use crate::audit;
     use crate::storage::Storage;
     use crate::types::{
-        AmendmentStatus, AuditAction, ChainId, ContractError, EscrowLifecycleState, Grant,
-        GrantFund, GrantStatus, Milestone, MilestoneState, PublicReviewSignal,
+        AmendmentStatus, AuditAction, AutoApproveConfig, ChainId, ContractError,
+        EscrowLifecycleState, Grant, GrantFund, GrantStatus, Milestone, MilestoneState,
+        PublicReviewSignal, VotingMechanism,
     };
     use crate::StellarGrantsContract;
     use crate::StellarGrantsContractClient;
@@ -932,5 +933,134 @@ mod tests {
             &String::from_str(&env, "Updated review post-unpause"),
         );
         client.open_review_mark_helpful(&voter, &grant_id, &milestone_idx, &reviewer);
+    }
+
+    // ── Issue #1024: auto-approved milestones get the manual approval effects ──
+
+    #[test]
+    fn test_auto_approve_applies_manual_approval_side_effects() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, contract_id) = setup_test(&env);
+        client.set_global_admin(&admin, &admin);
+
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let grant_id = create_client_grant(&env, &client, &owner, &token, Vec::new(&env));
+        create_milestone(&env, &contract_id, grant_id, 0, MilestoneState::Submitted);
+
+        // Majority approval with enough votes cast for the auto-approve gate.
+        env.as_contract(&contract_id, || {
+            let mut milestone = Storage::get_milestone(&env, grant_id, 0).unwrap();
+            milestone.approvals = 2;
+            milestone.rejections = 1;
+            Storage::set_milestone(&env, grant_id, 0, &milestone);
+        });
+
+        client.auto_approve_set_config(
+            &owner,
+            &grant_id,
+            &AutoApproveConfig {
+                grant_id,
+                enabled: true,
+                grace_period_seconds: 0,
+                min_votes_required: 1,
+                set_by: owner.clone(),
+                set_at: 0,
+            },
+        );
+
+        let caller = Address::generate(&env);
+        assert!(client.auto_approve_try(&caller, &grant_id, &0));
+
+        // The auto-approved milestone must leave the same audit trail and mint
+        // the same completion NFT a manual approval would.
+        let log = client.get_audit_log(&grant_id);
+        assert!(log
+            .iter()
+            .any(|entry| entry.action == AuditAction::MilestoneApproved));
+
+        env.as_contract(&contract_id, || {
+            assert!(Storage::get_milestone_nft(&env, grant_id, 0).is_some());
+        });
+    }
+
+    // ── Issue #1026: quadratic voting respects milestone/grant state ─────────
+
+    #[test]
+    fn test_qv_vote_rejected_on_non_submitted_milestone() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, contract_id) = setup_test(&env);
+        client.set_global_admin(&admin, &admin);
+
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+
+        create_grant(&env, &contract_id, 1, owner, token, reviewers);
+        create_milestone(&env, &contract_id, 1, 0, MilestoneState::Paid);
+        env.as_contract(&contract_id, || {
+            Storage::set_voting_mechanism(&env, 1, &VotingMechanism::Quadratic);
+        });
+        client.allocate_voice_credits(&admin, &reviewer, &1, &9);
+
+        // A QV vote must not be able to re-finalize an already-Paid milestone.
+        let result = client.try_milestone_vote(&1u64, &0u32, &reviewer, &false, &None);
+        assert_eq!(result, Err(Ok(ContractError::MilestoneNotSubmitted.into())));
+    }
+
+    #[test]
+    fn test_qv_vote_rejected_on_inactive_grant() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, contract_id) = setup_test(&env);
+        client.set_global_admin(&admin, &admin);
+
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(reviewer.clone());
+
+        create_grant(&env, &contract_id, 1, owner, token, reviewers);
+        create_milestone(&env, &contract_id, 1, 0, MilestoneState::Submitted);
+        env.as_contract(&contract_id, || {
+            Storage::set_voting_mechanism(&env, 1, &VotingMechanism::Quadratic);
+            let mut grant = Storage::get_grant(&env, 1).unwrap();
+            grant.status = GrantStatus::Completed;
+            Storage::set_grant(&env, 1, &grant);
+        });
+        client.allocate_voice_credits(&admin, &reviewer, &1, &9);
+
+        let result = client.try_milestone_vote(&1u64, &0u32, &reviewer, &false, &None);
+        assert_eq!(result, Err(Ok(ContractError::InvalidState.into())));
+    }
+
+    // ── Issue #1027: cancel_grant honours the emergency pause ───────────────
+
+    #[test]
+    fn test_cancel_grant_blocked_during_emergency_pause() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, _contract_id) = setup_test(&env);
+        client.set_global_admin(&admin, &admin);
+
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        // Unpaused: cancellation succeeds.
+        let active_grant = create_client_grant(&env, &client, &owner, &token, Vec::new(&env));
+        client.cancel_grant(&active_grant, &owner, &String::from_str(&env, "cancel"));
+
+        // Paused: cancellation is rejected by the emergency pause gate.
+        let paused_grant = create_client_grant(&env, &client, &owner, &token, Vec::new(&env));
+        client.pause(&admin, &String::from_str(&env, "emergency"));
+
+        let reason = String::from_str(&env, "cancel");
+        let result = client.try_cancel_grant(&paused_grant, &owner, &reason);
+        assert_eq!(result, Err(Ok(ContractError::ContractPaused.into())));
     }
 }

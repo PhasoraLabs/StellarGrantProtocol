@@ -343,6 +343,11 @@ impl StellarGrantsContract {
         reason: String,
     ) -> Result<(), ContractError> {
         caller.require_auth();
+        // Issue #1027: cancellation moves real funds, so it must respect the
+        // same emergency pause and circuit breaker as every other fund-moving
+        // entrypoint instead of acting as a back door around them.
+        emergency::require_not_paused(&env)?;
+        circuit_breaker::require_open(&env, ProtocolModule::Grants)?;
         reentrancy::with_non_reentrant(&env, || {
             let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
 
@@ -621,7 +626,12 @@ impl StellarGrantsContract {
             }
         }
         if remaining_balance > 0 {
-            escrow::refund_all(env, grant_id)?;
+            // Issue #1025: refund only the surplus above what was approved for
+            // payout. When the payout is multisig-gated it has been reserved
+            // but not yet transferred, so the reservation must stay in escrow —
+            // a full `refund_all` would drain it back to funders and make the
+            // pending `execute_escrow_release` permanently unpayable.
+            escrow::refund_partial(env, grant_id, remaining_balance)?;
         }
 
         if multisig_pending {
@@ -713,6 +723,13 @@ impl StellarGrantsContract {
         let mut grant = Storage::get_grant_v(&env, grant_id);
         let mut milestone = Storage::get_milestone_v(&env, grant_id, milestone_idx);
 
+        // Issue #1026: milestone votes are only valid while the grant is still
+        // Active. Without this, a vote could re-finalize a milestone on a grant
+        // that has already completed or been cancelled.
+        if grant.status != GrantStatus::Active {
+            return Err(ContractError::InvalidState);
+        }
+
         // Issue #724: `reviewer` may be a delegate voting on behalf of the real
         // reviewer. Resolve back to the delegator and burn one use of the
         // delegation; if `reviewer` is already a registered reviewer, this is a
@@ -764,78 +781,24 @@ impl StellarGrantsContract {
         );
 
         if result.quorum_reached {
-            // Issue #699: notify subscribers watching this grant of the vote
-            // outcome, regardless of which branch it took below.
-            let notif_event = if result.approved {
-                NotificationEvent::MilestoneApproved
-            } else {
-                NotificationEvent::MilestoneRejected
-            };
-            notification::emit_notification(
-                &env,
-                notif_event,
-                &SubscriptionScope::PerGrant(grant_id),
-                ((grant_id as u128) << 32) | milestone_idx as u128,
-            );
-
             if result.approved {
-                Self::update_contributor_reputation(
+                // Shared with auto_approve so an auto-approved milestone has the
+                // same downstream effects as a manually-approved one (#1024).
+                apply_milestone_approval_side_effects(
                     &env,
-                    grant_id,
-                    milestone_idx,
-                    &grant.owner,
-                    grant.milestone_amount,
-                );
-                audit::log(
-                    &env,
-                    grant_id,
-                    AuditAction::MilestoneApproved,
+                    &grant,
+                    &milestone,
                     &effective_reviewer,
-                    Some(milestone_idx),
-                    Some(milestone.amount),
-                );
-                metrics::increment(&env, MetricField::MilestonesApproved, 1);
-                if hooks::has_hooks(&env, HookEvent::MilestoneApproved) {
-                    let mut payload_data = [0u8; 12];
-                    payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
-                    payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
-                    let payload = soroban_sdk::Bytes::from_slice(&env, &payload_data);
-                    hooks::trigger(&env, HookEvent::MilestoneApproved, payload);
-                }
-                // Mint soulbound NFT certificate for the contributor (#570)
-                let meta = NftMetadata {
-                    name: milestone.description.clone(),
-                    description: milestone.description.clone(),
-                    grant_title: grant.title.clone(),
-                    image_uri: String::from_str(&env, ""),
-                    attributes: soroban_sdk::Vec::new(&env),
-                };
-                let _ = milestone_nft::mint(&env, grant_id, milestone_idx, &grant.owner, meta);
-                // Track this grant in the contributor's portfolio index (#565)
-                Storage::push_contributor_grant_id(&env, &grant.owner, grant_id);
-                // Award badges for milestone completion (#689)
-                badge::try_award(
-                    &env,
-                    &grant.owner,
-                    BadgeType::FirstMilestone,
-                    Some(grant_id),
-                    Some(milestone_idx),
-                );
-                badge::try_award(
-                    &env,
-                    &grant.owner,
-                    BadgeType::TenMilestones,
-                    Some(grant_id),
-                    Some(milestone_idx),
-                );
-                badge::try_award(
-                    &env,
-                    &grant.owner,
-                    BadgeType::FiftyMilestones,
-                    Some(grant_id),
-                    Some(milestone_idx),
                 );
             } else {
+                // Issue #699: notify subscribers watching this grant of the
+                // rejected outcome.
+                notification::emit_notification(
+                    &env,
+                    NotificationEvent::MilestoneRejected,
+                    &SubscriptionScope::PerGrant(grant_id),
+                    ((grant_id as u128) << 32) | milestone_idx as u128,
+                );
                 audit::log(
                     &env,
                     grant_id,
@@ -1624,6 +1587,17 @@ impl StellarGrantsContract {
         let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
         if !grant.reviewers.contains(voter.clone()) {
             return Err(ContractError::Unauthorized);
+        }
+        // Issue #1026: enforce the same state guards as the voting path so a
+        // direct QV call cannot touch a milestone on an inactive grant or one
+        // that is not currently Submitted.
+        if grant.status != GrantStatus::Active {
+            return Err(ContractError::InvalidState);
+        }
+        let milestone = Storage::get_milestone(&env, grant_id, milestone_idx)
+            .ok_or(ContractError::MilestoneNotFound)?;
+        if milestone.state != MilestoneState::Submitted {
+            return Err(ContractError::MilestoneNotSubmitted);
         }
         quadratic::cast_qv_vote(&env, &voter, grant_id, milestone_idx, votes, in_favor)
     }
@@ -4927,6 +4901,94 @@ fn require_bond_posted(env: &Env, grant_id: u64) -> Result<(), ContractError> {
         }
     }
     Ok(())
+}
+
+/// Apply the downstream effects of a milestone being approved: subscriber
+/// notification, contributor reputation, audit log, metrics, hooks, the
+/// completion NFT, portfolio tracking, and badge awards.
+///
+/// Shared by the manual vote path (`milestone_vote`) and the auto-approve path
+/// (`auto_approve::try_auto_approve`) so an auto-approved milestone counts the
+/// same toward reputation, badges, audit history, and NFT issuance as one a
+/// reviewer approved manually (issue #1024).
+pub(crate) fn apply_milestone_approval_side_effects(
+    env: &Env,
+    grant: &Grant,
+    milestone: &Milestone,
+    approver: &Address,
+) {
+    let grant_id = grant.id;
+    let milestone_idx = milestone.idx;
+
+    // Issue #699: notify subscribers watching this grant.
+    notification::emit_notification(
+        env,
+        NotificationEvent::MilestoneApproved,
+        &SubscriptionScope::PerGrant(grant_id),
+        ((grant_id as u128) << 32) | milestone_idx as u128,
+    );
+
+    StellarGrantsContract::update_contributor_reputation(
+        env,
+        grant_id,
+        milestone_idx,
+        &grant.owner,
+        grant.milestone_amount,
+    );
+
+    audit::log(
+        env,
+        grant_id,
+        AuditAction::MilestoneApproved,
+        approver,
+        Some(milestone_idx),
+        Some(milestone.amount),
+    );
+    metrics::increment(env, MetricField::MilestonesApproved, 1);
+
+    if hooks::has_hooks(env, HookEvent::MilestoneApproved) {
+        let mut payload_data = [0u8; 12];
+        payload_data[..8].copy_from_slice(&grant_id.to_le_bytes());
+        payload_data[8..].copy_from_slice(&milestone_idx.to_le_bytes());
+        let payload = soroban_sdk::Bytes::from_slice(env, &payload_data);
+        hooks::trigger(env, HookEvent::MilestoneApproved, payload);
+    }
+
+    // Mint soulbound NFT certificate for the contributor (#570)
+    let meta = NftMetadata {
+        name: milestone.description.clone(),
+        description: milestone.description.clone(),
+        grant_title: grant.title.clone(),
+        image_uri: String::from_str(env, ""),
+        attributes: soroban_sdk::Vec::new(env),
+    };
+    let _ = milestone_nft::mint(env, grant_id, milestone_idx, &grant.owner, meta);
+
+    // Track this grant in the contributor's portfolio index (#565)
+    Storage::push_contributor_grant_id(env, &grant.owner, grant_id);
+
+    // Award badges for milestone completion (#689)
+    badge::try_award(
+        env,
+        &grant.owner,
+        BadgeType::FirstMilestone,
+        Some(grant_id),
+        Some(milestone_idx),
+    );
+    badge::try_award(
+        env,
+        &grant.owner,
+        BadgeType::TenMilestones,
+        Some(grant_id),
+        Some(milestone_idx),
+    );
+    badge::try_award(
+        env,
+        &grant.owner,
+        BadgeType::FiftyMilestones,
+        Some(grant_id),
+        Some(milestone_idx),
+    );
 }
 
 fn apply_milestone_submission(

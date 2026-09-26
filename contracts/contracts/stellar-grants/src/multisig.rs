@@ -347,7 +347,7 @@ mod test {
             let creator = Address::generate(&env);
             let signer = Address::generate(&env);
             let mut signers = Vec::new(&env);
-            signers.push_back(signer);
+            signers.push_back(signer.clone());
 
             let payload = encode_grant_withdraw(&env, 42);
             let id = create_proposal(&env, &creator, 42, payload.clone(), signers, 1, 100).unwrap();

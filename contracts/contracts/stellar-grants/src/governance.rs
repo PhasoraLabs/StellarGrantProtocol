@@ -61,6 +61,13 @@ pub fn cast_vote(
 ) -> Result<VoteResult, ContractError> {
     let mechanism = Storage::get_voting_mechanism(env, grant.id);
     if mechanism == VotingMechanism::Quadratic {
+        // Issue #1026: the quadratic path used to early-return before the
+        // non-QV state check, letting a QV vote re-finalize an already-Paid or
+        // Rejected milestone (flipping it back to Approved/Rejected and
+        // re-running its downstream side effects). Enforce the same guard here.
+        if milestone.state != MilestoneState::Submitted {
+            return Err(ContractError::MilestoneNotSubmitted);
+        }
         // Default 1 vote per cast_vote call in QV mode; credits must be pre-allocated.
         let record = quadratic::cast_qv_vote(env, reviewer, grant.id, milestone.idx, 1, approve)?;
         let (for_v, against_v) = quadratic::tally_votes(env, grant.id, milestone.idx);

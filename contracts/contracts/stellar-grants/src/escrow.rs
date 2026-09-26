@@ -205,15 +205,13 @@ pub fn refund(env: &Env, grant_id: u64, funder: &Address) -> Result<i128, Contra
     Ok(actual_refund)
 }
 
-/// Refund all remaining escrow balance proportionally to all funders.
-pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
-    crate::reentrancy::protect(env)?;
+/// Distribute exactly `amount` of the escrow balance proportionally across
+/// all funders, leaving any remainder in escrow.
+///
+/// Callers must hold the reentrancy check and guarantee
+/// `0 < amount <= account.balance`.
+fn distribute_refund(env: &Env, grant_id: u64, amount: i128) -> Result<(), ContractError> {
     let mut account = load_account(env, grant_id)?;
-    let total_balance = account.balance;
-    if total_balance == 0 {
-        return Ok(());
-    }
-
     let funders = Storage::get_escrow_funders_list(env, grant_id);
     if funders.is_empty() {
         return Ok(());
@@ -245,9 +243,9 @@ pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
 
         let is_last = (i as u32) + 1 == funders_len;
         let refund_amount = if is_last {
-            total_balance - distributed
+            amount - distributed
         } else {
-            proportional_share(net, total_net, total_balance)
+            proportional_share(net, total_net, amount)
         };
 
         if refund_amount > 0 {
@@ -264,12 +262,66 @@ pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
         }
     }
 
-    account.balance = 0;
+    account.balance -= distributed;
     Storage::set_escrow_account(env, grant_id, &account);
 
     if let Some(mut grant) = Storage::get_grant(env, grant_id) {
-        grant.escrow_balance = 0;
+        grant.escrow_balance = account.balance;
         Storage::set_grant(env, grant_id, &grant);
+    }
+
+    Ok(())
+}
+
+/// Refund a specific `amount` from escrow proportionally across all funders,
+/// leaving the rest of the escrow balance untouched.
+///
+/// Unlike [`refund_all`], which drains the whole balance, this is used when
+/// only the surplus above what is already reserved should be returned — e.g.
+/// a multisig-gated payout that has been reserved but not yet transferred
+/// (issue #1025).
+pub fn refund_partial(env: &Env, grant_id: u64, amount: i128) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
+    if amount < 0 {
+        return Err(ContractError::InvalidInput);
+    }
+    if amount == 0 {
+        return Ok(());
+    }
+    let account = load_account(env, grant_id)?;
+    if amount > account.balance {
+        return Err(ContractError::InvalidInput);
+    }
+    distribute_refund(env, grant_id, amount)
+}
+
+/// Refund all remaining escrow balance proportionally to all funders.
+pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
+    let account = load_account(env, grant_id)?;
+    let total_balance = account.balance;
+    if total_balance == 0 {
+        return Ok(());
+    }
+
+    // Preserve the historical no-op when no funders are recorded.
+    if Storage::get_escrow_funders_list(env, grant_id).is_empty() {
+        return Ok(());
+    }
+
+    refund_partial(env, grant_id, total_balance)?;
+
+    // A trailing funder with no remaining stake can leave rounding dust behind;
+    // keep the historical "refund_all drains everything" contract by zeroing
+    // whatever is left.
+    let mut account = load_account(env, grant_id)?;
+    if account.balance != 0 {
+        account.balance = 0;
+        Storage::set_escrow_account(env, grant_id, &account);
+        if let Some(mut grant) = Storage::get_grant(env, grant_id) {
+            grant.escrow_balance = 0;
+            Storage::set_grant(env, grant_id, &grant);
+        }
     }
 
     Ok(())
@@ -589,6 +641,86 @@ mod tests {
 
         let account = Storage::get_escrow_account(&env, grant_id).unwrap();
         assert_eq!(account.balance, 0);
+    }
+
+    #[test]
+    fn test_refund_partial_leaves_remainder_in_escrow() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let grant_id = 1u64;
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token_admin = Address::generate(&env);
+            let token = env
+                .register_stellar_asset_contract_v2(token_admin.clone())
+                .address();
+            let token_admin_client = token::StellarAssetClient::new(&env, &token);
+
+            // Fund the escrow contract with real tokens so refunds can transfer.
+            token_admin_client.mint(&env.current_contract_address(), &1000);
+            open(&env, grant_id, &owner, &token).unwrap();
+
+            let funder1 = Address::generate(&env);
+            let funder2 = Address::generate(&env);
+
+            let mut account = Storage::get_escrow_account(&env, grant_id).unwrap();
+            account.balance = 1000;
+            Storage::set_escrow_account(&env, grant_id, &account);
+
+            let ledger1 = FunderLedger {
+                funder: funder1.clone(),
+                contributed: 600,
+                refunded: 0,
+                last_contribution_at: 0,
+            };
+            let ledger2 = FunderLedger {
+                funder: funder2.clone(),
+                contributed: 400,
+                refunded: 0,
+                last_contribution_at: 0,
+            };
+            Storage::set_funder_ledger(&env, grant_id, &funder1, &ledger1);
+            Storage::set_funder_ledger(&env, grant_id, &funder2, &ledger2);
+
+            let mut funders = Vec::new(&env);
+            funders.push_back(funder1.clone());
+            funders.push_back(funder2.clone());
+            Storage::set_escrow_funders_list(&env, grant_id, &funders);
+
+            // Only the 400 surplus should be refunded; the reserved 600 stays.
+            refund_partial(&env, grant_id, 400).unwrap();
+
+            let account = Storage::get_escrow_account(&env, grant_id).unwrap();
+            assert_eq!(account.balance, 600);
+
+            let l1 = Storage::get_funder_ledger(&env, grant_id, &funder1).unwrap();
+            let l2 = Storage::get_funder_ledger(&env, grant_id, &funder2).unwrap();
+            assert_eq!(l1.refunded, 240);
+            assert_eq!(l2.refunded, 160);
+        });
+    }
+
+    #[test]
+    fn test_refund_partial_rejects_amount_above_balance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let grant_id = 1u64;
+
+        env.as_contract(&contract_id, || {
+            let (_owner, _token) = setup(&env, grant_id);
+
+            let mut account = Storage::get_escrow_account(&env, grant_id).unwrap();
+            account.balance = 100;
+            Storage::set_escrow_account(&env, grant_id, &account);
+
+            assert_eq!(
+                refund_partial(&env, grant_id, 101),
+                Err(ContractError::InvalidInput)
+            );
+        });
     }
 
     #[test]

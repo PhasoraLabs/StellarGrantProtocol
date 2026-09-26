@@ -116,8 +116,7 @@ pub fn get_request(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Escro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ProtocolConfig;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::{Address as _, Ledger};
 
     fn setup() -> (Env, u64) {
         let env = Env::default();
@@ -126,10 +125,8 @@ mod tests {
         let grant_id = 1u64;
 
         env.as_contract(&contract_id, || {
-            let config = ProtocolConfig {
-                multisig_escrow_threshold: 2,
-                ..Default::default()
-            };
+            let mut config = crate::config::default_config();
+            config.multisig_escrow_threshold = 2;
             env.storage().persistent().set(&DataKey::Config, &config);
         });
 

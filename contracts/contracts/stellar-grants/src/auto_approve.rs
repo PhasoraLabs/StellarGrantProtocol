@@ -109,6 +109,11 @@ pub fn try_auto_approve(
         MilestoneState::Approved,
     );
 
+    // Issue #1024: an auto-approved milestone is a legitimate approval and must
+    // trigger the same notification, reputation, audit, metrics, hook, NFT,
+    // portfolio, and badge side effects as one approved via `milestone_vote`.
+    crate::apply_milestone_approval_side_effects(env, &grant, &milestone, caller);
+
     Ok(true)
 }
 
@@ -191,6 +196,9 @@ mod tests {
                 description: soroban_sdk::String::from_str(&env, "Desc"),
                 total_amount: 1_000_000,
                 status: GrantStatus::Active,
+                total_amount: 1_000_000,
+                milestone_amount: 500_000,
+                reviewers: soroban_sdk::Vec::new(&env),
                 total_milestones: 2,
                 milestone_amount: 500_000,
                 reviewers: Vec::new(&env),

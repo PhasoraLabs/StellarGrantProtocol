@@ -36,7 +36,7 @@ fn test_milestone_submission_and_dispute_auto_capture_snapshots() {
     client.grant_fund(&grant_id, &funder, &1000);
 
     // No snapshots exist yet.
-    assert!(client.list_snapshots(&grant_id).is_empty());
+    assert!(client.list_snapshots(&grant_id, &0, &10).is_empty());
 
     // Submitting a milestone auto-captures a `MilestoneSubmission` snapshot.
     client.milestone_submit(
@@ -47,7 +47,7 @@ fn test_milestone_submission_and_dispute_auto_capture_snapshots() {
         &String::from_str(&env, "proof"),
     );
 
-    let after_submit = client.list_snapshots(&grant_id);
+    let after_submit = client.list_snapshots(&grant_id, &0, &10);
     assert_eq!(after_submit.len(), 1);
 
     // Move the milestone from Submitted -> Approved so the two snapshots
@@ -74,7 +74,7 @@ fn test_milestone_submission_and_dispute_auto_capture_snapshots() {
         &String::from_str(&env, "Quality concerns"),
     );
 
-    let snapshots = client.list_snapshots(&grant_id);
+    let snapshots = client.list_snapshots(&grant_id, &0, &10);
     assert_eq!(snapshots.len(), 2);
 
     let first_id = snapshots.get(0).unwrap().id;
