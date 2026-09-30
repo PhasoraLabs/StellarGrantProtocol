@@ -109,10 +109,14 @@ fn evaluate_condition(env: &Env, condition: &ReleaseCondition) -> (bool, i128) {
                 (&condition.custom_contract, &condition.custom_fn_name)
             {
                 let args: soroban_sdk::Vec<soroban_sdk::Val> = soroban_sdk::Vec::new(env);
-                let result: Option<i128> = env.invoke_contract(contract, fn_name, args);
-                match result {
-                    Some(val) => (val != 0, val),
-                    None => (false, 0),
+                // Issue #897: a panicking, removed, or wrong-signature target
+                // must read as "condition not met" rather than abort the
+                // caller's transaction.
+                match env.try_invoke_contract::<Option<i128>, soroban_sdk::Error>(
+                    contract, fn_name, args,
+                ) {
+                    Ok(Ok(Some(val))) => (val != 0, val),
+                    _ => (false, 0),
                 }
             } else {
                 (false, 0)
@@ -354,6 +358,72 @@ mod tests {
             assert_eq!(results.len(), 2);
             assert!(results.get(0).unwrap().met);
             assert!(!results.get(1).unwrap().met);
+            assert!(!all_conditions_met(&env, 1, 0));
+        });
+    }
+
+    // ── CustomContractCall failure handling (#897) ─────────────────────────
+
+    fn custom_cond(env: &Env, contract: Address, fn_name: soroban_sdk::Symbol) -> ReleaseCondition {
+        ReleaseCondition {
+            condition_type: ConditionType::CustomContractCall,
+            threshold: 0,
+            oracle_token: None,
+            custom_contract: Some(contract),
+            custom_fn_name: Some(fn_name),
+            description: String::from_str(env, ""),
+        }
+    }
+
+    #[test]
+    fn custom_call_to_nonexistent_contract_is_unmet_not_a_panic() {
+        let env = Env::default();
+        let contract_id = env.register(StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let missing = Address::generate(&env);
+            let c = custom_cond(&env, missing, soroban_sdk::symbol_short!("check"));
+            assert_eq!(evaluate_condition(&env, &c), (false, 0));
+        });
+    }
+
+    #[test]
+    fn custom_call_to_missing_function_is_unmet_not_a_panic() {
+        let env = Env::default();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let target = env.register(StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let c = custom_cond(&env, target, soroban_sdk::symbol_short!("nope"));
+            assert_eq!(evaluate_condition(&env, &c), (false, 0));
+        });
+    }
+
+    #[test]
+    fn custom_call_returning_wrong_type_is_unmet_not_a_panic() {
+        let env = Env::default();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let target = env.register(StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            // `is_paused` exists but returns bool, not Option<i128>.
+            let c = custom_cond(&env, target, soroban_sdk::Symbol::new(&env, "is_paused"));
+            assert_eq!(evaluate_condition(&env, &c), (false, 0));
+        });
+    }
+
+    #[test]
+    fn all_conditions_met_is_false_with_failing_custom_call() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner));
+            let mut conditions = Vec::new(&env);
+            conditions.push_back(custom_cond(
+                &env,
+                Address::generate(&env),
+                soroban_sdk::symbol_short!("check"),
+            ));
+            attach_conditions(&env, &owner, 1, 0, conditions).unwrap();
             assert!(!all_conditions_met(&env, 1, 0));
         });
     }

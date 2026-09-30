@@ -124,11 +124,11 @@ pub use types::{
     BountyStatus, BountySubmission, BreakerState, BridgeRelayer, CategoryStats, ChainId,
     ChecklistSubmission, ClaimVestedPayload, ClawbackRequest, ClawbackStatus, CollateralDeposit,
     CollateralRequirement, CollateralStatus, ComplianceAttestation, ComplianceLevel,
-    ComplianceStatus, ConditionResult, ContractVersion, ContributionType, ContributorPortfolio,
-    ContributorRegisterPayload, CriterionStatus, CrossChainProof, CrowdfundCampaign,
-    CrowdfundPledge, CrowdfundStatus, DaoProposal, DaoProposalStatus, DaoProposalType,
-    DashboardView, DecayConfig, DecayType, Delegation, DelegationScope, DexConfig, Dispute,
-    DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode, EscrowReleaseApproval,
+    ComplianceStatus, ConditionResult, ConditionType, ContractVersion, ContributionType,
+    ContributorPortfolio, ContributorRegisterPayload, CriterionStatus, CrossChainProof,
+    CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus, DaoProposal, DaoProposalStatus,
+    DaoProposalType, DashboardView, DecayConfig, DecayType, Delegation, DelegationScope, DexConfig,
+    Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode, EscrowReleaseApproval,
     EscrowReleaseRequest, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema,
     ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage, ExtensionRequest,
     ExtensionStatus, FeeRecord, ForkRecord, FunderGrantSummary, FunderLedger, FunderReport,
@@ -556,6 +556,14 @@ impl StellarGrantsContract {
             }
         }
 
+        // Issue #896: conditions can be attached after a milestone was
+        // approved, so re-check them right before funds leave escrow.
+        for idx in 0..grant.total_milestones {
+            if !conditional_release::all_conditions_met(env, grant_id, idx) {
+                return Err(ContractError::ConditionCheckFailed);
+            }
+        }
+
         let total_paid =
             Self::compute_total_paid_if_quorum_ready(env, grant_id, grant.total_milestones)?;
         if grant.escrow_balance < total_paid {
@@ -608,8 +616,12 @@ impl StellarGrantsContract {
                     // Issue #821: a multisig request only reserves the payout;
                     // it must not be treated as a completed release until a
                     // signer actually executes it via `execute_escrow_release`.
+                    // Issue #893: an expired request can never be approved or
+                    // executed, so it must not block a replacement.
                     if let Some(existing) = crate::escrow_multisig::get_request(env, grant_id, 0) {
-                        if !existing.executed {
+                        if !existing.executed
+                            && !crate::escrow_multisig::is_expired_unexecuted(env, grant_id, 0)
+                        {
                             return Err(ContractError::InvalidState);
                         }
                     }
@@ -747,6 +759,12 @@ impl StellarGrantsContract {
 
         if approve && !checklist::all_required_approved(&env, grant_id, milestone_idx) {
             return Err(ContractError::RequiredCriteriaNotMet);
+        }
+
+        // Issue #896: conditions attached to a milestone gate its approval
+        // (and therefore its payout); previously they were never consulted.
+        if approve && !conditional_release::all_conditions_met(&env, grant_id, milestone_idx) {
+            return Err(ContractError::ConditionCheckFailed);
         }
 
         let result = governance::cast_vote(
@@ -2523,6 +2541,25 @@ impl StellarGrantsContract {
                 Self::compute_total_paid_if_quorum_ready(&env, grant_id, grant.total_milestones)?;
             Self::complete_grant(&env, grant_id, total_paid, 0)
         })
+    }
+
+    /// Replace an expired, under-approved escrow release request with a fresh
+    /// one (same amount and recipient, no approvals, new expiry). Without this
+    /// a request that expired before reaching the threshold blocks that
+    /// milestone's multisig payout forever (Issue #893). Global admin or grant
+    /// owner only.
+    pub fn recreate_escrow_release_request(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        milestone_idx: u32,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
+        if grant.owner != caller && Storage::get_global_admin(&env) != Some(caller.clone()) {
+            return Err(ContractError::Unauthorized);
+        }
+        escrow_multisig::recreate_expired_request(&env, grant_id, milestone_idx)
     }
 
     /// Return a pending (or executed) escrow release request, if any.

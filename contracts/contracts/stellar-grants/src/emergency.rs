@@ -4,7 +4,7 @@ use crate::circuit_breaker;
 use crate::errors::ContractError;
 use crate::events::Events;
 use crate::storage::Storage;
-use crate::types::{PauseRecord, ProtocolModule};
+use crate::types::PauseRecord;
 
 fn require_global_admin(env: &Env, admin: &Address) -> Result<(), ContractError> {
     let global_admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
@@ -30,20 +30,7 @@ pub fn pause(env: &Env, admin: &Address, reason: String) -> Result<(), ContractE
 
     Storage::set_is_paused(env, true);
 
-    let all_modules = [
-        ProtocolModule::Grants,
-        ProtocolModule::Streaming,
-        ProtocolModule::Bounty,
-        ProtocolModule::Dao,
-        ProtocolModule::Staking,
-        ProtocolModule::Vesting,
-        ProtocolModule::MatchingPool,
-        ProtocolModule::Crowdfund,
-        ProtocolModule::Insurance,
-        ProtocolModule::Relay,
-        ProtocolModule::TokenSwap,
-        ProtocolModule::Oracle,
-    ];
+    let all_modules = circuit_breaker::ALL_MODULES;
     for m in all_modules.iter() {
         let _ = circuit_breaker::trip_internal(env, admin, m.clone(), reason.clone(), None);
     }
@@ -67,6 +54,13 @@ pub fn unpause(env: &Env, admin: &Address) -> Result<(), ContractError> {
 
     if !is_paused(env) {
         return Err(ContractError::InvalidState);
+    }
+
+    // Issue #895: pause() trips every module breaker, so unpause() must clear
+    // them too, otherwise the protocol stays frozen (ModuleTripped) while
+    // is_paused() reports false.
+    for m in circuit_breaker::ALL_MODULES.iter() {
+        circuit_breaker::reset_internal(env, admin, m.clone());
     }
 
     Storage::set_is_paused(env, false);
@@ -135,6 +129,37 @@ mod test {
         let history = pause_history(&env);
         let updated_record = history.get(0).unwrap();
         assert!(updated_record.unpaused_at.is_some());
+    }
+
+    #[test]
+    fn test_unpause_resets_all_circuit_breakers() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        let _ = env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            Storage::set_global_admin(&env, &admin);
+
+            pause(&env, &admin, String::from_str(&env, "Incident")).unwrap();
+            for m in circuit_breaker::ALL_MODULES.iter() {
+                assert!(!circuit_breaker::is_open(&env, m.clone()));
+            }
+
+            admin
+        });
+
+        // Separate invocation: the host rejects re-authorizing the same
+        // address twice within one contract frame.
+        env.as_contract(&contract_id, || {
+            let admin = Storage::get_global_admin(&env).unwrap();
+            unpause(&env, &admin).unwrap();
+            assert!(!is_paused(&env));
+            for m in circuit_breaker::ALL_MODULES.iter() {
+                assert_eq!(circuit_breaker::require_open(&env, m.clone()), Ok(()));
+            }
+            assert_eq!(circuit_breaker::tripped_modules(&env).len(), 0);
+        });
     }
 
     #[test]

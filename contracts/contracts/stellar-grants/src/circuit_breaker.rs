@@ -26,6 +26,23 @@ pub struct BreakerAutoReset {
     pub module: ProtocolModule,
 }
 
+/// Every module guarded by a circuit breaker. `emergency::pause` trips all of
+/// them and `emergency::unpause` resets all of them, so keep them in sync here.
+pub const ALL_MODULES: [ProtocolModule; 12] = [
+    ProtocolModule::Grants,
+    ProtocolModule::Streaming,
+    ProtocolModule::Bounty,
+    ProtocolModule::Dao,
+    ProtocolModule::Staking,
+    ProtocolModule::Vesting,
+    ProtocolModule::MatchingPool,
+    ProtocolModule::Crowdfund,
+    ProtocolModule::Insurance,
+    ProtocolModule::Relay,
+    ProtocolModule::TokenSwap,
+    ProtocolModule::Oracle,
+];
+
 fn require_emergency_pauser(env: &Env, caller: &Address) -> Result<(), ContractError> {
     let is_admin = Storage::get_global_admin(env) == Some(caller.clone());
     let has_role = access_control::has_role(env, caller, Role::EmergencyPauser);
@@ -94,6 +111,22 @@ pub fn reset(env: &Env, caller: &Address, module: ProtocolModule) -> Result<(), 
     Ok(())
 }
 
+/// Clear a module's breaker without auth checks; a no-op if it isn't tripped.
+/// Callers must have authorized the caller themselves (used by unpause).
+pub fn reset_internal(env: &Env, caller: &Address, module: ProtocolModule) {
+    if Storage::get_breaker_state(env, &module)
+        .map(|s| s.tripped)
+        .unwrap_or(false)
+    {
+        Storage::remove_breaker(env, &module);
+        BreakerReset {
+            module,
+            reset_by: caller.clone(),
+        }
+        .publish(env);
+    }
+}
+
 pub fn require_open(env: &Env, module: ProtocolModule) -> Result<(), ContractError> {
     if let Some(state) = Storage::get_breaker_state(env, &module) {
         if state.tripped {
@@ -126,20 +159,7 @@ pub fn get_state(env: &Env, module: ProtocolModule) -> BreakerState {
 }
 
 pub fn tripped_modules(env: &Env) -> Vec<ProtocolModule> {
-    let all_modules = [
-        ProtocolModule::Grants,
-        ProtocolModule::Streaming,
-        ProtocolModule::Bounty,
-        ProtocolModule::Dao,
-        ProtocolModule::Staking,
-        ProtocolModule::Vesting,
-        ProtocolModule::MatchingPool,
-        ProtocolModule::Crowdfund,
-        ProtocolModule::Insurance,
-        ProtocolModule::Relay,
-        ProtocolModule::TokenSwap,
-        ProtocolModule::Oracle,
-    ];
+    let all_modules = ALL_MODULES;
 
     let mut result: Vec<ProtocolModule> = Vec::new(env);
     for m in all_modules.iter() {
@@ -160,20 +180,7 @@ pub fn tripped_modules(env: &Env) -> Vec<ProtocolModule> {
 }
 
 pub fn auto_reset_expired(env: &Env) -> u32 {
-    let all_modules = [
-        ProtocolModule::Grants,
-        ProtocolModule::Streaming,
-        ProtocolModule::Bounty,
-        ProtocolModule::Dao,
-        ProtocolModule::Staking,
-        ProtocolModule::Vesting,
-        ProtocolModule::MatchingPool,
-        ProtocolModule::Crowdfund,
-        ProtocolModule::Insurance,
-        ProtocolModule::Relay,
-        ProtocolModule::TokenSwap,
-        ProtocolModule::Oracle,
-    ];
+    let all_modules = ALL_MODULES;
 
     let mut count = 0;
     let current_ledger = env.ledger().sequence();

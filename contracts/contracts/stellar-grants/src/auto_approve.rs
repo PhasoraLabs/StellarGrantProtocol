@@ -91,6 +91,11 @@ pub fn try_auto_approve(
     let mut milestone = Storage::get_milestone_v(env, grant_id, milestone_idx);
 
     let approved = milestone.approvals > 0 && milestone.approvals > milestone.rejections;
+    // Issue #896: an auto-approval is still an approval and must respect any
+    // conditions attached to the milestone.
+    if approved && !crate::conditional_release::all_conditions_met(env, grant_id, milestone_idx) {
+        return Err(ContractError::ConditionCheckFailed);
+    }
     let vote_result = VoteResult {
         approved,
         quorum_reached: true,
