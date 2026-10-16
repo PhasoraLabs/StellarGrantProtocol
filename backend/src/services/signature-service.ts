@@ -38,6 +38,17 @@ export type AddReviewerIntent = {
   signature: string;
 };
 
+export type MilestoneApprovalIntent = {
+  grantId: number;
+  milestoneIdx: number;
+  reviewerStellarAddress: string;
+  approved: boolean;
+  address: string;
+  nonce: string;
+  timestamp: number;
+  signature: string;
+};
+
 export class SignatureService {
   buildIntentMessage(payload: Omit<MilestoneProofIntent, "signature">): string {
     return [
@@ -82,6 +93,40 @@ export class SignatureService {
       payload.nonce,
       payload.timestamp,
     ].join("|");
+  }
+
+  buildMilestoneApprovalIntentMessage(
+    payload: Omit<MilestoneApprovalIntent, "signature">,
+  ): string {
+    return [
+      "stellargrant:milestone_approval:v1",
+      payload.grantId,
+      payload.milestoneIdx,
+      payload.reviewerStellarAddress,
+      payload.approved,
+      payload.address,
+      payload.nonce,
+      payload.timestamp,
+    ].join("|");
+  }
+
+  verifyMilestoneApproval(payload: MilestoneApprovalIntent): boolean {
+    try {
+      if (
+        payload.address !== payload.reviewerStellarAddress ||
+        !StrKey.isValidEd25519PublicKey(payload.address)
+      ) {
+        return false;
+      }
+      const keypair = Keypair.fromPublicKey(payload.address);
+      const message = this.buildMilestoneApprovalIntentMessage(payload);
+      return keypair.verify(
+        Buffer.from(message, "utf8"),
+        Buffer.from(payload.signature, "base64"),
+      );
+    } catch {
+      return false;
+    }
   }
 
   verifyAddReviewer(payload: AddReviewerIntent): boolean {

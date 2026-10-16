@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Unique } from "typeorm";
 
 @Entity({ name: "milestone_approvals" })
+@Unique(["grantId", "milestoneIdx", "reviewerStellarAddress"])
 export class MilestoneApproval {
   @PrimaryGeneratedColumn()
   id!: number;

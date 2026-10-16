@@ -109,8 +109,8 @@ const mockEvents: SorobanContractEvent[] = [
 ];
 
 export class MockSorobanContractClient implements SorobanContractClient {
-  async fetchGrants(): Promise<SorobanGrant[]> {
-    return mockGrants;
+  async fetchGrants() {
+    return { grants: mockGrants, failedIds: [] };
   }
 
   async fetchGrantById(id: number): Promise<SorobanGrant | null> {

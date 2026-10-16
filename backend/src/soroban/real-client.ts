@@ -17,6 +17,8 @@ import type {
 import { decodeU64, decodeString, decodeAddress, decodeVec, decodeMap, decodeI128AsString } from "./decode";
 
 export class RealSorobanClient implements SorobanContractClient {
+  private static readonly FETCH_RETRIES = 3;
+  private static readonly FETCH_BACKOFF_MS = 100;
   private readonly server: rpc.Server;
   private readonly contractId: string;
 
@@ -27,14 +29,39 @@ export class RealSorobanClient implements SorobanContractClient {
 
   // ── Public interface ──────────────────────────────────────────────────
 
-  async fetchGrants(): Promise<SorobanGrant[]> {
+  async fetchGrants() {
     const count = await this.callView<number>("grant_count", []);
     const grants: SorobanGrant[] = [];
+    const failedIds: number[] = [];
     for (let i = 1; i <= count; i++) {
-      const grant = await this.fetchGrantById(i);
-      if (grant) grants.push(grant);
+      try {
+        const grant = await this.fetchGrantWithRetry(i);
+        if (grant) grants.push(grant);
+      } catch (error) {
+        failedIds.push(i);
+        console.warn(`Failed to fetch grant ${i} after retries`, error);
+      }
     }
-    return grants;
+    return { grants, failedIds };
+  }
+
+  private async fetchGrantWithRetry(id: number): Promise<SorobanGrant | null> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < RealSorobanClient.FETCH_RETRIES; attempt++) {
+      try {
+        return await this.fetchGrantById(id);
+      } catch (error) {
+        lastError = error;
+        if (attempt < RealSorobanClient.FETCH_RETRIES - 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RealSorobanClient.FETCH_BACKOFF_MS * 2 ** attempt),
+          );
+        }
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Failed to fetch grant ${id}`);
   }
 
   async fetchGrantById(id: number): Promise<SorobanGrant | null> {
@@ -92,7 +119,7 @@ export class RealSorobanClient implements SorobanContractClient {
     }
 
     if (!result.result) {
-      return 0 as unknown as T;
+      throw new Error(`Soroban view call "${method}" returned no simulation result`);
     }
 
     const retval = result.result.retval;

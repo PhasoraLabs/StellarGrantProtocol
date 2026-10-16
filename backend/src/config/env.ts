@@ -2,6 +2,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+if (configuredCorsOrigins.includes("*")) {
+  throw new Error(
+    "CORS_ORIGIN cannot contain '*' because credentialed requests are enabled; configure explicit origins",
+  );
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl:
@@ -18,7 +29,7 @@ export const env = {
   redisUrl: process.env.REDIS_URL ?? "",
   pinataJwt: process.env.PINATA_JWT ?? "",
   ipfsGateway: process.env.PINATA_GATEWAY ?? "https://gateway.pinata.cloud",
-  corsOrigins: process.env.CORS_ORIGIN ?? "*",
+  corsOrigins: configuredCorsOrigins,
   jwtSecret: process.env.JWT_SECRET ?? "",
   // #1229 — key used to encrypt sensitive columns at rest (falls back to JWT_SECRET).
   fieldEncryptionKey: process.env.FIELD_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "",

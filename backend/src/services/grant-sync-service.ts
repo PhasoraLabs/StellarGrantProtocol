@@ -25,7 +25,10 @@ export class GrantSyncService {
   }
 
   async syncAllGrants(): Promise<void> {
-    const grants = await this.sorobanClient.fetchGrants();
+    const { grants, failedIds } = await this.sorobanClient.fetchGrants();
+    if (failedIds.length > 0) {
+      console.warn(`Skipped unavailable grants during sync: ${failedIds.join(", ")}`);
+    }
     for (const grant of grants) {
       const savedGrant = await this.syncGrantInternal(grant);
       await this.upsertMilestones(grant, savedGrant);

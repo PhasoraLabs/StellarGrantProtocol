@@ -26,8 +26,13 @@ export type SorobanGrant = {
   milestones?: SorobanMilestone[];
 };
 
+export type GrantFetchResult = {
+  grants: SorobanGrant[];
+  failedIds: number[];
+};
+
 export interface SorobanContractClient {
-  fetchGrants(): Promise<SorobanGrant[]>;
+  fetchGrants(): Promise<GrantFetchResult>;
   fetchGrantById(id: number): Promise<SorobanGrant | null>;
   getLatestLedger(): Promise<number>;
   fetchEvents(fromLedger: number, toLedger: number): Promise<SorobanContractEvent[]>;
