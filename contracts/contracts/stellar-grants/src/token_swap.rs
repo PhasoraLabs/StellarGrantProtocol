@@ -204,6 +204,9 @@ pub fn swap_and_pay(
     if grant.owner != *payer {
         return Err(ContractError::Unauthorized);
     }
+    if grant.status != crate::types::GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
     if grant.token != *grant_token {
         return Err(ContractError::InvalidInput);
     }
@@ -548,6 +551,44 @@ mod tests {
             )
         });
         assert_eq!(result, Err(ContractError::InvalidInput));
+    }
+
+    #[test]
+    fn test_swap_and_pay_non_active_grant_rejected() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let funder = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        StellarAssetClient::new(&env, &asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&owner, &owner);
+
+        let token = asset.address();
+        open_funded_grant(&env, &contract_id, &owner, &token, &funder, 50_000);
+
+        for non_active_status in [
+            crate::types::GrantStatus::Cancelled,
+            crate::types::GrantStatus::Completed,
+        ] {
+            env.as_contract(&contract_id, || {
+                let mut grant = Storage::get_grant(&env, 1).unwrap();
+                grant.status = non_active_status;
+                Storage::set_grant(&env, 1, &grant);
+            });
+
+            let result = env.as_contract(&contract_id, || {
+                swap_and_pay(&env, &owner, 1, &recipient, &token, &token, 10_000)
+            });
+            assert_eq!(result, Err(ContractError::InvalidState));
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&recipient), 0);
     }
 
     // ── Issue #683: quote/swap must refuse rather than confiscate funds ──────
