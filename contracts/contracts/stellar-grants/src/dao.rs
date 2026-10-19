@@ -136,11 +136,8 @@ pub fn finalize(env: &Env, proposal_id: u64) -> Result<DaoProposalStatus, Contra
     }
 
     let total_votes = proposal.votes_for.saturating_add(proposal.votes_against);
-    if total_votes < Storage::get_dao_quorum_votes(env) {
-        return Err(ContractError::DaoProposalQuorumNotReached);
-    }
-
-    let passed = proposal.votes_for > proposal.votes_against;
+    let quorum_reached = total_votes >= Storage::get_dao_quorum_votes(env);
+    let passed = quorum_reached && proposal.votes_for > proposal.votes_against;
     proposal.status = if passed {
         DaoProposalStatus::Passed
     } else {
@@ -384,7 +381,13 @@ mod tests {
             });
 
             let result = finalize(&env, id);
-            assert_eq!(result, Err(ContractError::DaoProposalQuorumNotReached));
+            assert_eq!(result, Ok(DaoProposalStatus::Rejected));
+
+            let stored = get_proposal(&env, id).unwrap();
+            assert_eq!(stored.status, DaoProposalStatus::Rejected);
+
+            // Second finalize call must see that the proposal is no longer Active.
+            assert_eq!(finalize(&env, id), Err(ContractError::DaoProposalNotActive));
         });
     }
 
