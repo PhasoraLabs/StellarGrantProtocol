@@ -1,83 +1,63 @@
-import { describe, expect, it, beforeAll } from "vitest";
+import { describe, expect, it, beforeAll, vi } from "vitest";
 import { Server as HttpServer } from "http";
-import { Server as SocketServer } from "socket.io";
-import { io as ioClient, Socket as ClientSocket } from "socket.io-client";
+import jwt from "jsonwebtoken";
 import { NotificationService } from "../../src/services/notification-service";
 import { env } from "../../src/config/env";
 
 describe("NotificationService WebSocket authentication (#1195)", () => {
   let httpServer: HttpServer;
   let notificationService: NotificationService;
-  let serverUrl: string;
 
   beforeAll(() => {
-    // Set a valid JWT_SECRET for testing
     env.jwtSecret = "test-secret-key-for-testing-purposes-only";
   });
 
-  it("rejects connections without a valid JWT token", async () => {
-    // Create a simple HTTP server
-    httpServer = new HttpServer();
-    notificationService = new NotificationService();
-
-    // Initialize the notification service
-    notificationService.initialize(httpServer);
-
-    // Start the server
-    httpServer.listen(0);
-    const address = httpServer.address() as any;
-    serverUrl = `http://localhost:${address.port}`;
-
-    // Try to connect without a token
-    const client = ioClient(serverUrl);
-
-    // Wait for connection or error
-    await new Promise<void>((resolve) => {
-      client.on("connect_error", (err) => {
-        expect(err.message).toMatch(/transport error/i);
-        resolve();
-      });
-      client.on("connect", () => {
-        // Should not reach here
-        client.disconnect();
-        resolve();
-      });
-    });
-
-    client.disconnect();
-    httpServer.close();
+  const createMockSocket = (auth: any = {}, headers: any = {}) => ({
+    id: "test-socket-1",
+    handshake: { auth, headers },
+    disconnect: vi.fn(),
+    on: vi.fn(),
   });
 
-  it("rejects connections with only query.address parameter (no JWT)", async () => {
+  it("rejects connections without a valid JWT token", () => {
     httpServer = new HttpServer();
     notificationService = new NotificationService();
     notificationService.initialize(httpServer);
-    httpServer.listen(0);
-    const address = httpServer.address() as any;
-    serverUrl = `http://localhost:${address.port}`;
 
-    // Try to connect with only query param (old vulnerable behavior)
-    const client = ioClient(serverUrl, {
-      query: { address: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD" },
-    });
+    const mockSocket = createMockSocket();
+    (notificationService as any).io.emit("connection", mockSocket);
 
-    await new Promise<void>((resolve) => {
-      client.on("connect_error", (err) => {
-        expect(err.message).toMatch(/transport error/i);
-        resolve();
-      });
-      client.on("connect", () => {
-        client.disconnect();
-        resolve();
-      });
-    });
+    expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
+  });
 
-    client.disconnect();
-    httpServer.close();
+  it("rejects connections with only query.address parameter (no JWT)", () => {
+    httpServer = new HttpServer();
+    notificationService = new NotificationService();
+    notificationService.initialize(httpServer);
+
+    const mockSocket = createMockSocket();
+    (mockSocket.handshake as any).query = { address: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD" };
+    (notificationService as any).io.emit("connection", mockSocket);
+
+    expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("accepts connections with a valid JWT token", () => {
+    httpServer = new HttpServer();
+    notificationService = new NotificationService();
+    notificationService.initialize(httpServer);
+
+    const token = jwt.sign(
+      { stellarAddress: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD" },
+      env.jwtSecret
+    );
+    const mockSocket = createMockSocket({ token });
+    (notificationService as any).io.emit("connection", mockSocket);
+
+    expect(mockSocket.disconnect).not.toHaveBeenCalled();
   });
 
   it("rejects connection when JWT_SECRET is not set", () => {
-    // Temporarily clear JWT_SECRET
     const originalSecret = env.jwtSecret;
     env.jwtSecret = "";
 
@@ -88,7 +68,6 @@ describe("NotificationService WebSocket authentication (#1195)", () => {
       notificationService.initialize(httpServer);
     }).toThrow("JWT_SECRET must be set");
 
-    // Restore
     env.jwtSecret = originalSecret;
   });
 });
