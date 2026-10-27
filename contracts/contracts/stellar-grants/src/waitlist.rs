@@ -19,6 +19,13 @@ pub fn configure(
         return Err(ContractError::Unauthorized);
     }
 
+    if config.max_waitlist_size == 0 || config.max_waitlist_size > crate::constants::MAX_WAITLIST_SIZE {
+        return Err(ContractError::InvalidInput);
+    }
+    if config.max_slots == 0 || config.max_slots > crate::constants::MAX_WAITLIST_SIZE {
+        return Err(ContractError::InvalidInput);
+    }
+
     Storage::set_waitlist_config(env, grant_id, &config);
     Events::emit_waitlist_configured(env, grant_id, config.max_waitlist_size, config.auto_promote);
     Ok(())
@@ -885,6 +892,81 @@ mod tests {
 
             let position = join(&env, &applicant, grant_id).unwrap();
             assert_eq!(position, 1);
+        });
+    }
+
+    #[test]
+    fn test_configure_rejects_zero_or_exceeding_max_waitlist_size() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let grant_id = 1;
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+
+            // 1. max_waitlist_size == 0 must be rejected with InvalidInput
+            let config_zero = WaitlistConfig {
+                grant_id,
+                max_slots: 2,
+                max_waitlist_size: 0,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            assert_eq!(
+                configure(&env, &owner, grant_id, config_zero),
+                Err(ContractError::InvalidInput)
+            );
+
+            // 2. max_waitlist_size > MAX_WAITLIST_SIZE must be rejected with InvalidInput
+            let config_too_large = WaitlistConfig {
+                grant_id,
+                max_slots: 2,
+                max_waitlist_size: crate::constants::MAX_WAITLIST_SIZE + 1,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            assert_eq!(
+                configure(&env, &owner, grant_id, config_too_large),
+                Err(ContractError::InvalidInput)
+            );
+
+            // 3. max_slots == 0 or exceeding MAX_WAITLIST_SIZE must be rejected with InvalidInput
+            let config_zero_slots = WaitlistConfig {
+                grant_id,
+                max_slots: 0,
+                max_waitlist_size: 10,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            assert_eq!(
+                configure(&env, &owner, grant_id, config_zero_slots),
+                Err(ContractError::InvalidInput)
+            );
+
+            let config_too_many_slots = WaitlistConfig {
+                grant_id,
+                max_slots: crate::constants::MAX_WAITLIST_SIZE + 1,
+                max_waitlist_size: 10,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            assert_eq!(
+                configure(&env, &owner, grant_id, config_too_many_slots),
+                Err(ContractError::InvalidInput)
+            );
+
+            // 4. Valid boundary values (1 and MAX_WAITLIST_SIZE) succeed
+            let config_valid_max = WaitlistConfig {
+                grant_id,
+                max_slots: crate::constants::MAX_WAITLIST_SIZE,
+                max_waitlist_size: crate::constants::MAX_WAITLIST_SIZE,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            assert!(configure(&env, &owner, grant_id, config_valid_max).is_ok());
         });
     }
 }
