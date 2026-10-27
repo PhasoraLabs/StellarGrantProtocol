@@ -1,7 +1,7 @@
 use crate::events::Events;
 use crate::rate_limit;
 use crate::storage::Storage;
-use crate::types::{ContractError, RateLimitAction, WaitlistConfig, WaitlistEntry};
+use crate::types::{ContractError, GrantStatus, RateLimitAction, WaitlistConfig, WaitlistEntry};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Configure the waitlist for a grant. Owner only.
@@ -27,6 +27,11 @@ pub fn configure(
 /// Join the waitlist for a grant. Returns the position (1-indexed).
 pub fn join(env: &Env, applicant: &Address, grant_id: u64) -> Result<u32, ContractError> {
     applicant.require_auth();
+
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.status != GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
 
     let config = Storage::get_waitlist_config(env, grant_id).ok_or(ContractError::InvalidInput)?;
 
@@ -153,6 +158,9 @@ pub fn promote_next(
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     if grant.owner != *caller {
         return Err(ContractError::Unauthorized);
+    }
+    if grant.status != GrantStatus::Active {
+        return Err(ContractError::InvalidState);
     }
 
     let config = match Storage::get_waitlist_config(env, grant_id) {
@@ -885,6 +893,41 @@ mod tests {
 
             let position = join(&env, &applicant, grant_id).unwrap();
             assert_eq!(position, 1);
+        });
+    }
+
+    #[test]
+    fn test_join_and_promote_reject_non_active_grant() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicant = Address::generate(&env);
+        let grant_id = 999;
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            let config = WaitlistConfig {
+                grant_id,
+                max_slots: 2,
+                max_waitlist_size: 10,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            configure(&env, &owner, grant_id, config).unwrap();
+            setup_contributor(&env, &applicant, 500);
+
+            // Change grant status to Cancelled
+            let mut grant = Storage::get_grant(&env, grant_id).unwrap();
+            grant.status = GrantStatus::Cancelled;
+            Storage::set_grant(&env, grant_id, &grant);
+
+            // Joining on non-active grant is rejected
+            assert_eq!(join(&env, &applicant, grant_id), Err(ContractError::InvalidState));
+
+            // Promoting on non-active grant is rejected
+            assert_eq!(promote_next(&env, &owner, grant_id), Err(ContractError::InvalidState));
         });
     }
 }
