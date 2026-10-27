@@ -3,6 +3,7 @@ use soroban_sdk::{contractevent, Address, Bytes, Env, Vec};
 use crate::constants::MAX_HOOKS_PER_EVENT;
 use crate::cross_contract;
 use crate::errors::ContractError;
+use crate::reentrancy;
 use crate::storage::Storage;
 use crate::types::{HookCallResult, HookEvent, HookRegistration};
 
@@ -112,12 +113,15 @@ pub fn trigger(env: &Env, event: HookEvent, payload: Bytes) -> Vec<HookCallResul
             continue;
         }
 
-        let success = cross_contract::call_hook_receiver(
-            env,
-            &hook.target_contract,
-            event_u32,
-            payload.clone(),
-        );
+        let success = reentrancy::protect_external_call(env, || {
+            Ok(cross_contract::call_hook_receiver(
+                env,
+                &hook.target_contract,
+                event_u32,
+                payload.clone(),
+            ))
+        })
+        .unwrap_or(false);
         let error_code: Option<u32> = if success { None } else { Some(1) };
 
         let call_result = HookCallResult {
@@ -270,6 +274,25 @@ mod tests {
         f.env.as_contract(&f.contract_id, || {
             let results = trigger(&f.env, HookEvent::DisputeResolved, payload);
             assert_eq!(results.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_trigger_sets_reentrancy_external_call_guard() {
+        let f = setup();
+        let target = Address::generate(&f.env);
+
+        f.client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &1000);
+
+        let payload = Bytes::new(&f.env);
+        f.env.as_contract(&f.contract_id, || {
+            let results = trigger(&f.env, HookEvent::GrantCreated, payload);
+            // Non-registered receiver fails gracefully and guard is released cleanly
+            assert_eq!(results.len(), 1);
+            assert_eq!(results.get(0).unwrap().success, false);
+            // Reentrancy protect succeeds after trigger completes
+            assert!(crate::reentrancy::protect(&f.env).is_ok());
         });
     }
 }
