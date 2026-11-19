@@ -25,7 +25,14 @@ export const metadata: Metadata = {
   description: "Decentralized milestone-based grant management on Stellar",
   openGraph: {
     siteName: "StellarGrant Protocol",
+    title: "StellarGrant Protocol",
+    description: "Decentralized milestone-based grant management on Stellar",
     type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "StellarGrant Protocol",
+    description: "Decentralized milestone-based grant management on Stellar",
   },
   other: {
     "theme-color": "#050A14",
