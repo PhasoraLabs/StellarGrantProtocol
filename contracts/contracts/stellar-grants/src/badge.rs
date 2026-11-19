@@ -570,4 +570,122 @@ mod tests {
             assert!(has_badge(&env, &contributor, BadgeType::DisputeWinner));
         });
     }
+
+    #[test]
+    fn duplicate_badge_minting_write_award_is_rejected_and_idempotent() {
+        let (env, contract) = setup_ttl_test();
+        let contributor = Address::generate(&env);
+
+        env.as_contract(&contract, || {
+            // First minting succeeds
+            assert!(write_award(
+                &env,
+                &contributor,
+                BadgeType::FirstMilestone,
+                Some(1),
+                Some(0),
+            ));
+            assert_eq!(award_count(&env, BadgeType::FirstMilestone), 1);
+            assert_eq!(get_badges(&env, &contributor).len(), 1);
+
+            // Attempting to mint the exact same badge to the same contributor must be rejected
+            assert!(!write_award(
+                &env,
+                &contributor,
+                BadgeType::FirstMilestone,
+                Some(2),
+                Some(1),
+            ));
+
+            // State invariants: award_count, badge list length, and original record preserved
+            assert_eq!(award_count(&env, BadgeType::FirstMilestone), 1);
+            let badges = get_badges(&env, &contributor);
+            assert_eq!(badges.len(), 1);
+            let badge = badges.get(0).unwrap();
+            assert_eq!(badge.grant_id, Some(1));
+            assert_eq!(badge.milestone_idx, Some(0));
+            assert!(has_badge(&env, &contributor, BadgeType::FirstMilestone));
+        });
+    }
+
+    #[test]
+    fn duplicate_badge_minting_does_not_prevent_minting_different_badge_types() {
+        let (env, contract) = setup_ttl_test();
+        let contributor = Address::generate(&env);
+
+        env.as_contract(&contract, || {
+            // Mint first badge
+            assert!(write_award(
+                &env,
+                &contributor,
+                BadgeType::FirstMilestone,
+                Some(1),
+                Some(0),
+            ));
+
+            // Duplicate mint of FirstMilestone is rejected
+            assert!(!write_award(
+                &env,
+                &contributor,
+                BadgeType::FirstMilestone,
+                Some(2),
+                Some(0),
+            ));
+
+            // Minting a distinct badge (TenMilestones) still succeeds
+            assert!(write_award(
+                &env,
+                &contributor,
+                BadgeType::TenMilestones,
+                Some(2),
+                Some(0),
+            ));
+
+            // Duplicate mint of TenMilestones is rejected
+            assert!(!write_award(
+                &env,
+                &contributor,
+                BadgeType::TenMilestones,
+                Some(3),
+                Some(0),
+            ));
+
+            // Total badges is exactly 2, with award counts each at 1
+            assert_eq!(get_badges(&env, &contributor).len(), 2);
+            assert_eq!(award_count(&env, BadgeType::FirstMilestone), 1);
+            assert_eq!(award_count(&env, BadgeType::TenMilestones), 1);
+        });
+    }
+
+    #[test]
+    fn duplicate_badge_minting_try_award_across_milestones_and_reputation() {
+        let env = Env::default();
+        let contributor = Address::generate(&env);
+
+        run(&env, || {
+            set_profile(&env, &contributor, 10, 100, 1);
+
+            // First try_award succeeds
+            assert!(try_award(
+                &env,
+                &contributor,
+                BadgeType::BronzeContributor,
+                None,
+                None,
+            ));
+            assert_eq!(award_count(&env, BadgeType::BronzeContributor), 1);
+            assert_eq!(get_badges(&env, &contributor).len(), 1);
+
+            // Repeated try_award call with matching criteria must return false (no re-award)
+            assert!(!try_award(
+                &env,
+                &contributor,
+                BadgeType::BronzeContributor,
+                None,
+                None,
+            ));
+            assert_eq!(award_count(&env, BadgeType::BronzeContributor), 1);
+            assert_eq!(get_badges(&env, &contributor).len(), 1);
+        });
+    }
 }
