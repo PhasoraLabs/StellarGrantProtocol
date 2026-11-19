@@ -13,6 +13,13 @@ import { useQuery } from "@tanstack/react-query";
 import { contractClient } from "@/lib/stellar/contract";
 import { api } from "@/lib/api";
 
+export interface ReputationScoreInfo {
+  score: number | null;
+  grantsCompleted: number;
+  totalEarned: bigint;
+  tooltipContent: string;
+}
+
 interface UseReputationResult {
   score: number | null;
   grantsCompleted: number;
@@ -20,6 +27,7 @@ interface UseReputationResult {
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  scoreInfo: ReputationScoreInfo;
 }
 
 interface ReputationData {
@@ -55,6 +63,15 @@ async function fetchReputation(address: string): Promise<ReputationData> {
   return { score, grantsCompleted, totalEarned };
 }
 
+function getScoreTooltip(score: number | null, grantsCompleted: number, totalEarned: bigint): string {
+  if (score === null) {
+    return "Reputation score not yet calculated. Complete grants to earn reputation.";
+  }
+
+  const earnedDisplay = totalEarned > 0 ? `${totalEarned.toString()} XLM` : "No earnings yet";
+  return `Reputation Score: ${score}\n\nCalculated from:\n• Grants completed: ${grantsCompleted}\n• Total earned: ${earnedDisplay}\n\nYour score increases as you successfully complete grants and build trust in the community.`;
+}
+
 export function useReputation(address: string | null): UseReputationResult {
   const { data, isLoading, error, refetch } = useQuery<ReputationData, Error>({
     queryKey: ["reputation", address],
@@ -63,14 +80,24 @@ export function useReputation(address: string | null): UseReputationResult {
     staleTime: 2 * 60_000, // 2 minutes
   });
 
+  const score = data?.score ?? null;
+  const grantsCompleted = data?.grantsCompleted ?? 0;
+  const totalEarned = data?.totalEarned ?? BigInt(0);
+
   return {
-    score: data?.score ?? null,
-    grantsCompleted: data?.grantsCompleted ?? 0,
-    totalEarned: data?.totalEarned ?? BigInt(0),
+    score,
+    grantsCompleted,
+    totalEarned,
     isLoading,
     error: error ?? null,
     refetch: async () => {
       await refetch();
+    },
+    scoreInfo: {
+      score,
+      grantsCompleted,
+      totalEarned,
+      tooltipContent: getScoreTooltip(score, grantsCompleted, totalEarned),
     },
   };
 }

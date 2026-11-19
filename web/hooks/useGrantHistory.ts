@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getGrantHistory } from "@/lib/stellar/history";
 import type { GrantHistoryRecord } from "@/lib/stellar/history";
 
 const POLL_INTERVAL_MS = 60_000;
+
+export interface TimelineGrouped {
+  date: string;
+  records: GrantHistoryRecord[];
+}
 
 export interface UseGrantHistoryResult {
   records: GrantHistoryRecord[];
@@ -13,6 +18,7 @@ export interface UseGrantHistoryResult {
   hasMore: boolean;
   loadMore: () => Promise<void>;
   refetch: () => Promise<void>;
+  groupedByDate: TimelineGrouped[];
 }
 
 function parseGrantId(grantId: string): number | bigint {
@@ -134,6 +140,32 @@ export function useGrantHistory(grantId: string): UseGrantHistoryResult {
     };
   }, [fetchFirstPage]);
 
+  const groupedByDate = useMemo<TimelineGrouped[]>(() => {
+    if (!records.length) return [];
+
+    const groups: Record<string, GrantHistoryRecord[]> = {};
+    records.forEach((record) => {
+      const date = new Date(record.createdAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(record);
+    });
+
+    return Object.entries(groups)
+      .sort(([dateA], [dateB]) => new Date(dateB).getTime() - new Date(dateA).getTime())
+      .map(([date, recordsList]) => ({
+        date,
+        records: recordsList.sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+      }));
+  }, [records]);
+
   return {
     records,
     isLoading,
@@ -141,5 +173,6 @@ export function useGrantHistory(grantId: string): UseGrantHistoryResult {
     hasMore,
     loadMore,
     refetch,
+    groupedByDate,
   };
 }
