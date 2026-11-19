@@ -25,6 +25,7 @@ import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { useContractEvents } from "@/hooks/useContractEvents";
 import { useOptimisticGrant } from "@/hooks/useOptimisticGrant";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { getMilestoneProgress } from "@/hooks/useMilestone";
 import { toast } from "@/lib/toast";
 import { ErrorCard } from "@/components/ui/ErrorCard";
 import type { TokenMetadata, Grant, Milestone } from "@/types";
@@ -382,6 +383,27 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
             <h2 className="font-orbitron text-sm uppercase tracking-wider text-text-muted mb-4">
               Milestones
             </h2>
+            {milestones.length > 0 && (() => {
+              const progress = getMilestoneProgress(milestones);
+              return (
+                <div className="mb-4">
+                  <div className="flex justify-between font-mono text-xs text-text-muted mb-1">
+                    <span>{progress.approved} of {progress.total} approved</span>
+                    <span>{progress.percent}%</span>
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-label="Milestones approved"
+                    aria-valuemin={0}
+                    aria-valuemax={progress.total}
+                    aria-valuenow={progress.approved}
+                    className="h-2 w-full bg-border-color"
+                  >
+                    <div className="h-full bg-accent-primary" style={{ width: `${progress.percent}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
             <MilestoneTimeline milestones={milestones} grantId={grant.id} />
           </section>
 

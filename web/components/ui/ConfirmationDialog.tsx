@@ -9,6 +9,7 @@
 "use client";
 
 import React from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 export interface ConfirmationDialogProps {
   isOpen: boolean;
@@ -33,6 +34,7 @@ export function ConfirmationDialog({
   variant = "default",
   isLoading = false,
 }: ConfirmationDialogProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
   if (!isOpen) return null;
 
   const confirmClasses =
@@ -53,7 +55,7 @@ export function ConfirmationDialog({
         onClick={isLoading ? undefined : onCancel}
         className="absolute inset-0 bg-black/60"
       />
-      <div className="relative w-full max-w-md bg-surface border border-border-color rounded-none p-6">
+      <div ref={trapRef} tabIndex={-1} className="relative w-full max-w-md bg-surface border border-border-color rounded-none p-6">
         <h2 className="font-orbitron text-lg font-medium text-text-primary">{title}</h2>
         <p className="mt-2 font-mono text-sm text-text-muted">{description}</p>
 
