@@ -142,8 +142,12 @@ pub fn leave(env: &Env, applicant: &Address, grant_id: u64) -> Result<(), Contra
     Ok(())
 }
 
-/// Promote the top-ranked entry. Called when a slot opens.
-/// Returns the promoted address if successful, None if waitlist is empty.
+/// Select the top-ranked entry for advisory promotion.
+///
+/// This removes the entry from the waitlist, increments the promotion count,
+/// and emits an event, but does not assign a grant slot or change the
+/// applicant's contributor or reviewer status. The caller is responsible for
+/// any follow-up using the returned address.
 pub fn promote_next(
     env: &Env,
     caller: &Address,
@@ -474,7 +478,7 @@ mod tests {
             auto_promote: true,
         };
 
-        env.as_contract(&contract_id, || {
+        let (grant_before, profile_before) = env.as_contract(&contract_id, || {
             setup_grant(&env, grant_id, &owner);
             configure(&env, &owner, grant_id, config.clone()).unwrap();
 
@@ -483,10 +487,14 @@ mod tests {
 
             join(&env, &applicant1, grant_id).unwrap();
             join(&env, &applicant2, grant_id).unwrap();
+
+            (
+                Storage::get_grant(&env, grant_id).unwrap(),
+                Storage::get_contributor(&env, applicant1.clone()).unwrap(),
+            )
         });
 
         env.as_contract(&contract_id, || {
-            // Promote first
             let promoted = promote_next(&env, &owner, grant_id).unwrap();
             assert_eq!(promoted, Some(applicant1.clone()));
 
@@ -494,6 +502,13 @@ mod tests {
             assert_eq!(waitlist.len(), 1);
             assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
             assert_eq!(waitlist.get(0).unwrap().position, 1);
+
+            // Promotion is advisory: it does not alter the grant or applicant profile.
+            assert_eq!(Storage::get_grant(&env, grant_id), Some(grant_before));
+            assert_eq!(
+                Storage::get_contributor(&env, applicant1.clone()),
+                Some(profile_before)
+            );
         });
     }
 

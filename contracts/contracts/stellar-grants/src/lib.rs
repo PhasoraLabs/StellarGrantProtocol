@@ -4662,8 +4662,11 @@ impl StellarGrantsContract {
         waitlist::leave(&env, &applicant, grant_id)
     }
 
-    /// Promote the top-ranked entry. Called when a slot opens.
-    /// Returns the promoted address if successful, None if waitlist is empty.
+    /// Select the top-ranked waitlist entry for advisory promotion.
+    /// This does not assign a grant slot or change the applicant's contributor
+    /// or reviewer status; callers must handle any follow-up using the address.
+    /// Returns the selected address, or None if promotion is disabled or the
+    /// waitlist is empty.
     pub fn promote_from_waitlist(
         env: Env,
         caller: Address,
