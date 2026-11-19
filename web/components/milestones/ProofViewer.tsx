@@ -328,6 +328,7 @@ export function ProofViewer({ proofHash }: ProofViewerProps) {
                 onClick={handleCopy}
                 className="p-4 hover:bg-white/5 border-l border-border-color text-text-muted hover:text-text-primary transition-all flex items-center justify-center flex-shrink-0"
                 title="Copy Hash"
+                aria-label={copied ? "Hash copied" : "Copy hash"}
               >
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </button>

@@ -36,6 +36,9 @@ export default function NotFound() {
           <Button href="/" variant="primary">
             Home
           </Button>
+          <Button href="/search" variant="ghost">
+            Search
+          </Button>
         </div>
       </motion.div>
     </div>
