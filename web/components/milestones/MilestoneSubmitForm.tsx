@@ -350,6 +350,7 @@ export function MilestoneSubmitForm({
               type="button"
               onClick={removeFile}
               disabled={ipfs.isUploading || tx.isPending || tx.isSimulating}
+              aria-label="Remove file"
               className="p-1 hover:bg-white/10 text-text-muted hover:text-text-primary transition-all rounded-none"
             >
               <X className="h-5 w-5" />
