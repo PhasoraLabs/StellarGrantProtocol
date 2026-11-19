@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { useFunders } from "@/hooks/useFunders";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { FUNDERS_PAGE_SIZE, useFunders } from "@/hooks/useFunders";
 
 function FundersProbe({ grantId }: { grantId: string }) {
   const { funders, isLoading, refetch } = useFunders(grantId);
@@ -135,5 +135,29 @@ describe("useFunders", () => {
     expect(capturedSignal.aborted).toBe(false);
     unmount();
     expect(capturedSignal.aborted).toBe(true);
+  });
+
+  it("shows funders one page at a time", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        funders: Array.from({ length: 25 }, (_, i) => ({
+          address: `G${i}`,
+          amount: "1",
+        })),
+      }),
+    });
+
+    const { result } = renderHook(() => useFunders("10"));
+
+    await waitFor(() => expect(result.current.funders).toHaveLength(25));
+    expect(result.current.visibleFunders).toHaveLength(FUNDERS_PAGE_SIZE);
+    expect(result.current.hasMore).toBe(true);
+
+    act(() => result.current.loadMore());
+    act(() => result.current.loadMore());
+
+    expect(result.current.visibleFunders).toHaveLength(25);
+    expect(result.current.hasMore).toBe(false);
   });
 });

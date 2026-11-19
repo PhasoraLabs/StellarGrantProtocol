@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FunderRow } from "@/lib/grants/api";
 
-export function useFunders(grantId: string) {
+export const FUNDERS_PAGE_SIZE = 10;
+
+export function useFunders(grantId: string, pageSize = FUNDERS_PAGE_SIZE) {
   const [funders, setFunders] = useState<FunderRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(pageSize);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const fetchIdRef = useRef(0);
@@ -67,6 +70,7 @@ export function useFunders(grantId: string) {
           amount: BigInt(f.amount),
         }))
       );
+      setVisibleCount(pageSize);
     } catch (err) {
       if (
         controller.signal.aborted ||
@@ -86,7 +90,11 @@ export function useFunders(grantId: string) {
         setIsLoading(false);
       }
     }
-  }, [grantId]);
+  }, [grantId, pageSize]);
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((count) => count + pageSize);
+  }, [pageSize]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -100,6 +108,13 @@ export function useFunders(grantId: string) {
     };
   }, [fetchFunders]);
 
-  return { funders, isLoading, refetch: fetchFunders };
+  return {
+    funders,
+    visibleFunders: funders.slice(0, visibleCount),
+    hasMore: funders.length > visibleCount,
+    loadMore,
+    isLoading,
+    refetch: fetchFunders,
+  };
 }
 
