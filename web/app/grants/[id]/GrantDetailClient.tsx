@@ -162,7 +162,14 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
     applyMutation
   } = useOptimisticGrant(data?.grant ?? {} as Grant, data?.milestones ?? []);
 
-  const { funders, isLoading: fundersLoading, refetch: refetchFunders } = useFunders(grantId);
+  const {
+    funders,
+    visibleFunders,
+    hasMore: hasMoreFunders,
+    loadMore: loadMoreFunders,
+    isLoading: fundersLoading,
+    refetch: refetchFunders,
+  } = useFunders(grantId);
   const [fundModalOpen, setFundModalOpen] = useState(false);
   const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
@@ -461,22 +468,33 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
                 Be the first to fund this grant
               </p>
             ) : (
-              <ul className="space-y-2">
-                {funders.map((f) => (
-                  <li
-                    key={f.address}
-                    className="flex items-center justify-between gap-2 font-mono text-xs"
+              <>
+                <ul className="space-y-2">
+                  {visibleFunders.map((f) => (
+                    <li
+                      key={f.address}
+                      className="flex items-center justify-between gap-2 font-mono text-xs"
+                    >
+                      <WalletAddress address={f.address} showCopyIcon={false} />
+                      <span className="text-text-primary shrink-0">
+                        {formatTokenAmount(f.amount, decimals, {
+                          symbol,
+                          showSymbol: true,
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {hasMoreFunders && (
+                  <button
+                    type="button"
+                    onClick={loadMoreFunders}
+                    className="mt-3 w-full font-mono text-xs text-accent-secondary hover:underline"
                   >
-                    <WalletAddress address={f.address} showCopyIcon={false} />
-                    <span className="text-text-primary shrink-0">
-                      {formatTokenAmount(f.amount, decimals, {
-                        symbol,
-                        showSymbol: true,
-                      })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    Show more funders ({funders.length - visibleFunders.length} more)
+                  </button>
+                )}
+              </>
             )}
           </section>
 

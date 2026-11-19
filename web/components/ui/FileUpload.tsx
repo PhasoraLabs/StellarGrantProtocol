@@ -36,7 +36,7 @@ export function FileUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const previewUrlRef = useRef<string | null>(null);
   const cancelledRef = useRef(false);
-  const { upload } = useIPFS();
+  const { upload, uploadProgress } = useIPFS();
 
   useEffect(() => {
     return () => {
@@ -263,10 +263,20 @@ export function FileUpload({
         {uploadState === "uploading" && (
           <div className="w-full" onClick={(e) => e.stopPropagation()}>
             <p className="mb-3 text-center font-mono text-sm text-text-muted">
-              Uploading to IPFS…
+              Uploading to IPFS… {uploadProgress}%
             </p>
-            <div className="h-1.5 w-full overflow-hidden bg-border-color">
-              <div className="shimmer h-full w-full" />
+            <div
+              className="h-1.5 w-full overflow-hidden bg-border-color"
+              role="progressbar"
+              aria-label="Upload progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={uploadProgress}
+            >
+              <div
+                className="h-full bg-accent-primary transition-[width]"
+                style={{ width: `${uploadProgress}%` }}
+              />
             </div>
             <div className="mt-3 flex justify-center">
               <button
