@@ -52,6 +52,14 @@ export async function fetchGrantWithMilestones(grantId: string): Promise<GrantWi
   return { ...grant, reviewers };
 }
 
+/** Approved vs total milestones, with a 0–100 percentage for a progress bar. */
+export function getMilestoneProgress(milestones: Pick<Milestone, "approved">[]) {
+  const total = milestones.length;
+  const approved = milestones.filter((m) => m.approved).length;
+  const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
+  return { approved, total, percent };
+}
+
 export function useMilestone(grantId: string, milestoneIdx: number): UseMilestoneReturn {
   const { address } = useWalletStore();
 

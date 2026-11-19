@@ -9,6 +9,7 @@ import { X, ExternalLink, RefreshCw, Loader2 } from "lucide-react";
 import { FundingProgress } from "@/components/grants/FundingProgress";
 import { useWalletStore } from "@/lib/store/walletStore";
 import { useFundGrant } from "@/hooks/useFundGrant";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   fetchGrantFundingState,
   remainingCapacity,
@@ -64,6 +65,7 @@ interface FundGrantModalProps {
 const AUTO_CLOSE_MS = 3000;
 
 export function FundGrantModal({ grant, open, onClose, onSuccess }: FundGrantModalProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const { address } = useWalletStore();
   const {
     fund,
@@ -192,6 +194,8 @@ export function FundGrantModal({ grant, open, onClose, onSuccess }: FundGrantMod
 
           {/* Dialog */}
           <motion.div
+            ref={trapRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="fund-grant-title"

@@ -28,7 +28,12 @@ export interface UseNotificationsResult {
   clearAll: () => void;
 }
 
-type StoredNotification = Omit<Notification, "timestamp"> & { timestamp: string };
+/** Label for the unread badge: the count, capped at "99+". */
+export function formatUnreadBadge(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+type StoredNotification =Omit<Notification, "timestamp"> & { timestamp: string };
 
 function loadStored(): Notification[] {
   if (typeof window === "undefined") return [];

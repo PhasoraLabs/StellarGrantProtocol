@@ -14,17 +14,31 @@ interface Notification {
 interface SocketInstance {
   on: (event: string, callback: (data: Notification | unknown) => void) => void;
   disconnect: () => void;
+  io?: { on: (event: string, callback: (data: unknown) => void) => void };
 }
+
+export type SocketStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
+
+// Exponential backoff with jitter, capped at 30s; retries until the socket reconnects.
+export const RECONNECT_OPTIONS = {
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 30_000,
+  randomizationFactor: 0.5,
+} as const;
 
 interface SocketContextType {
   socket: SocketInstance | null;
   connected: boolean;
+  status: SocketStatus;
   lastNotification: Notification | null;
 }
 
 const SocketContext = createContext<SocketContextType>({
   socket: null,
   connected: false,
+  status: "disconnected",
   lastNotification: null,
 });
 
@@ -34,6 +48,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const { address } = useWalletStore();
   const [socket, setSocketState] = useState<SocketInstance | null>(null);
   const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState<SocketStatus>("disconnected");
   const [lastNotification, setLastNotification] = useState<Notification | null>(null);
   const socketRef = useRef<SocketInstance | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,6 +68,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         scheduleStateUpdate(() => {
           setSocketState(null);
           setConnected(false);
+          setStatus("disconnected");
         });
       }
       return;
@@ -62,18 +78,24 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const newSocket = io(socketUrl, {
       query: { address },
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
+      ...RECONNECT_OPTIONS,
     }) as unknown as SocketInstance;
+    scheduleStateUpdate(() => setStatus("connecting"));
 
     newSocket.on("connect", () => {
       setConnected(true);
+      setStatus("connected");
       console.log("WebSocket connected");
     });
 
     newSocket.on("disconnect", () => {
       setConnected(false);
+      setStatus("reconnecting");
       console.log("WebSocket disconnected");
+    });
+
+    newSocket.io?.on("reconnect_attempt", () => {
+      setStatus("reconnecting");
     });
 
     newSocket.on("notification", (data: unknown) => {
@@ -102,7 +124,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [address]);
 
   return (
-    <SocketContext.Provider value={{ socket, connected, lastNotification }}>
+    <SocketContext.Provider value={{ socket, connected, status, lastNotification }}>
       {children}
     </SocketContext.Provider>
   );
