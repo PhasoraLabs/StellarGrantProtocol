@@ -1224,7 +1224,7 @@ impl StellarGrantsContract {
         multi_grant::filter_grants(&env, filter, offset, limit)
     }
 
-    /// Add a reviewer to multiple grants in one call.
+    /// Add a reviewer to at most MAX_PAGE_SIZE grants in one call.
     pub fn batch_add_reviewer(
         env: Env,
         owner: Address,
@@ -1235,7 +1235,7 @@ impl StellarGrantsContract {
         multi_grant::batch_add_reviewer(&env, &owner, grant_ids, &reviewer)
     }
 
-    /// Remove a reviewer from multiple grants.
+    /// Remove a reviewer from at most MAX_PAGE_SIZE grants.
     pub fn batch_remove_reviewer(
         env: Env,
         owner: Address,
@@ -1251,7 +1251,7 @@ impl StellarGrantsContract {
         multi_grant::total_escrow_balance(&env, &owner, &token)
     }
 
-    /// Get the n most recently active grants for an owner.
+    /// Get up to MAX_PAGE_SIZE of the most recently active grants for an owner.
     pub fn get_recent_grants(env: Env, owner: Address, n: u32) -> Vec<u64> {
         multi_grant::recent_grants(&env, &owner, n)
     }
