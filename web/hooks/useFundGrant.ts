@@ -43,6 +43,20 @@ function parseBalance(raw: string): bigint {
   return BigInt(whole) * STROOP + BigInt(paddedFrac);
 }
 
+/** Returns an error message when the amount cannot be funded, otherwise null. */
+export function validateFundAmount(
+  amount: bigint,
+  token: string,
+  balance: WalletBalance | null,
+): string | null {
+  if (amount <= 0n) return "Amount must be greater than zero";
+  if (balance) {
+    const available = token === "native" ? balance.xlm : (balance.tokens[token] ?? 0n);
+    if (amount > available) return "Amount exceeds your wallet balance";
+  }
+  return null;
+}
+
 export function useFundGrant(): UseFundGrantReturn {
   const { address } = useWalletStore();
   const queryClient = useQueryClient();
@@ -102,6 +116,14 @@ export function useFundGrant(): UseFundGrantReturn {
           variant: "error",
         });
         throw new Error(errMsg);
+      }
+
+      const validationError = validateFundAmount(_params.amount, _params.token, walletBalance);
+      if (validationError) {
+        setError(validationError);
+        setTxStatus("error");
+        toast({ title: "Invalid amount", description: validationError, variant: "error" });
+        throw new Error(validationError);
       }
 
       setTxStatus("pending");
@@ -168,7 +190,7 @@ export function useFundGrant(): UseFundGrantReturn {
         throw err;
       }
     },
-    [address, queryClient],
+    [address, queryClient, walletBalance],
   );
 
   const reset = useCallback(() => {
