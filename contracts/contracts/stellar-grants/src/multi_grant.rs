@@ -1,3 +1,4 @@
+use crate::constants::MAX_PAGE_SIZE;
 use crate::errors::ContractError;
 use crate::events::Events;
 use crate::storage::keys::{DataKey, GrantKey};
@@ -108,11 +109,7 @@ pub fn filter_grants(env: &Env, filter: PortfolioFilter, offset: u32, limit: u32
 
     let mut results = Vec::new(env);
     let len = grant_ids.len() as u32;
-    let end = if offset + limit > len {
-        len
-    } else {
-        offset + limit
-    };
+    let end = offset.saturating_add(limit).min(len);
 
     if offset < len {
         for i in offset..end {
@@ -149,6 +146,10 @@ pub fn batch_add_reviewer(
     grant_ids: Vec<u64>,
     reviewer: &Address,
 ) -> Result<MultiGrantBatchResult, ContractError> {
+    if grant_ids.len() > MAX_PAGE_SIZE {
+        return Err(ContractError::BatchTooLarge);
+    }
+
     let mut result = MultiGrantBatchResult {
         successful: 0,
         failed: 0,
@@ -178,6 +179,10 @@ pub fn batch_remove_reviewer(
     grant_ids: Vec<u64>,
     reviewer: &Address,
 ) -> Result<MultiGrantBatchResult, ContractError> {
+    if grant_ids.len() > MAX_PAGE_SIZE {
+        return Err(ContractError::BatchTooLarge);
+    }
+
     let mut result = MultiGrantBatchResult {
         successful: 0,
         failed: 0,
@@ -224,7 +229,8 @@ pub fn total_escrow_balance(env: &Env, owner: &Address, token: &Address) -> i128
     total
 }
 
-/// Return the n most recently active grants for an owner.
+/// Return the n most recently active grants among the owner's latest indexed
+/// grants, bounded to MAX_PAGE_SIZE entries.
 pub fn recent_grants(env: &Env, owner: &Address, n: u32) -> Vec<u64> {
     let owner_index_key = DataKey::Grant(GrantKey::OwnerIndex(owner.clone()));
     let grant_ids: Vec<u64> = env
@@ -236,7 +242,8 @@ pub fn recent_grants(env: &Env, owner: &Address, n: u32) -> Vec<u64> {
     // Collect grants with timestamps
     let mut grants_with_time: Vec<(u64, u64)> = Vec::new(env);
 
-    for i in 0..grant_ids.len() {
+    let start = grant_ids.len().saturating_sub(MAX_PAGE_SIZE);
+    for i in start..grant_ids.len() {
         if let Some(grant_id) = grant_ids.get(i) {
             if let Some(grant) = Storage::get_grant(env, grant_id) {
                 grants_with_time.push_back((grant_id, grant.timestamp));
@@ -260,11 +267,7 @@ pub fn recent_grants(env: &Env, owner: &Address, n: u32) -> Vec<u64> {
 
     // Extract grant IDs and limit to n
     let mut result = Vec::new(env);
-    let limit = if n < grants_with_time.len() {
-        n
-    } else {
-        grants_with_time.len()
-    };
+    let limit = n.min(MAX_PAGE_SIZE).min(grants_with_time.len());
 
     for i in 0..limit {
         if let Some((grant_id, _)) = grants_with_time.get(i) {
@@ -408,6 +411,33 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_grants_large_limit_does_not_wrap() {
+        let env = soroban_sdk::Env::default();
+        crate::test_utils::register_contract(&env);
+        crate::test_utils::in_contract(&env, || {
+            let owner = Address::generate(&env);
+            for id in 1..=8 {
+                create_grant(&env, id, &owner, Vec::new(&env), GrantStatus::Active, 0);
+            }
+
+            let filter = PortfolioFilter {
+                owner: Some(owner),
+                status: None,
+                token: None,
+                category_id: None,
+                min_amount: None,
+                max_amount: None,
+            };
+            let results = filter_grants(&env, filter, 5, u32::MAX - 2);
+
+            assert_eq!(results.len(), 3);
+            assert_eq!(results.get(0), Some(6));
+            assert_eq!(results.get(1), Some(7));
+            assert_eq!(results.get(2), Some(8));
+        });
+    }
+
+    #[test]
     fn test_total_escrow_balance() {
         let env = soroban_sdk::Env::default();
         crate::test_utils::register_contract(&env);
@@ -430,6 +460,27 @@ mod tests {
 
             let recent = recent_grants(&env, &owner, 5);
             assert_eq!(recent.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_recent_grants_working_set_is_bounded() {
+        let env = soroban_sdk::Env::default();
+        crate::test_utils::register_contract(&env);
+        let owner = Address::generate(&env);
+        let total = MAX_PAGE_SIZE * 2 + 10;
+        for id in 1..=total as u64 {
+            crate::test_utils::in_contract(&env, || {
+                create_grant(&env, id, &owner, Vec::new(&env), GrantStatus::Active, 0);
+            });
+        }
+
+        crate::test_utils::in_contract(&env, || {
+            let recent = recent_grants(&env, &owner, u32::MAX);
+
+            assert_eq!(recent.len(), MAX_PAGE_SIZE);
+            assert_eq!(recent.get(0), Some((total - MAX_PAGE_SIZE + 1) as u64));
+            assert_eq!(recent.get(MAX_PAGE_SIZE - 1), Some(total as u64));
         });
     }
 
@@ -629,6 +680,29 @@ mod tests {
             let result = batch_remove_reviewer(&env, &owner, grant_ids, &reviewer).unwrap();
             assert_eq!(result.successful, 0);
             assert_eq!(result.failed, 1);
+        });
+    }
+
+    #[test]
+    fn test_batch_reviewer_functions_reject_oversized_input() {
+        let env = soroban_sdk::Env::default();
+        crate::test_utils::register_contract(&env);
+        crate::test_utils::in_contract(&env, || {
+            let owner = Address::generate(&env);
+            let reviewer = Address::generate(&env);
+            let mut grant_ids = Vec::new(&env);
+            for id in 0..=MAX_PAGE_SIZE {
+                grant_ids.push_back(id as u64);
+            }
+
+            assert_eq!(
+                batch_add_reviewer(&env, &owner, grant_ids.clone(), &reviewer),
+                Err(ContractError::BatchTooLarge)
+            );
+            assert_eq!(
+                batch_remove_reviewer(&env, &owner, grant_ids, &reviewer),
+                Err(ContractError::BatchTooLarge)
+            );
         });
     }
 

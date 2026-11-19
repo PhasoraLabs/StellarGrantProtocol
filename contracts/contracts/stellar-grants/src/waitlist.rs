@@ -1,7 +1,8 @@
+use crate::constants::MAX_WAITLIST_SIZE;
 use crate::events::Events;
 use crate::rate_limit;
 use crate::storage::Storage;
-use crate::types::{ContractError, RateLimitAction, WaitlistConfig, WaitlistEntry};
+use crate::types::{ContractError, GrantStatus, RateLimitAction, WaitlistConfig, WaitlistEntry};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Configure the waitlist for a grant. Owner only.
@@ -19,6 +20,14 @@ pub fn configure(
         return Err(ContractError::Unauthorized);
     }
 
+    if config.max_waitlist_size == 0
+        || config.max_waitlist_size > MAX_WAITLIST_SIZE
+        || config.max_slots == 0
+        || config.max_slots > MAX_WAITLIST_SIZE
+    {
+        return Err(ContractError::InvalidInput);
+    }
+
     Storage::set_waitlist_config(env, grant_id, &config);
     Events::emit_waitlist_configured(env, grant_id, config.max_waitlist_size, config.auto_promote);
     Ok(())
@@ -27,6 +36,11 @@ pub fn configure(
 /// Join the waitlist for a grant. Returns the position (1-indexed).
 pub fn join(env: &Env, applicant: &Address, grant_id: u64) -> Result<u32, ContractError> {
     applicant.require_auth();
+
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.status != GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
 
     let config = Storage::get_waitlist_config(env, grant_id).ok_or(ContractError::InvalidInput)?;
 
@@ -158,6 +172,9 @@ pub fn promote_next(
     if grant.owner != *caller {
         return Err(ContractError::Unauthorized);
     }
+    if grant.status != GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
 
     let config = match Storage::get_waitlist_config(env, grant_id) {
         Some(c) => c,
@@ -284,6 +301,89 @@ mod tests {
             last_action_at: 0,
         };
         Storage::set_contributor(env, address.clone(), &profile);
+    }
+
+    #[test]
+    fn test_configure_rejects_invalid_waitlist_limits() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+        let owner = Address::generate(&env);
+        let grant_id = 1;
+
+        env.as_contract(&contract_id, || setup_grant(&env, grant_id, &owner));
+
+        let mut config = WaitlistConfig {
+            grant_id,
+            max_slots: 1,
+            max_waitlist_size: 1,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+        for (max_slots, max_waitlist_size) in [
+            (1, 0),
+            (1, MAX_WAITLIST_SIZE + 1),
+            (0, 1),
+            (MAX_WAITLIST_SIZE + 1, 1),
+        ] {
+            config.max_slots = max_slots;
+            config.max_waitlist_size = max_waitlist_size;
+            let result = env.as_contract(&contract_id, || {
+                configure(&env, &owner, grant_id, config.clone())
+            });
+            assert_eq!(result, Err(ContractError::InvalidInput));
+        }
+
+        config.max_slots = MAX_WAITLIST_SIZE;
+        config.max_waitlist_size = MAX_WAITLIST_SIZE;
+        let result = env.as_contract(&contract_id, || configure(&env, &owner, grant_id, config));
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn test_waitlist_actions_reject_non_active_grants() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+        let owner = Address::generate(&env);
+        let applicant = Address::generate(&env);
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config).unwrap();
+            setup_contributor(&env, &applicant, 500);
+
+            let mut grant = Storage::get_grant(&env, grant_id).unwrap();
+            grant.status = GrantStatus::Cancelled;
+            Storage::set_grant(&env, grant_id, &grant);
+        });
+
+        let join_result = env.as_contract(&contract_id, || join(&env, &applicant, grant_id));
+        assert_eq!(join_result, Err(ContractError::InvalidState));
+
+        env.as_contract(&contract_id, || {
+            let mut grant = Storage::get_grant(&env, grant_id).unwrap();
+            grant.status = GrantStatus::Active;
+            Storage::set_grant(&env, grant_id, &grant);
+            join(&env, &applicant, grant_id).unwrap();
+
+            grant.status = GrantStatus::Completed;
+            Storage::set_grant(&env, grant_id, &grant);
+        });
+
+        let promote_result = env.as_contract(&contract_id, || promote_next(&env, &owner, grant_id));
+        assert_eq!(promote_result, Err(ContractError::InvalidState));
+        env.as_contract(&contract_id, || {
+            assert_eq!(get_waitlist(&env, grant_id).len(), 1);
+        });
     }
 
     #[test]
