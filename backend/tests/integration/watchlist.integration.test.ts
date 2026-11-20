@@ -42,6 +42,19 @@ describe("watchlist routes", () => {
     keypair: Keypair,
   ) => request(app)[method](path).set(signedUserHeaders(keypair, method, path));
 
+  it("requires signed authentication even when a caller address header is present", async () => {
+    const keypair = Keypair.random();
+    const listResponse = await request(app)
+      .get("/watchlist")
+      .set("x-user-address", keypair.publicKey());
+    const addResponse = await request(app)
+      .post("/watchlist/1")
+      .set("x-user-address", keypair.publicKey());
+
+    expect(listResponse.status).toBe(401);
+    expect(addResponse.status).toBe(401);
+  });
+
   it("returns an empty list for a user with no watchlist entries", async () => {
     const keypair = Keypair.random();
     const response = await signedRequest("get", "/watchlist", keypair);
