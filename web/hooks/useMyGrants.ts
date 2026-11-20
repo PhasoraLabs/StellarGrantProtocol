@@ -21,6 +21,7 @@ interface MyGrants {
 interface UseMyGrantsResult {
   data: MyGrants | null;
   isLoading: boolean;
+  isEmpty: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
 }
@@ -59,9 +60,12 @@ export function useMyGrants(): UseMyGrantsResult {
     staleTime: 30_000,
   });
 
+  const hasGrants =
+    data?.owned?.length > 0 || data?.funded?.length > 0;
   return {
     data: data ?? null,
     isLoading,
+    isEmpty: !hasGrants,
     error: error ?? null,
     refetch: async () => {
       await refetch();
