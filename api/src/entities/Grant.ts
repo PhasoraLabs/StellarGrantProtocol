@@ -1,10 +1,13 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryColumn, UpdateDateColumn, ManyToMany, JoinTable } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryColumn, UpdateDateColumn, ManyToMany, JoinTable } from "typeorm";
 import { MilestoneProof } from "./MilestoneProof";
 import { Milestone } from "./Milestone";
 import { Community } from "./Community";
 import { GrantReviewer } from "./GrantReviewer";
 
 @Entity({ name: "grants" })
+@Index("IDX_grants_status", ["status"])
+@Index("IDX_grants_recipient", ["recipient"])
+@Index("IDX_grants_updated_at", ["updatedAt"])
 export class Grant {
   @PrimaryColumn({ type: "int" })
   id!: number;
