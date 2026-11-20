@@ -8,6 +8,8 @@ import { buildMilestoneProofRouter } from "./routes/milestone-proof";
 import { GrantSyncService } from "./services/grant-sync-service";
 import { SignatureService } from "./services/signature-service";
 import { SorobanContractClient } from "./soroban/types";
+import { buildLeaderboardRouter } from "./routes/leaderboard";
+import { buildSearchRouter } from "./routes/search";
 
 export const createApp = (dataSource: DataSource, sorobanClient: SorobanContractClient) => {
   const app = express();
@@ -21,6 +23,8 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
   app.use("/grants", buildGrantRouter(grantRepo, grantSyncService));
+  app.use("/leaderboard", buildLeaderboardRouter(grantRepo));
+  app.use("/search", buildSearchRouter(grantRepo));
   app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

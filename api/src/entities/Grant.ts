@@ -9,6 +9,9 @@ export class Grant {
   @Column({ type: "varchar", length: 200 })
   title!: string;
 
+  @Column({ type: "text", default: "" })
+  description!: string;
+
   @Column({ type: "varchar", length: 30 })
   status!: string;
 
