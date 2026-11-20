@@ -1,9 +1,11 @@
 import { Keypair } from "@stellar/stellar-sdk";
 import request from "supertest";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { DataSource } from "typeorm";
 import { createApp } from "../../src/app";
 import { buildDataSource } from "../../src/db/data-source";
+import { Grant } from "../../src/entities/Grant";
+import { MilestoneProof } from "../../src/entities/MilestoneProof";
 import { SignatureService } from "../../src/services/signature-service";
 import { MockSorobanContractClient } from "../../src/soroban/mock-client";
 
@@ -21,6 +23,10 @@ describe("API e2e", () => {
     if (dataSource?.isInitialized) {
       await dataSource.destroy();
     }
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("fetches grants from mock Soroban and caches them", async () => {
@@ -55,6 +61,37 @@ describe("API e2e", () => {
     expect(response.body.data).toHaveLength(1);
     expect(response.body.meta.page).toBe(2);
     expect(response.body.meta.limit).toBe(1);
+  });
+
+  it("caches stats responses and sends a short cache lifetime", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const grantRepo = dataSource.getRepository(Grant);
+    const proofRepo = dataSource.getRepository(MilestoneProof);
+    const grantCount = vi.spyOn(grantRepo, "count");
+    const proofCount = vi.spyOn(proofRepo, "count");
+    const grantFind = vi.spyOn(grantRepo, "find");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+
+    const firstResponse = await request(app).get("/stats");
+    now.mockReturnValue(30_999);
+    const cachedResponse = await request(app).get("/stats");
+
+    expect(firstResponse.status).toBe(200);
+    expect(firstResponse.headers["cache-control"]).toBe("public, max-age=30");
+    expect(cachedResponse.status).toBe(200);
+    expect(cachedResponse.headers["cache-control"]).toBe("public, max-age=30");
+    expect(cachedResponse.body).toEqual(firstResponse.body);
+    expect(grantCount).toHaveBeenCalledOnce();
+    expect(proofCount).toHaveBeenCalledOnce();
+    expect(grantFind).toHaveBeenCalledOnce();
+
+    now.mockReturnValue(31_001);
+    const expiredResponse = await request(app).get("/stats");
+
+    expect(expiredResponse.status).toBe(200);
+    expect(grantCount).toHaveBeenCalledTimes(2);
+    expect(proofCount).toHaveBeenCalledTimes(2);
+    expect(grantFind).toHaveBeenCalledTimes(2);
   });
 
   it("generates and returns a request ID when none is provided", async () => {

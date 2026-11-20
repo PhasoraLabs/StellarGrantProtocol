@@ -183,6 +183,10 @@ export const createApp = (
     ),
   );
   app.use("/search", buildSearchRouter(dataSource));
+  app.use(
+    "/stats",
+    buildStatsRouter(grantRepo, proofRepo, responseCacheService),
+  );
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
   app.use("/profiles", buildProfilesRouter(contributorRepo, grantRepo));
   app.use("/my-donations", buildMyDonationsRouter(dataSource, signedUserAuth));
