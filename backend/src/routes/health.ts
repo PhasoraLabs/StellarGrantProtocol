@@ -1,8 +1,24 @@
-import { Router } from "express";
+import { Request, Response, Router } from "express";
 import { DataSource } from "typeorm";
 import Redis from "ioredis";
 import { SorobanContractClient } from "../soroban/types";
 import { env } from "../config/env";
+
+const SOROBAN_RPC_TIMEOUT_MS = 5_000;
+
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`Operation timed out after ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
 
 export const buildHealthRouter = (
   dataSource: DataSource,
@@ -16,7 +32,7 @@ export const buildHealthRouter = (
   });
 
   // Readiness: verify all dependencies are reachable
-  router.get("/readiness", async (_req, res) => {
+  const readinessHandler = async (_req: Request, res: Response) => {
     const checks: Record<string, "ok" | "fail"> = {};
     let healthy = true;
 
@@ -46,7 +62,10 @@ export const buildHealthRouter = (
 
     // Soroban RPC
     try {
-      await sorobanClient.getLatestLedger();
+      await withTimeout(
+        sorobanClient.getLatestLedger(),
+        SOROBAN_RPC_TIMEOUT_MS,
+      );
       checks.soroban = "ok";
     } catch {
       checks.soroban = "fail";
@@ -54,7 +73,10 @@ export const buildHealthRouter = (
     }
 
     res.status(healthy ? 200 : 503).json({ status: healthy ? "ok" : "degraded", checks });
-  });
+  };
+
+  router.get("/", readinessHandler);
+  router.get("/readiness", readinessHandler);
 
   return router;
 };
