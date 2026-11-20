@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { buildDataSource } from "./db/data-source";
 import { MockSorobanContractClient } from "./soroban/mock-client";
 import { RealSorobanClient } from "./soroban/real-client";
+import { registerGracefulShutdown } from "./utils/graceful-shutdown";
 
 const bootstrap = async () => {
   validateEnvOnStartup();
@@ -18,6 +19,8 @@ const bootstrap = async () => {
 
   const app = createApp(dataSource, sorobanClient);
   const server = createServer(app);
+
+  registerGracefulShutdown(server, dataSource);
 
   server.listen(env.port, () => {
     // Keep startup log concise for container logs.
