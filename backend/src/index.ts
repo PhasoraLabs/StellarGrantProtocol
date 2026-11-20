@@ -12,8 +12,7 @@ const bootstrap = async () => {
   const dataSource = buildDataSource();
   await dataSource.initialize();
 
-  const useMock = process.env.USE_MOCK_SOROBAN === "true";
-  const sorobanClient = useMock
+  const sorobanClient = env.useMockSoroban
     ? new MockSorobanContractClient()
     : new RealSorobanClient();
 

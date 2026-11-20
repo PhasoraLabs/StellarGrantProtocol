@@ -8,6 +8,7 @@ import { GrantReviewer } from "../entities/GrantReviewer";
 import { GrantSyncService } from "../services/grant-sync-service";
 import { SignatureService } from "../services/signature-service";
 import { ResponseCacheService, responseCacheKeys } from "../services/response-cache";
+import { NotFoundError } from "../utils/errors";
 
 const feedbackSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -244,8 +245,7 @@ export const buildGrantRouter = (
       const grant = await grantRepo.findOne({ where: { id } });
 
       if (!grant) {
-        res.status(404).json({ error: "Grant not found" });
-        return;
+        throw new NotFoundError("Grant not found");
       }
 
       const lang = req.header("Accept-Language");
