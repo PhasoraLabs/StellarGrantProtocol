@@ -32,6 +32,31 @@ describe("API e2e", () => {
     expect(response.body.data[0].title).toBe("Open Source Grants Q2");
   });
 
+  it.each([
+    "limit=not-a-number",
+    "limit=0",
+    "limit=101",
+    "page=not-a-number",
+    "page=0",
+    "page=1.5",
+  ])("rejects invalid grant pagination query %s", async (query) => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app).get(`/grants?${query}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Validation failed");
+  });
+
+  it("uses validated page and limit values for grant pagination", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app).get("/grants?page=2&limit=1");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.meta.page).toBe(2);
+    expect(response.body.meta.limit).toBe(1);
+  });
+
   it("generates and returns a request ID when none is provided", async () => {
     const app = createApp(dataSource, sorobanClient);
     const response = await request(app).get("/health");
