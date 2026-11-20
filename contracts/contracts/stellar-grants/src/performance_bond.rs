@@ -656,6 +656,118 @@ mod tests {
         });
     }
 
+    // ── End-to-end: grant creation → funding → bond → missed milestone → slash ──
+
+    /// Drives the whole lifecycle through the public contract client (no direct
+    /// storage seeding): a bonded grant whose milestone is never approved before
+    /// the bond window closes is slashed to its funders in proportion to what
+    /// each contributed.
+    #[test]
+    fn test_e2e_missed_milestone_slashes_bond_to_funders() {
+        use crate::StellarGrantsContractClient;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        let stellar_asset = StellarAssetClient::new(&env, &token_id);
+        let token_client = token::Client::new(&env, &token_id);
+
+        let owner = Address::generate(&env);
+        let guarantor = Address::generate(&env);
+        let funder_a = Address::generate(&env);
+        let funder_b = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        stellar_asset.mint(&funder_a, &600);
+        stellar_asset.mint(&funder_b, &400);
+        stellar_asset.mint(&guarantor, &BOND_AMOUNT);
+
+        // 1. Grant creation and funding (60/40 split).
+        let grant_id = client.grant_create(
+            &owner,
+            &String::from_str(&env, "Bonded Grant"),
+            &String::from_str(&env, "Slashing end-to-end"),
+            &token_id,
+            &1_000,
+            &1_000,
+            &1,
+            &Vec::from_array(&env, [reviewer.clone()]),
+        );
+        client.grant_fund(&grant_id, &funder_a, &600);
+        client.grant_fund(&grant_id, &funder_b, &400);
+
+        // 2. Owner requires a bond; the guarantor posts it.
+        let bond_id = client.require_bond(&owner, &grant_id, &token_id, &BOND_AMOUNT, &TTL_LEDGERS);
+        assert_eq!(
+            client.get_bond(&grant_id).unwrap().status,
+            BondStatus::Pending
+        );
+        client.post_bond(&guarantor, &bond_id);
+        assert!(client.has_active_bond(&grant_id));
+        assert_eq!(token_client.balance(&guarantor), 0);
+
+        // 3. The contributor submits, but no reviewer ever approves it.
+        client.milestone_submit(
+            &grant_id,
+            &0,
+            &owner,
+            &String::from_str(&env, "Work in progress"),
+            &String::from_str(&env, "https://example.com/proof"),
+        );
+
+        // 4. Inside the bond window the milestone is not yet "missed": slashing
+        //    is rejected and the bond stays escrowed.
+        let reason = String::from_str(&env, "milestone missed");
+        let early = client.try_claim_bond(&funder_a, &grant_id, &reason);
+        assert_eq!(early, Err(Ok(ContractError::InvalidState)));
+        assert!(client.has_active_bond(&grant_id));
+
+        // 5. The deadline passes with the milestone still unapproved.
+        let expires_at = client.get_bond(&grant_id).unwrap().expires_at;
+        env.ledger().with_mut(|l| l.timestamp = expires_at + 1);
+
+        // A non-funder cannot slash the bond.
+        let stranger = Address::generate(&env);
+        assert_eq!(
+            client.try_claim_bond(&stranger, &grant_id, &reason),
+            Err(Ok(ContractError::Unauthorized))
+        );
+
+        // 6. A funder slashes the bond: the guarantor's stake is distributed
+        //    pro rata, the bond is terminal, and the claim is recorded.
+        let claim = client.claim_bond(&funder_a, &grant_id, &reason);
+        assert_eq!(claim.bond_id, bond_id);
+        assert_eq!(claim.claimed_by, funder_a);
+        assert_eq!(claim.claim_reason, reason);
+        assert_eq!(claim.payout_amount, 600);
+        assert_eq!(claim.claimed_at, expires_at + 1);
+
+        assert_eq!(token_client.balance(&funder_a), 600);
+        assert_eq!(token_client.balance(&funder_b), 400);
+        assert_eq!(token_client.balance(&guarantor), 0);
+
+        let bond = client.get_bond(&grant_id).unwrap();
+        assert_eq!(bond.status, BondStatus::Claimed);
+        assert!(!client.has_active_bond(&grant_id));
+
+        // The slash must not be replayable, nor the bond releasable afterwards.
+        assert_eq!(
+            client.try_claim_bond(&funder_b, &grant_id, &reason),
+            Err(Ok(ContractError::BondNotActive))
+        );
+        let balance_after = token_client.balance(&contract_id);
+        assert_eq!(
+            env.as_contract(&contract_id, || release_bond(&env, grant_id)),
+            Err(ContractError::BondNotActive)
+        );
+        assert_eq!(token_client.balance(&contract_id), balance_after);
+    }
+
     #[test]
     fn test_proportional_share_helper() {
         assert_eq!(proportional_share(600, 1_000, 1_000), 600);

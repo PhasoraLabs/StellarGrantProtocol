@@ -311,6 +311,138 @@ mod tests {
         }
     }
 
+    /// Mutate the stored grant the way a fund/payout/cancel would, without
+    /// touching the ledger, so tests can place a state change in the exact
+    /// ledger a snapshot is taken in.
+    fn change_grant(env: &Env, f: impl FnOnce(&mut Grant)) {
+        let mut grant = Storage::get_grant(env, 1).unwrap();
+        f(&mut grant);
+        Storage::set_grant(env, 1, &grant);
+    }
+
+    fn set_ledger(env: &Env, sequence: u32, timestamp: u64) {
+        env.ledger().with_mut(|ledger| {
+            ledger.sequence_number = sequence;
+            ledger.timestamp = timestamp;
+        });
+    }
+
+    // Snapshots read grant state at the moment `capture` runs. Within one
+    // ledger the contract has no ledger-level ordering to fall back on, so
+    // call order is the only boundary: a change made before `capture` is in
+    // the snapshot, a change made after it is not.
+
+    /// A balance change applied *before* `capture` in the same ledger is
+    /// visible in the snapshot ("after" semantics).
+    #[test]
+    fn snapshot_includes_balance_change_made_earlier_in_same_ledger() {
+        let (env, contract, owner) = setup();
+        set_ledger(&env, 50, 1_000);
+        env.as_contract(&contract, || {
+            change_grant(&env, |g| g.escrow_balance = 40);
+
+            let id = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+            let snapshot = get_snapshot(&env, 1, id).unwrap();
+
+            assert_eq!(snapshot.escrow_balance, 40);
+            assert_eq!(snapshot.captured_at_ledger, 50);
+            assert_eq!(snapshot.captured_at, 1_000);
+        });
+    }
+
+    /// A balance change applied *after* `capture` in the same ledger is not
+    /// retroactively written into the snapshot ("before" semantics).
+    #[test]
+    fn snapshot_excludes_balance_change_made_later_in_same_ledger() {
+        let (env, contract, owner) = setup();
+        set_ledger(&env, 50, 1_000);
+        env.as_contract(&contract, || {
+            let id = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+
+            change_grant(&env, |g| g.escrow_balance = 40);
+
+            let snapshot = get_snapshot(&env, 1, id).unwrap();
+            assert_eq!(snapshot.escrow_balance, 100);
+            assert_eq!(Storage::get_grant(&env, 1).unwrap().escrow_balance, 40);
+        });
+    }
+
+    /// Two snapshots straddling a change in one ledger share a ledger
+    /// number and timestamp but still record different state, and the diff
+    /// reports exactly the fields that moved.
+    #[test]
+    fn same_ledger_snapshots_straddle_a_change_and_diff_reports_it() {
+        let (env, contract, owner) = setup();
+        set_ledger(&env, 50, 1_000);
+        env.as_contract(&contract, || {
+            let before = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+            change_grant(&env, |g| {
+                g.escrow_balance = 40;
+                g.milestones_paid_out = 1;
+                g.status = GrantStatus::Completed;
+            });
+            let after = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+
+            let a = get_snapshot(&env, 1, before).unwrap();
+            let b = get_snapshot(&env, 1, after).unwrap();
+            assert_eq!(a.captured_at_ledger, b.captured_at_ledger);
+            assert_eq!(a.captured_at, b.captured_at);
+            assert_eq!((a.escrow_balance, a.milestones_paid_out), (100, 0));
+            assert_eq!((b.escrow_balance, b.milestones_paid_out), (40, 1));
+            assert_eq!(a.grant_status, GrantStatus::Active);
+            assert_eq!(b.grant_status, GrantStatus::Completed);
+
+            let changes = diff_snapshots(&env, 1, before, after);
+            assert_eq!(changes.len(), 3);
+            assert!(changes.contains(Symbol::new(&env, "escrow_balance")));
+            assert!(changes.contains(Symbol::new(&env, "milestones_paid_out")));
+            assert!(changes.contains(Symbol::new(&env, "grant_status")));
+            // Insertion order is preserved by `latest_snapshot`.
+            assert_eq!(latest_snapshot(&env, 1).unwrap().id, after);
+        });
+    }
+
+    /// Re-capturing with no intervening change in the same ledger yields an
+    /// identical state and an empty diff, and ids still advance.
+    #[test]
+    fn same_ledger_snapshots_without_a_change_have_an_empty_diff() {
+        let (env, contract, owner) = setup();
+        set_ledger(&env, 50, 1_000);
+        env.as_contract(&contract, || {
+            let first = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+            let second = capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap();
+
+            assert_eq!((first, second), (1, 2));
+            assert!(diff_snapshots(&env, 1, first, second).is_empty());
+        });
+    }
+
+    /// Ledger metadata is stamped at capture time: a change made on the next
+    /// ledger shows up only in a snapshot taken on that ledger.
+    #[test]
+    fn snapshot_ledger_boundary_separates_pre_and_post_change_state() {
+        let (env, contract, owner) = setup();
+        set_ledger(&env, 50, 1_000);
+        let before = env.as_contract(&contract, || {
+            capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap()
+        });
+
+        set_ledger(&env, 51, 1_005);
+        let after = env.as_contract(&contract, || {
+            change_grant(&env, |g| g.escrow_balance = 40);
+            capture(&env, 1, SnapshotTrigger::AdminRequest, &owner).unwrap()
+        });
+
+        env.as_contract(&contract, || {
+            let a = get_snapshot(&env, 1, before).unwrap();
+            let b = get_snapshot(&env, 1, after).unwrap();
+            assert_eq!((a.captured_at_ledger, a.captured_at), (50, 1_000));
+            assert_eq!((b.captured_at_ledger, b.captured_at), (51, 1_005));
+            assert_eq!(a.escrow_balance, 100);
+            assert_eq!(b.escrow_balance, 40);
+        });
+    }
+
     #[test]
     fn missing_snapshots_keep_existing_empty_and_error_results() {
         let (env, contract, _) = setup();
