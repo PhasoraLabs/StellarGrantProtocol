@@ -17,6 +17,7 @@ export const STORAGE_KEY = "sg-preferences";
 export type AddressFormat = "short" | "medium" | "full";
 export type XlmDecimals = 2 | 4 | 7;
 export type DateFormat = "relative" | "absolute";
+export type Theme = "light" | "dark" | "auto";
 
 export interface UserPreferences {
   // Notifications
@@ -29,6 +30,7 @@ export interface UserPreferences {
   addressFormat: AddressFormat;
   xlmDecimals: XlmDecimals;
   dateFormat: DateFormat;
+  theme: Theme;
 
   // Developer
   showTxHashes: boolean;
@@ -44,6 +46,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   addressFormat: "short",
   xlmDecimals: 7,
   dateFormat: "relative",
+  theme: "auto",
 
   showTxHashes: false,
   debugMode: false,
@@ -76,6 +79,11 @@ export function mergePreferences(raw: unknown): UserPreferences {
       ? r.dateFormat
       : DEFAULT_PREFERENCES.dateFormat;
 
+  const theme: Theme =
+    r.theme === "light" || r.theme === "dark" || r.theme === "auto"
+      ? r.theme
+      : DEFAULT_PREFERENCES.theme;
+
   return {
     notifyOnFunding: bool(r.notifyOnFunding, DEFAULT_PREFERENCES.notifyOnFunding),
     notifyOnMilestoneSubmit: bool(
@@ -87,6 +95,7 @@ export function mergePreferences(raw: unknown): UserPreferences {
     addressFormat,
     xlmDecimals,
     dateFormat,
+    theme,
     showTxHashes: bool(r.showTxHashes, DEFAULT_PREFERENCES.showTxHashes),
     debugMode: bool(r.debugMode, DEFAULT_PREFERENCES.debugMode),
   };
