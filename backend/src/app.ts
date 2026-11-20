@@ -72,6 +72,7 @@ import { UserWatchlist } from "./entities/UserWatchlist";
 import { WebhookSubscription } from "./entities/WebhookSubscription";
 import { IpfsService } from "./services/ipfs-service";
 import { buildWebhooksRouter } from "./routes/webhooks";
+import { Notification } from "./entities/Notification";
 import { buildHealthRouter } from "./routes/health";
 
 export const createApp = (
@@ -134,6 +135,8 @@ export const createApp = (
   const grantViewRepo = dataSource.getRepository(GrantView);
   const watchlistRepo = dataSource.getRepository(UserWatchlist);
   const webhookSubscriptionRepo = dataSource.getRepository(WebhookSubscription);
+  const notificationRepo = dataSource.getRepository(Notification);
+  notificationService.setRepository(notificationRepo);
 
   const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
   const signatureService = new SignatureService();
@@ -206,7 +209,7 @@ export const createApp = (
       webhookDispatcher,
     ),
   );
-  app.use("/notifications", buildNotificationsRouter(contributorRepo, signatureService, nonceService));
+  app.use("/notifications", buildNotificationsRouter(contributorRepo, signatureService, nonceService, notificationRepo));
   app.use(
     "/contributors",
     buildContributorsRouter(

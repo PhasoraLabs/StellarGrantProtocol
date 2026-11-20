@@ -2,10 +2,17 @@ import { Server as SocketServer, type Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import { env } from "../config/env";
 import jwt from "jsonwebtoken";
+import { Repository } from "typeorm";
+import { Notification } from "../entities/Notification";
 
 export class NotificationService {
   private io: SocketServer | null = null;
   private userSockets: Map<string, string[]> = new Map();
+  private notificationRepo: Repository<Notification> | null = null;
+
+  setRepository(repo: Repository<Notification>): void {
+    this.notificationRepo = repo;
+  }
 
   initialize(server: HttpServer): void {
     // Issue #1195: Require JWT_SECRET to be set at startup
@@ -80,7 +87,8 @@ export class NotificationService {
     });
   }
 
-  notifyUser(address: string, type: string, payload: any): void {
+  async notifyUser(address: string, type: string, payload: any): Promise<void> {
+    await this.notificationRepo?.save({ address, type, payload, readAt: null });
     if (!this.io) return;
 
     const sockets = this.userSockets.get(address);

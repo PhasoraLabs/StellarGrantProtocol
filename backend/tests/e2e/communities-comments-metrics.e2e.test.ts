@@ -152,6 +152,9 @@ describe("Communities, comments, and metrics e2e", () => {
     expect(list.body.data[1].parentCommentId).toBe(first.body.data.id);
 
     const deletePath = `/milestones/${milestone!.id}/comments/${second.body.data.id}`;
+    const unauthorised = await request(app).delete(deletePath);
+    expect(unauthorised.status).toBe(401);
+
     const nonce = "comment-delete-nonce";
     const timestamp = Date.now();
     const signatureService = new SignatureService();

@@ -176,7 +176,7 @@ export const buildGrantDraftsRouter = (
       try {
         const { id } = (req as any).validatedParams;
 
-        const grant = await grantRepo.findOne({ where: { id } });
+        const grant = await grantRepo.findOne({ where: { id, isDraft: true } });
         if (!grant) {
           res.status(404).json({ error: "Draft not found" });
           return;
@@ -271,7 +271,7 @@ export const buildGrantDraftsRouter = (
           return;
         }
 
-        const grant = await grantRepo.findOne({ where: { id } });
+        const grant = await grantRepo.findOne({ where: { id, isDraft: true } });
         if (!grant) {
           res.status(404).json({ error: "Draft not found" });
           return;
@@ -340,7 +340,7 @@ export const buildGrantDraftsRouter = (
           return;
         }
 
-        const grant = await grantRepo.findOne({ where: { id } });
+        const grant = await grantRepo.findOne({ where: { id, isDraft: true } });
         if (!grant) {
           res.status(404).json({ error: "Draft not found" });
           return;
@@ -442,7 +442,7 @@ export const buildGrantDraftsRouter = (
           return;
         }
 
-        await grantRepo.remove(grant);
+        await grantRepo.softRemove(grant);
 
         res.status(204).send();
       } catch (error) {
