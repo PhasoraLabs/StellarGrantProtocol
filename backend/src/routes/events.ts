@@ -9,10 +9,13 @@
  * Activity table every 5 seconds and supports Last-Event-ID resumption.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, RequestHandler } from "express";
 import { Repository, MoreThan } from "typeorm";
+import { z } from "zod";
 import { Activity, ActivityType } from "../entities/Activity";
 import { metricsService } from "../services/metrics-service";
+import { validateBody } from "../middlewares/validation-middleware";
+import type { ReconciliationResult } from "../services/reconciliation-service";
 
 // Activity types that are surfaced over SSE (grant/milestone/dispute events only)
 const STREAMED_TYPES = new Set<ActivityType>([
@@ -30,6 +33,26 @@ const connectionsByIp = new Map<string, number>();
 const CONNECTION_LIMIT_PER_IP = 5;
 const POLL_INTERVAL_MS = 5_000;
 const KEEPALIVE_INTERVAL_MS = 25_000;
+
+const replayBodySchema = z
+  .object({
+    fromLedger: z.number().int().nonnegative(),
+    toLedger: z.number().int().nonnegative().optional(),
+  })
+  .refine((body) => body.toLedger === undefined || body.toLedger >= body.fromLedger, {
+    message: "toLedger must be greater than or equal to fromLedger",
+    path: ["toLedger"],
+  });
+
+export interface EventsRouterOptions {
+  /** Applied to POST /events/replay so re-indexing remains admin-only. */
+  adminMiddleware?: RequestHandler;
+  /** Re-indexes on-chain activity from the supplied ledger sequence. */
+  replayEvents?: (
+    fromLedger: number,
+    toLedger?: number,
+  ) => Promise<ReconciliationResult>;
+}
 
 function getIp(req: Request): string {
   return req.ip ?? "unknown";
@@ -51,8 +74,40 @@ function decrementConnections(ip: string): void {
   }
 }
 
-export const buildEventsRouter = (activityRepo: Repository<Activity>) => {
+export const buildEventsRouter = (
+  activityRepo: Repository<Activity>,
+  options: EventsRouterOptions = {},
+) => {
   const router = Router();
+
+  const requireAdmin: RequestHandler = options.adminMiddleware ?? ((_req, res) => {
+    res.status(503).json({ error: "Admin authentication is not configured" });
+  });
+
+  /**
+   * POST /events/replay — admin-only re-index from a ledger sequence.
+   * Useful after an indexer outage when activity is missing for a range.
+   */
+  router.post(
+    "/replay",
+    requireAdmin,
+    validateBody(replayBodySchema),
+    async (req, res, next) => {
+      try {
+        if (!options.replayEvents) {
+          res.status(503).json({ error: "Event replay is not available" });
+          return;
+        }
+
+        const { fromLedger, toLedger } = (req as any).validatedBody;
+        const result = await options.replayEvents(fromLedger, toLedger);
+
+        res.json({ ok: true, data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get("/", async (req: Request, res: Response) => {
     const ip = getIp(req);

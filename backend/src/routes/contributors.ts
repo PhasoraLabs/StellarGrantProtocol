@@ -5,6 +5,7 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { Contributor } from "../entities/Contributor";
 import { Grant } from "../entities/Grant";
 import { MilestoneProof } from "../entities/MilestoneProof";
+import { MilestoneApproval } from "../entities/MilestoneApproval";
 import { Milestone } from "../entities/Milestone";
 import { Activity } from "../entities/Activity";
 import { validateParams, validateQuery } from "../middlewares/validation-middleware";
@@ -30,8 +31,11 @@ export const buildContributorsRouter = (
   grantRepo: Repository<Grant>,
   milestoneProofRepo: Repository<MilestoneProof>,
   activityRepo: Repository<Activity>,
+  approvalRepo?: Repository<MilestoneApproval>,
 ) => {
   const router = Router();
+  const milestoneApprovalRepo =
+    approvalRepo ?? milestoneProofRepo.manager.getRepository(MilestoneApproval);
 
   // GET /contributors - paginated contributor list with optional search
   router.get("/", validateQuery(contributorsQuerySchema), async (req, res, next) => {
@@ -79,6 +83,80 @@ export const buildContributorsRouter = (
       next(error);
     }
   });
+
+  // GET /contributors/:address/stats - milestone and earnings summary
+  router.get(
+    "/:address/stats",
+    validateParams(addressParamSchema),
+    async (req, res, next) => {
+      try {
+        const { address } = (req as any).validatedParams;
+
+        const contributor = await contributorRepo.findOne({ where: { address } });
+        if (!contributor) {
+          res.status(404).json({ error: "Contributor not found" });
+          return;
+        }
+
+        // Only non-draft grants where this address is the recipient count.
+        const grants = await grantRepo.find({
+          where: { recipient: address, isDraft: false },
+        });
+        const grantIds = grants.map((g) => g.id);
+        const completedGrants = grants.filter((g) => g.status === "completed");
+
+        const milestonesSubmitted =
+          grantIds.length > 0
+            ? await milestoneProofRepo.count({
+                where: { grantId: In(grantIds), submittedBy: address },
+              })
+            : 0;
+
+        // Multiple reviewers can approve the same milestone; count each
+        // (grant, milestone) pair only once.
+        const approvals =
+          grantIds.length > 0
+            ? await milestoneApprovalRepo.find({
+                where: { grantId: In(grantIds), approved: true },
+                select: ["grantId", "milestoneIdx"],
+              })
+            : [];
+        const approvedMilestoneKeys = new Set(
+          approvals.map((a) => `${a.grantId}:${a.milestoneIdx}`),
+        );
+        const milestonesApproved = approvedMilestoneKeys.size;
+
+        const approvalRate =
+          milestonesSubmitted > 0
+            ? Math.min(1, milestonesApproved / milestonesSubmitted)
+            : 0;
+
+        // Milestone-level amounts are not stored; completed grant amounts are
+        // the closest available proxy for a contributor's earnings.
+        const totalEarned = completedGrants.reduce((sum, g) => {
+          const amount = Number.parseFloat(g.totalAmount);
+          return sum + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+
+        res.json({
+          data: {
+            address: contributor.address,
+            reputationScore: contributor.reputation,
+            grantsCompleted: contributor.totalGrantsCompleted,
+            totalGrants: grants.length,
+            completedGrants: completedGrants.length,
+            activeGrants: grants.length - completedGrants.length,
+            milestonesSubmitted,
+            milestonesApproved,
+            approvalRate,
+            totalEarned: String(totalEarned),
+          },
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   // GET /contributors/:address - full contributor profile
   router.get("/:address", validateParams(addressParamSchema), async (req, res, next) => {
