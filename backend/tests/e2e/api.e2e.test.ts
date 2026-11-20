@@ -1,6 +1,6 @@
 import { Keypair } from "@stellar/stellar-sdk";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { DataSource } from "typeorm";
 import { createApp } from "../../src/app";
 import { buildDataSource } from "../../src/db/data-source";
@@ -130,6 +130,44 @@ describe("API e2e", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data.id).toBe(1);
+  });
+
+  it("returns a typed 404 when the grant does not exist", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app).get("/grants/999");
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: true,
+      code: "NOT_FOUND",
+      message: "Grant not found",
+    });
+  });
+
+  it("reports Soroban RPC connectivity in the health endpoint", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app).get("/health");
+    const liveness = await request(app).get("/health/liveness");
+
+    expect(response.status).toBe(200);
+    expect(response.body.checks.soroban).toBe("ok");
+    expect(liveness.status).toBe(200);
+    expect(liveness.body.status).toBe("ok");
+  });
+
+  it("marks the health endpoint degraded when Soroban RPC is unreachable", async () => {
+    const unreachableClient = new MockSorobanContractClient();
+    vi.spyOn(unreachableClient, "getLatestLedger").mockRejectedValue(
+      new Error("RPC unavailable"),
+    );
+    const app = createApp(dataSource, unreachableClient);
+    const response = await request(app).get("/health");
+
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({
+      status: "degraded",
+      checks: { database: "ok", soroban: "fail" },
+    });
   });
 
   it("accepts signed milestone proof", async () => {

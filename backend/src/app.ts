@@ -72,6 +72,7 @@ import { UserWatchlist } from "./entities/UserWatchlist";
 import { WebhookSubscription } from "./entities/WebhookSubscription";
 import { IpfsService } from "./services/ipfs-service";
 import { buildWebhooksRouter } from "./routes/webhooks";
+import { buildHealthRouter } from "./routes/health";
 
 export const createApp = (
   dataSource: DataSource,
@@ -154,7 +155,7 @@ export const createApp = (
   );
   const webhookDispatcher = new WebhookDispatcher(dataSource);
 
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.use("/health", buildHealthRouter(dataSource, sorobanClient));
   app.use(
     "/grants",
     buildGrantRouter(
