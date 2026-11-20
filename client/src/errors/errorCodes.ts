@@ -6,7 +6,7 @@
  *
  * The u32 discriminant values here MUST stay in sync with the `#[repr(u32)]`
  * values defined in:
- *   stellargrant-contracts/contracts/stellar-grants/src/types.rs
+ *   contracts/contracts/stellar-grants/src/types.rs
  *
  * When the contract gains new error variants add them here in the same order
  * and with the same numeric value.

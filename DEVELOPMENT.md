@@ -72,7 +72,7 @@ After installation:
 
 ### PostgreSQL (API only)
 
-Only required if you plan to run the `api/` package. Either install PostgreSQL locally or use Docker:
+Only required if you plan to run the `backend/` package. Either install PostgreSQL locally or use Docker:
 
 ```bash
 # Docker (easiest)
@@ -109,12 +109,12 @@ git remote -v
 
 ## Frontend Setup
 
-The frontend lives in `stellargrant-fe/` and is the package most contributors will work in.
+The frontend lives in `web/` and is the package most contributors will work in.
 
 ### 1. Install Dependencies
 
 ```bash
-cd stellargrant-fe
+cd web
 npm ci
 ```
 
@@ -185,12 +185,12 @@ npm run build        # Production build — should complete without errors
 
 ## Smart Contract Setup
 
-The contracts live in `stellargrant-contracts/` and are written in Rust targeting `wasm32-unknown-unknown`.
+The contracts live in `contracts/` and are written in Rust targeting `wasm32-unknown-unknown`.
 
 ### 1. Check and Lint
 
 ```bash
-cd stellargrant-contracts
+cd contracts
 cargo fmt --all -- --check
 cargo clippy --workspace --lib --target wasm32-unknown-unknown -- -D warnings
 cargo check --workspace --target wasm32-unknown-unknown
@@ -282,12 +282,12 @@ For a complete walkthrough see [TUTORIAL.md](TUTORIAL.md).
 
 ## API Setup (Optional)
 
-The Express API lives in `api/`. It is not required for frontend development but provides faster queries and SSE relay.
+The Express API lives in `backend/`. It is not required for frontend development but provides faster queries and SSE relay.
 
 ### 1. Install Dependencies
 
 ```bash
-cd api
+cd backend
 npm ci
 ```
 
@@ -372,19 +372,19 @@ For full local development with all services:
 
 **Terminal 1 — Postgres + API:**
 ```bash
-docker compose up          # or: cd api && npm run dev (if Postgres already running)
+docker compose up          # or: cd backend && npm run dev (if Postgres already running)
 ```
 
 **Terminal 2 — Frontend:**
 ```bash
-cd stellargrant-fe
+cd web
 npm run dev
 ```
 
 Or as a single command using the mock server (no Postgres needed):
 
 ```bash
-cd stellargrant-fe
+cd web
 npm run dev:mock
 ```
 
@@ -395,7 +395,7 @@ npm run dev:mock
 ### Frontend Unit Tests (Vitest)
 
 ```bash
-cd stellargrant-fe
+cd web
 npm test              # watch mode — re-runs on file change
 npm run test:run      # single pass with coverage report
 ```
@@ -405,7 +405,7 @@ Test files live in `tests/` and alongside source as `*.test.tsx`.
 ### Frontend E2E Tests (Playwright)
 
 ```bash
-cd stellargrant-fe
+cd web
 
 # Install Playwright browsers (first time only)
 npx playwright install
@@ -419,14 +419,14 @@ E2E tests require a running dev server. The Playwright config starts one automat
 ### Contract Tests (Rust)
 
 ```bash
-cd stellargrant-contracts
+cd contracts
 cargo test
 ```
 
 ### API Tests
 
 ```bash
-cd api
+cd backend
 npm run test:e2e          # E2E tests (requires running API + Postgres)
 npm run test:integration  # integration tests
 ```
@@ -436,7 +436,7 @@ npm run test:integration  # integration tests
 Frontend coverage:
 
 ```bash
-cd stellargrant-fe
+cd web
 npm run test:run -- --coverage
 # Coverage report in coverage/
 ```
@@ -445,7 +445,7 @@ Contract coverage (requires cargo-tarpaulin):
 
 ```bash
 cargo install cargo-tarpaulin
-cd stellargrant-contracts
+cd contracts
 cargo tarpaulin --workspace --lib --target x86_64-unknown-linux-gnu --engine llvm --out Html
 ```
 
@@ -456,7 +456,7 @@ cargo tarpaulin --workspace --lib --target x86_64-unknown-linux-gnu --engine llv
 Browse and develop UI components in isolation:
 
 ```bash
-cd stellargrant-fe
+cd web
 npm run storybook
 ```
 
@@ -502,7 +502,7 @@ The mock server (`mock-server/`) serves static fixture data. If you've changed t
 
 ### `DATABASE_URL` connection refused
 
-Ensure PostgreSQL is running. If using Docker: `docker compose up postgres`. Check the connection string in `api/.env`.
+Ensure PostgreSQL is running. If using Docker: `docker compose up postgres`. Check the connection string in `backend/.env`.
 
 ---
 
@@ -510,7 +510,7 @@ Ensure PostgreSQL is running. If using Docker: `docker compose up postgres`. Che
 
 ```bash
 # ── Frontend ─────────────────────────────────────────────────────────
-cd stellargrant-fe
+cd web
 
 npm run dev                # dev server with Turbopack hot reload
 npm run dev:mock           # dev server + mock API concurrently
@@ -525,7 +525,7 @@ npm run storybook          # Storybook dev server
 npm run build-storybook    # build static Storybook
 
 # ── Contracts ────────────────────────────────────────────────────────
-cd stellargrant-contracts
+cd contracts
 
 cargo fmt --all                               # format all Rust code
 cargo fmt --all -- --check                   # check without writing
@@ -556,7 +556,7 @@ stellar contract invoke \
   -- <function_name> [--arg value ...]
 
 # ── API ──────────────────────────────────────────────────────────────
-cd api
+cd backend
 
 npm run dev                # dev server with tsx watch
 npm run build              # compile TypeScript

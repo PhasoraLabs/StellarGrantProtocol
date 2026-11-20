@@ -1,0 +1,275 @@
+use soroban_sdk::{contractevent, Address, Bytes, Env, Vec};
+
+use crate::constants::MAX_HOOKS_PER_EVENT;
+use crate::cross_contract;
+use crate::errors::ContractError;
+use crate::storage::Storage;
+use crate::types::{HookCallResult, HookEvent, HookRegistration};
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HookTriggered {
+    pub event: u32,
+    pub hook_index: u32,
+    pub success: bool,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HookRegisteredEvent {
+    pub event: u32,
+    pub hook_index: u32,
+    pub target_contract: Address,
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/// Register an external contract hook for an event. Admin only.
+pub fn register_hook(
+    env: &Env,
+    admin: &Address,
+    event: HookEvent,
+    target_contract: Address,
+    max_gas_budget: u32,
+) -> Result<u32, ContractError> {
+    admin.require_auth();
+    if Storage::get_global_admin(env) != Some(admin.clone()) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let mut hooks = Storage::get_hook_registry(env, &event);
+
+    if hooks.iter().filter(|h| h.is_active).count() >= MAX_HOOKS_PER_EVENT as usize {
+        return Err(ContractError::HookLimitExceeded);
+    }
+
+    let hook_index = hooks.len();
+
+    let registration = HookRegistration {
+        event: event.clone(),
+        target_contract: target_contract.clone(),
+        registered_by: admin.clone(),
+        registered_at: env.ledger().timestamp(),
+        is_active: true,
+        max_gas_budget,
+    };
+
+    hooks.push_back(registration);
+    Storage::set_hook_registry(env, &event, &hooks);
+
+    HookRegisteredEvent {
+        event: event as u32,
+        hook_index,
+        target_contract,
+    }
+    .publish(env);
+
+    Ok(hook_index)
+}
+
+/// Deactivate a hook. Admin only.
+pub fn deactivate_hook(
+    env: &Env,
+    admin: &Address,
+    event: HookEvent,
+    hook_index: u32,
+) -> Result<(), ContractError> {
+    admin.require_auth();
+    if Storage::get_global_admin(env) != Some(admin.clone()) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let mut hooks = Storage::get_hook_registry(env, &event);
+
+    if hook_index >= hooks.len() {
+        return Err(ContractError::HookNotFound);
+    }
+
+    let mut hook = hooks.get(hook_index).ok_or(ContractError::HookNotFound)?;
+    if !hook.is_active {
+        return Err(ContractError::HookAlreadyInactive);
+    }
+
+    hook.is_active = false;
+    hooks.set(hook_index, hook);
+    Storage::set_hook_registry(env, &event, &hooks);
+
+    Ok(())
+}
+
+/// Trigger all active hooks for an event.
+/// Hook failures are captured but do not revert the parent transaction.
+pub fn trigger(env: &Env, event: HookEvent, payload: Bytes) -> Vec<HookCallResult> {
+    let hooks = Storage::get_hook_registry(env, &event);
+    let mut results: Vec<HookCallResult> = Vec::new(env);
+
+    let event_u32 = event as u32;
+
+    for (idx, hook) in hooks.iter().enumerate() {
+        if !hook.is_active {
+            continue;
+        }
+
+        let success = cross_contract::call_hook_receiver(
+            env,
+            &hook.target_contract,
+            event_u32,
+            payload.clone(),
+        );
+        let error_code: Option<u32> = if success { None } else { Some(1) };
+
+        let call_result = HookCallResult {
+            hook_index: idx as u32,
+            success,
+            error_code,
+        };
+
+        HookTriggered {
+            event: event_u32,
+            hook_index: idx as u32,
+            success,
+        }
+        .publish(env);
+
+        results.push_back(call_result);
+    }
+
+    results
+}
+
+/// Return all registered hooks for an event.
+pub fn get_hooks(env: &Env, event: HookEvent) -> Vec<HookRegistration> {
+    Storage::get_hook_registry(env, &event)
+}
+
+/// Check if any hooks are registered for an event.
+pub fn has_hooks(env: &Env, event: HookEvent) -> bool {
+    let hooks = Storage::get_hook_registry(env, &event);
+    for hook in hooks.iter() {
+        if hook.is_active {
+            return true;
+        }
+    }
+    false
+}
+
+// ── Unit Tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{StellarGrantsContract, StellarGrantsContractClient};
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Bytes, Env};
+
+    struct Fixture<'a> {
+        env: Env,
+        contract_id: Address,
+        client: StellarGrantsContractClient<'a>,
+        admin: Address,
+    }
+
+    fn setup<'a>() -> Fixture<'a> {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        client.set_global_admin(&admin, &admin);
+        Fixture {
+            env,
+            contract_id,
+            client,
+            admin,
+        }
+    }
+
+    #[test]
+    fn test_register_and_deactivate_hook() {
+        let f = setup();
+        let target = Address::generate(&f.env);
+
+        let idx = f
+            .client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &1000);
+        assert_eq!(idx, 0);
+
+        f.env.as_contract(&f.contract_id, || {
+            assert!(has_hooks(&f.env, HookEvent::GrantCreated));
+        });
+
+        f.client
+            .deactivate_hook(&f.admin, &HookEvent::GrantCreated, &0);
+
+        f.env.as_contract(&f.contract_id, || {
+            assert!(!has_hooks(&f.env, HookEvent::GrantCreated));
+        });
+    }
+
+    #[test]
+    fn test_max_hooks_limit_enforced() {
+        let f = setup();
+
+        for _ in 0..MAX_HOOKS_PER_EVENT {
+            let target = Address::generate(&f.env);
+            f.client
+                .register_hook(&f.admin, &HookEvent::MilestoneApproved, &target, &1000);
+        }
+        let extra = Address::generate(&f.env);
+        let err = f
+            .client
+            .try_register_hook(&f.admin, &HookEvent::MilestoneApproved, &extra, &1000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::HookLimitExceeded);
+    }
+
+    #[test]
+    fn test_hook_mutations_require_global_admin() {
+        let f = setup();
+        let attacker = Address::generate(&f.env);
+        let target = Address::generate(&f.env);
+
+        assert_eq!(
+            f.client
+                .try_register_hook(&attacker, &HookEvent::GrantCreated, &target, &1000,),
+            Err(Ok(ContractError::Unauthorized))
+        );
+
+        let index = f
+            .client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &1000);
+        assert_eq!(
+            f.client
+                .try_deactivate_hook(&attacker, &HookEvent::GrantCreated, &index),
+            Err(Ok(ContractError::Unauthorized))
+        );
+    }
+
+    #[test]
+    fn test_deactivated_hook_skipped_in_get_hooks() {
+        let f = setup();
+        let target = Address::generate(&f.env);
+
+        f.client
+            .register_hook(&f.admin, &HookEvent::GrantCreated, &target, &500);
+        f.client
+            .deactivate_hook(&f.admin, &HookEvent::GrantCreated, &0);
+
+        let hooks = f.client.get_hooks(&HookEvent::GrantCreated);
+        assert_eq!(hooks.len(), 1);
+        assert!(!hooks.get(0).unwrap().is_active);
+    }
+
+    #[test]
+    fn test_trigger_empty_hooks_returns_empty_results() {
+        let f = setup();
+        let payload = Bytes::new(&f.env);
+        f.env.as_contract(&f.contract_id, || {
+            let results = trigger(&f.env, HookEvent::DisputeResolved, payload);
+            assert_eq!(results.len(), 0);
+        });
+    }
+}

@@ -61,7 +61,7 @@ stellar keys balance alice --network testnet
 Navigate natively to the contract's directory and compile it into a WebAssembly standard binary (`.wasm`).
 
 ```bash
-cd stellargrant-contracts/contracts/stellar-grants
+cd contracts/contracts/stellar-grants
 make build
 # or explicitly: cargo build --target wasm32-unknown-unknown --release
 ```
@@ -184,7 +184,7 @@ stellar contract invoke \
 You successfully implemented a fully decentralized routing process for a grant on the Stellar network.  
 
 **Next Steps**:
-- Read the [Contribution Guide](./stellargrant-contracts/ContributionGuide.md)
+- Read the [Contribution Guide](./contracts/ContributionGuide.md)
 - Pick up an open issue from the `issues/` directory.
 - Check out [Soroban documentation](https://developers.stellar.org/docs/build/smart-contracts/overview) for deeper insights.
 

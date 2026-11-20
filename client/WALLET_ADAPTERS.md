@@ -176,7 +176,7 @@ const sdk = new StellarGrantsSDK({
 
 ## Using a Custom Adapter in the Frontend (`useWallet`)
 
-The `useWallet` hook in `stellargrant-fe` supports `"freighter"` and `"albedo"` out of the box. To use a custom adapter, instantiate it directly and call `setActiveAdapter` from the wallet store:
+The `useWallet` hook in `web` supports `"freighter"` and `"albedo"` out of the box. To use a custom adapter, instantiate it directly and call `setActiveAdapter` from the wallet store:
 
 ```typescript
 import { useWalletStore } from "@/lib/store/walletStore";

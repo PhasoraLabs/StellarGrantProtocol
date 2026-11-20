@@ -1,9 +1,9 @@
 version: "3.9"
 
 services:
-  api:
+  backend:
     build:
-      context: ./api
+      context: ./backend
     environment:
       PORT: 4000
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/stellargrant

@@ -9,7 +9,6 @@ Only the `main` branch receives active security updates. We do not backport secu
 | `main` | Yes |
 | Previous release tags | No |
 
----
 
 ## Reporting a Vulnerability
 
@@ -30,7 +29,6 @@ You will receive an acknowledgment within 72 hours and a full response within 7 
 
 We ask that you keep the vulnerability confidential until a fix has been released.
 
----
 
 ## Scope
 
@@ -50,13 +48,12 @@ We ask that you keep the vulnerability confidential until a fix has been release
 - Bugs in Stellar infrastructure itself (report those to [SDF](https://stellar.org/bug-bounty))
 - Low-severity information disclosures with no practical attack path
 
----
 
 ## Automated Security Measures
 
 ### Dependency Scanning
 
-- **`npm audit`** runs in CI on every PR targeting `stellargrant-fe/` and `api/`. The build fails if any `high` or `critical` severity vulnerabilities are found.
+- **`npm audit`** runs in CI on every PR targeting `web/` and `backend/`. The build fails if any `high` or `critical` severity vulnerabilities are found.
 - **Dependabot** is configured to check for dependency updates weekly across npm and Cargo ecosystems. Dependabot PRs are reviewed and merged promptly.
 
 ### Static Analysis

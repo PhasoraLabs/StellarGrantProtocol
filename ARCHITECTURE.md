@@ -62,7 +62,7 @@ This document covers the system architecture in depth: data flow, rendering stra
                  │
                  ▼ (optional — for caching and indexing)
 ┌──────────────────────────────┐
-│  Express API  (api/)         │
+│  Express API  (backend/)     │
 │  TypeORM + PostgreSQL        │
 │  ← indexes on-chain events   │
 │  ← caches contract reads     │
@@ -76,10 +76,10 @@ This document covers the system architecture in depth: data flow, rendering stra
 
 | Package | Language | Role |
 |---------|----------|------|
-| `stellargrant-fe/` | TypeScript / Next.js | Primary web UI — all user-facing features |
-| `stellargrant-contracts/` | Rust / Soroban SDK | On-chain logic: escrow, milestones, voting, payouts |
+| `web/` | TypeScript / Next.js | Primary web UI — all user-facing features |
+| `contracts/` | Rust / Soroban SDK | On-chain logic: escrow, milestones, voting, payouts |
 | `client/` | TypeScript | Typed SDK for programmatic contract interaction |
-| `api/` | TypeScript / Express | Optional caching and indexing layer |
+| `backend/` | TypeScript / Express | Optional caching and indexing layer |
 
 ---
 
@@ -254,7 +254,7 @@ Components subscribe to events via `useContractEvents(contractId, eventFilters)`
 
 ## Optional API Layer
 
-`api/` is a standalone Express + TypeORM service. It is **not required** for any core read or write flow. Use it when:
+`backend/` is a standalone Express + TypeORM service. It is **not required** for any core read or write flow. Use it when:
 
 - You need faster grant/milestone queries than direct RPC allows (the API indexes events into PostgreSQL)
 - You want server-side SSE relay for real-time events
@@ -333,7 +333,7 @@ The SDK uses the same `@stellar/stellar-sdk` as the frontend but exposes a highe
 
 **Decision:** The frontend reads all state directly from Stellar RPC; no custom backend is required for viewing or interacting with grants.
 
-**Why:** A centralized backend would become a single point of failure and a censorship vector. The Soroban contract is the authoritative state machine; reading from it directly removes an entire layer of trust. The optional `api/` layer is additive, not load-bearing.
+**Why:** A centralized backend would become a single point of failure and a censorship vector. The Soroban contract is the authoritative state machine; reading from it directly removes an entire layer of trust. The optional `backend/` layer is additive, not load-bearing.
 
 ### Adapter Pattern for Wallets
 

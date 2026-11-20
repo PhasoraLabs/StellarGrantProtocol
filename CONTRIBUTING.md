@@ -3,8 +3,8 @@
 Thank you for your interest in contributing! StellarGrants is an active open-source project with over 60 contributors building milestone-based grant infrastructure on the Stellar blockchain. Every contribution — bug fix, new feature, documentation improvement, or test — moves the ecosystem forward.
 
 This document is the **root-level contribution guide** covering all packages in this monorepo. For package-specific guidance see:
-- [stellargrant-fe/CONTRIBUTING.md](stellargrant-fe/CONTRIBUTING.md) — frontend-specific guidelines, Wave Program, and available issues
-- [stellargrant-contracts/ContributionGuide.md](stellargrant-contracts/ContributionGuide.md) — contract conventions and testing
+- [web/CONTRIBUTING.md](web/CONTRIBUTING.md) — frontend-specific guidelines, Wave Program, and available issues
+- [contracts/ContributionGuide.md](contracts/ContributionGuide.md) — contract conventions and testing
 
 ---
 
@@ -84,7 +84,7 @@ Each package manages its own dependencies independently.
 
 **Frontend:**
 ```bash
-cd stellargrant-fe
+cd web
 npm ci
 cp .env.local.example .env.local
 # Fill in NEXT_PUBLIC_CONTRACT_ID and other required values
@@ -92,7 +92,7 @@ cp .env.local.example .env.local
 
 **Contracts:**
 ```bash
-cd stellargrant-contracts
+cd contracts
 rustup target add wasm32-unknown-unknown
 cargo check --workspace --target wasm32-unknown-unknown
 ```
@@ -106,7 +106,7 @@ npm run build
 
 **API (optional):**
 ```bash
-cd api
+cd backend
 npm ci
 # Requires PostgreSQL — see docker-compose.yml
 ```
@@ -115,13 +115,13 @@ npm ci
 
 ```bash
 # Frontend: dev server should start with no errors
-cd stellargrant-fe && npm run dev
+cd web && npm run dev
 
 # Frontend: lint and tests should pass
 npm run lint && npm run test:run && npm run build
 
 # Contracts: clippy should be clean
-cd ../stellargrant-contracts
+cd ../contracts
 cargo clippy --workspace --lib --target wasm32-unknown-unknown -- -D warnings
 cargo test
 ```
@@ -279,7 +279,7 @@ export function VotePanel({ milestoneIdx }: { milestoneIdx: number }) {
 Run these locally and confirm all pass before opening a PR:
 
 ```bash
-cd stellargrant-fe
+cd web
 npm run lint
 npm run test:run
 npm run build
@@ -287,7 +287,7 @@ npm run build
 
 For contract changes:
 ```bash
-cd stellargrant-contracts
+cd contracts
 cargo fmt --all -- --check
 cargo clippy --workspace --lib --target wasm32-unknown-unknown -- -D warnings
 cargo test
