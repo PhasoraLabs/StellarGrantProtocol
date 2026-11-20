@@ -29,6 +29,7 @@ import { GrantFeedback } from "../entities/GrantFeedback";
 import { UsedNonce } from "../entities/UsedNonce";
 import { Dispute } from "../entities/Dispute";
 import { MilestoneAppeal } from "../entities/MilestoneAppeal";
+import { Notification } from "../entities/Notification";
 
 const entities = [
   Activity,
@@ -47,6 +48,7 @@ const entities = [
   MilestoneApproval,
   MilestoneComment,
   MilestoneProof,
+  Notification,
   PlatformConfig,
   RateLimitLog,
   ReconciliationCheckpoint,

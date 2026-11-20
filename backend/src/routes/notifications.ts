@@ -7,6 +7,7 @@ import { SignatureService } from "../services/signature-service";
 import { NonceService } from "../services/nonce-service";
 import type { AuthenticatedRequest } from "../types/auth";
 import type { Request as ExpressRequest } from "express";
+import { Notification } from "../entities/Notification";
 
 const prefsSchema = z.object({
   address: z.string().min(10).max(120),
@@ -18,9 +19,29 @@ export const buildNotificationsRouter = (
   contributorRepo: Repository<Contributor>,
   signatureService: SignatureService,
   nonceService: NonceService,
+  notificationRepo?: Repository<Notification>,
 ) => {
   const router = Router();
   const authMiddleware = buildAuthMiddleware(signatureService, nonceService);
+
+  router.post("/read-all", authMiddleware, async (req: any, res, next) => {
+    try {
+      if (!notificationRepo) {
+        res.status(503).json({ error: "Notifications are unavailable" });
+        return;
+      }
+      const result = await notificationRepo
+        .createQueryBuilder()
+        .update(Notification)
+        .set({ readAt: new Date() })
+        .where("address = :address", { address: req.user.stellarAddress })
+        .andWhere("readAt IS NULL")
+        .execute();
+      res.json({ data: { updated: result.affected ?? 0 } });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /**
    * PUT /notifications/preferences

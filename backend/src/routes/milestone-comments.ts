@@ -92,7 +92,7 @@ export const buildMilestoneCommentsRouter = (
         recipients.delete(payload.authorAddress);
 
         for (const address of recipients) {
-          notificationService.notifyUser(address, "milestone_comment_added", {
+          await notificationService.notifyUser(address, "milestone_comment_added", {
             commentId: saved.id,
             milestoneId: id,
             grantId: milestone.grantId,
