@@ -54,6 +54,64 @@ export const buildDisputesRouter = (
   const activityRepo: Repository<Activity> = dataSource.getRepository(Activity);
 
   // GET /disputes — list open disputes (?status=all for all)
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     Dispute:
+   *       type: object
+   *       properties:
+   *         id: { type: integer }
+   *         grantId: { type: integer }
+   *         milestoneIdx: { type: integer }
+   *         status:
+   *           type: string
+   *           enum: [open, resolved_payout, resolved_refund]
+   *         contributorArgument: { type: string, nullable: true }
+   *         funderArgument: { type: string, nullable: true }
+   *         resolvedBy: { type: string, nullable: true }
+   *         resolutionTxHash: { type: string, nullable: true }
+   *         openedAt: { type: string, format: date-time }
+   *         resolvedAt: { type: string, format: date-time, nullable: true }
+   * /disputes:
+   *   get:
+   *     tags:
+   *       - Disputes
+   *     summary: List disputes
+   *     description: Returns open disputes by default, or all disputes when status is set to "all".
+   *     parameters:
+   *       - in: query
+   *         name: status
+   *         required: false
+   *         schema:
+   *           type: string
+   *         description: Set to "all" to include resolved disputes. Other values return open disputes.
+   *     responses:
+   *       200:
+   *         description: Dispute list
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id: { type: integer }
+   *                       grantId: { type: integer }
+   *                       milestoneIdx: { type: integer }
+   *                       status:
+   *                         type: string
+   *                         enum: [open, resolved_payout, resolved_refund]
+   *                       openedAt: { type: string, format: date-time }
+   *                       resolvedAt: { type: string, format: date-time, nullable: true }
+   *                       grantTitle: { type: string, nullable: true }
+   *                       milestoneTitle: { type: string, nullable: true }
+   *       500:
+   *         description: Failed to retrieve disputes
+   */
   router.get("/", async (req, res, next) => {
     try {
       const statusFilter = req.query.status === "all" ? undefined : "open";
@@ -89,6 +147,51 @@ export const buildDisputesRouter = (
   });
 
   // GET /disputes/:id — single dispute with full grant + milestone data
+  /**
+   * @openapi
+   * /disputes/{id}:
+   *   get:
+   *     tags:
+   *       - Disputes
+   *     summary: Get a dispute
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Dispute with its grant and milestone
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     id: { type: integer }
+   *                     grantId: { type: integer }
+   *                     milestoneIdx: { type: integer }
+   *                     status:
+   *                       type: string
+   *                       enum: [open, resolved_payout, resolved_refund]
+   *                     contributorArgument: { type: string, nullable: true }
+   *                     funderArgument: { type: string, nullable: true }
+   *                     resolvedBy: { type: string, nullable: true }
+   *                     resolutionTxHash: { type: string, nullable: true }
+   *                     openedAt: { type: string, format: date-time }
+   *                     resolvedAt: { type: string, format: date-time, nullable: true }
+   *                     grant: { type: object, nullable: true }
+   *                     milestone: { type: object, nullable: true }
+   *       400:
+   *         description: Invalid dispute ID
+   *       404:
+   *         description: Dispute not found
+   *       500:
+   *         description: Failed to retrieve dispute
+   */
   router.get("/:id", async (req, res, next) => {
     try {
       const id = Number(req.params.id);
@@ -117,6 +220,83 @@ export const buildDisputesRouter = (
   });
 
   // POST /disputes/:id/argument — submit contributor or funder argument
+  /**
+   * @openapi
+   * /disputes/{id}/argument:
+   *   post:
+   *     tags:
+   *       - Disputes
+   *     summary: Submit a dispute argument
+   *     description: >
+   *       Submits a contributor or funder argument. The signer must be the grant
+   *       recipient for contributor arguments or a funder for funder arguments.
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *       - in: header
+   *         name: x-stellar-address
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: header
+   *         name: x-stellar-signature
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: byte
+   *       - in: header
+   *         name: x-stellar-nonce
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: header
+   *         name: x-stellar-timestamp
+   *         required: true
+   *         schema:
+   *           type: integer
+   *         description: Unix timestamp in milliseconds
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [role, argument]
+   *             properties:
+   *               role:
+   *                 type: string
+   *                 enum: [contributor, funder]
+   *               argument:
+   *                 type: string
+   *               address:
+   *                 type: string
+   *                 description: Optional address; if supplied, must match the authenticated wallet.
+   *     responses:
+   *       200:
+   *         description: Argument submitted
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/Dispute'
+   *       400:
+   *         description: Invalid dispute ID, role, or dispute state
+   *       401:
+   *         description: Missing or invalid signed authentication
+   *       403:
+   *         description: Authenticated wallet does not hold the claimed role
+   *       404:
+   *         description: Dispute or grant not found
+   *       409:
+   *         description: Argument for this role has already been submitted
+   *       500:
+   *         description: Failed to submit argument
+   */
   router.post(
     "/:id/argument",
     authMiddleware,
@@ -222,6 +402,65 @@ export const buildDisputesRouter = (
   );
 
   // POST /disputes/:id/resolve — record resolution (council-only via RBAC + signed intent)
+  /**
+   * @openapi
+   * /disputes/{id}/resolve:
+   *   post:
+   *     tags:
+   *       - Disputes
+   *     summary: Resolve a dispute
+   *     description: Resolves an open dispute using a signed intent from a council member.
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [approve_payout, resolver_address, nonce, timestamp, signature]
+   *             properties:
+   *               approve_payout:
+   *                 type: boolean
+   *                 description: True to approve payout; false to refund the grant.
+   *               tx_hash:
+   *                 type: string
+   *                 maxLength: 64
+   *               resolver_address:
+   *                 type: string
+   *               nonce:
+   *                 type: string
+   *               timestamp:
+   *                 type: integer
+   *                 description: Unix timestamp in milliseconds
+   *               signature:
+   *                 type: string
+   *                 format: byte
+   *     responses:
+   *       200:
+   *         description: Dispute resolved
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/Dispute'
+   *       400:
+   *         description: Invalid dispute ID, missing decision, or dispute already resolved
+   *       401:
+   *         description: Missing, expired, or invalid signed intent
+   *       403:
+   *         description: Resolver is not a council member
+   *       404:
+   *         description: Dispute not found
+   *       500:
+   *         description: Failed to resolve dispute
+   */
   router.post("/:id/resolve", async (req, res, next) => {
     try {
       const body = req.body as ResolveBody;
@@ -344,6 +583,41 @@ export const buildGrantDisputesRouter = (dataSource: DataSource) => {
   const disputeRepo: Repository<Dispute> = dataSource.getRepository(Dispute);
   const grantRepo: Repository<Grant> = dataSource.getRepository(Grant);
 
+  /**
+   * @openapi
+   * /grants/{grantId}/milestones/{idx}/dispute:
+   *   get:
+   *     tags:
+   *       - Disputes
+   *     summary: Get a milestone dispute
+   *     parameters:
+   *       - in: path
+   *         name: grantId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *       - in: path
+   *         name: idx
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Dispute for the milestone
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/Dispute'
+   *       400:
+   *         description: Invalid grant ID or milestone index
+   *       404:
+   *         description: Dispute not found for this milestone
+   *       500:
+   *         description: Failed to retrieve dispute
+   */
   router.get(
     "/grants/:grantId/milestones/:idx/dispute",
     async (req, res, next) => {
@@ -374,6 +648,44 @@ export const buildGrantDisputesRouter = (dataSource: DataSource) => {
     },
   );
 
+  /**
+   * @openapi
+   * /grants/{grantId}/milestones/{idx}/dispute:
+   *   post:
+   *     tags:
+   *       - Disputes
+   *     summary: Open a milestone dispute
+   *     description: Creates an open dispute for a grant milestone.
+   *     parameters:
+   *       - in: path
+   *         name: grantId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *       - in: path
+   *         name: idx
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       201:
+   *         description: Dispute created
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/Dispute'
+   *       400:
+   *         description: Invalid grant ID or milestone index
+   *       404:
+   *         description: Grant not found
+   *       409:
+   *         description: Dispute already exists for this milestone
+   *       500:
+   *         description: Failed to create dispute
+   */
   router.post(
     "/grants/:grantId/milestones/:idx/dispute",
     async (req, res, next) => {
