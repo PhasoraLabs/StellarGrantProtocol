@@ -66,11 +66,20 @@ export const buildActivityRouter = (
       const rawCursor = req.query.cursor ? String(req.query.cursor) : null;
       // Legacy SSE polling alias
       const afterId = req.query.after_id ? Number(req.query.after_id) : null;
+      const from = req.query.from ? new Date(String(req.query.from)) : null;
+      const to = req.query.to ? new Date(String(req.query.to)) : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        res.status(400).json({ error: "from and to must be valid ISO dates" });
+        return;
+      }
+      if (from && to && from > to) { res.status(400).json({ error: "from must not be after to" }); return; }
 
       const qb = activityRepo.createQueryBuilder("activity")
         .orderBy("activity.timestamp", "DESC")
         .addOrderBy("activity.id", "DESC")
         .limit(limit + 1); // fetch one extra to detect hasMore
+      if (from) qb.andWhere("activity.timestamp >= :from", { from });
+      if (to) qb.andWhere("activity.timestamp <= :to", { to });
 
       if (rawCursor) {
         // Structured cursor: (timestamp, id) keyset

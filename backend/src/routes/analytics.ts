@@ -126,5 +126,22 @@ export const buildAnalyticsRouter = (
     }
   });
 
+  router.get("/grants/:id/export.csv", async (req, res, next) => {
+    try {
+      const grantId = Number(req.params.id);
+      if (!Number.isInteger(grantId) || grantId < 1) { res.status(400).json({ error: "Invalid grant id" }); return; }
+      const grant = await grantRepo.findOne({ where: { id: grantId } });
+      const requester = req.headers["x-user-address"] as string | undefined;
+      if (!grant) { res.status(404).json({ error: "Grant not found" }); return; }
+      if (!requester || (requester !== grant.recipient && !env.adminAddresses.includes(requester))) { res.status(403).json({ error: "Analytics are only accessible to the grant creator or admins" }); return; }
+      const since = req.query.from ? new Date(String(req.query.from)) : new Date(0);
+      const until = req.query.to ? new Date(String(req.query.to)) : new Date();
+      if (Number.isNaN(since.getTime()) || Number.isNaN(until.getTime()) || since > until) { res.status(400).json({ error: "from and to must be valid dates with from <= to" }); return; }
+      const views = await grantViewRepo.createQueryBuilder("gv").where("gv.grantId = :grantId", { grantId }).andWhere("gv.createdAt >= :since AND gv.createdAt <= :until", { since, until }).orderBy("gv.createdAt", "ASC").getMany();
+      const csv = ["grant_id,created_at,viewer_hash", ...views.map((v) => `${v.grantId},${v.createdAt.toISOString()},${v.viewerKey}`)].join("\n") + "\n";
+      res.type("text/csv").set("Content-Disposition", `attachment; filename=grant-${grantId}-analytics.csv`).send(csv);
+    } catch (error) { next(error); }
+  });
+
   return router;
 };
