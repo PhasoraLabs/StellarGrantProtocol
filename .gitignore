@@ -1,4 +1,31 @@
+# Node
+node_modules/
+dist/
+.env*
+.DS_Store
 
-/api/node_modules
-/api/dist
-/api/.env*
+# Rust
+target/
+**/*.rs.bk
+
+# Coverage artifacts
+tarpaulin-report/
+tarpaulin-report.xml
+tarpaulin-report.json
+cobertura.xml
+coverage/
+*.profraw
+*.profdata
+
+# Project specific
+/backend/node_modules
+/backend/dist
+/backend/.env*
+/client/node_modules
+/web/node_modules
+/web/.next
+/web/out
+.next
+/.next
+/stellargrant-fe/.next
+

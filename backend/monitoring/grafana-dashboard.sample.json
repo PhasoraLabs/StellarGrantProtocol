@@ -1,0 +1,69 @@
+{
+  "title": "StellarGrant API Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Rate",
+      "targets": [
+        {
+          "expr": "sum(rate(stellargrant_http_requests_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Error Rate (5xx)",
+      "targets": [
+        {
+          "expr": "sum(rate(stellargrant_http_requests_total{status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 Request Latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(stellargrant_http_request_duration_ms_bucket[5m])) by (le, route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Grant Created Events",
+      "targets": [
+        {
+          "expr": "increase(stellargrant_grants_created_total[1h])",
+          "legendFormat": "created / hour"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconciliation Runs",
+      "targets": [
+        {
+          "expr": "increase(stellargrant_onchain_reconciliation_runs_total[1h])",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconciliation Gaps Found",
+      "targets": [
+        {
+          "expr": "increase(stellargrant_onchain_reconciliation_gaps_total[1h])",
+          "legendFormat": "gaps / hour"
+        }
+      ]
+    }
+  ]
+}

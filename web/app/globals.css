@@ -1,0 +1,384 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #050A14;
+  --bg-secondary: #0D1627;
+  --surface: #111D35;
+  --border: #1E3A5F;
+  --accent-primary: #F5A623;
+  --accent-secondary: #3B82F6;
+  --text-primary: #E8EDF5;
+  --text-muted: #6B7FA3;
+  --success: #22C55E;
+  --danger: #EF4444;
+  --warning: #F59E0B;
+  
+  /* Next.js Font Variables */
+  --font-orbitron: var(--font-orbitron);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-surface: var(--surface);
+  --color-border-color: var(--border);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+
+  --font-orbitron: var(--font-orbitron);
+  --font-mono: var(--font-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-orbitron);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* DatePicker: make the native calendar icon white on dark backgrounds */
+.datepicker-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+/* ── Wallet Connect Button ──────────────────────────────────────────────────── */
+
+.wallet-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-family: var(--font-orbitron);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 0;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.wallet-connect-btn:active {
+  transform: scale(0.97);
+}
+
+.wallet-connect-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* State 2 — Installed, not connected */
+.wallet-connect-btn--default {
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.wallet-connect-btn--default:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+/* State 1 — Freighter not installed */
+.wallet-connect-btn--install {
+  background-color: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+}
+
+.wallet-connect-btn--install:hover {
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+/* State 3 — Connected */
+.wallet-connect-btn--connected {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  gap: 10px;
+}
+
+.wallet-connect-btn--connected:hover {
+  border-color: var(--accent-primary);
+}
+
+.wallet-connect-address {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.wallet-connect-balance {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.wallet-connect-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.wallet-connect-chevron--open {
+  transform: rotate(180deg);
+}
+
+/* ── Connected wrapper + dropdown ───────────────────────────────────────────── */
+
+.wallet-connect-connected {
+  position: relative;
+  display: inline-flex;
+}
+
+.wallet-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.wallet-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 11px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s;
+}
+
+.wallet-dropdown-item:hover {
+  background-color: var(--bg-secondary);
+  color: var(--accent-primary);
+}
+
+.wallet-dropdown-item--danger:hover {
+  color: var(--danger);
+}
+
+/* ── Wallet Select Modal ────────────────────────────────────────────────────── */
+
+.wallet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(5, 10, 20, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  /* Flex-center the panel so framer-motion y animation has no conflict */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.wallet-modal-panel {
+  /* No position:fixed — centered by backdrop flexbox */
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 28px;
+  /* Prevent clicks reaching the backdrop */
+  pointer-events: all;
+}
+
+.wallet-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.wallet-modal-title {
+  font-family: var(--font-orbitron);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.wallet-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.wallet-modal-close:hover {
+  color: var(--text-primary);
+}
+
+/* Connecting spinner state */
+.wallet-modal-connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.wallet-modal-spinner {
+  animation: spin 0.9s linear infinite;
+  color: var(--accent-primary);
+}
+
+/* Error state */
+.wallet-modal-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  margin-bottom: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.wallet-modal-retry-btn {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: var(--font-orbitron);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+
+.wallet-modal-retry-btn:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+/* Wallet option list */
+.wallet-modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wallet-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background-color 0.15s;
+  width: 100%;
+}
+
+.wallet-option--active:hover {
+  border-color: var(--accent-primary);
+  background-color: rgba(245, 166, 35, 0.06);
+}
+
+.wallet-option--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wallet-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wallet-option-name {
+  font-family: var(--font-orbitron);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wallet-option-desc {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.wallet-option-soon {
+  color: var(--warning);
+  font-style: italic;
+}
+
+/* ── WalletGuard Prompt ─────────────────────────────────────────────────────── */
+
+.wallet-guard-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.wallet-guard-message {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+}

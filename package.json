@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "db:up": "node -e \"console.error('docker is not installed; start PostgreSQL manually or set DATABASE_URL before running migrations.'); process.exit(1);\"",
+    "migration:run": "cd backend && npm run migration:run"
+  },
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "typeorm": "^0.3.28"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

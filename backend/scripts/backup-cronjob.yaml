@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: stellargrant-db-backup
+  namespace: default
+spec:
+  schedule: "0 2 * * *"        # daily at 02:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  apk add --no-cache aws-cli && \
+                  pg_dump --format=custom --no-acl --no-owner "$DATABASE_URL" > /tmp/backup.dump && \
+                  TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ") && \
+                  aws s3 cp /tmp/backup.dump "s3://$S3_BUCKET/stellargrant/${TIMESTAMP}.dump" \
+                    --region "$AWS_REGION" --sse AES256 && \
+                  CUTOFF=$(date -u -d "30 days ago" +"%Y-%m-%dT%H:%M:%SZ") && \
+                  aws s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix stellargrant/ \
+                    --query "Contents[?LastModified<='${CUTOFF}'].Key" --output text \
+                    --region "$AWS_REGION" | tr '\t' '\n' | grep -v '^$' | \
+                  while read key; do aws s3 rm "s3://$S3_BUCKET/$key" --region "$AWS_REGION"; done
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: stellargrant-secrets
+                      key: DATABASE_URL
+                - name: S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: stellargrant-secrets
+                      key: S3_BACKUP_BUCKET
+                - name: AWS_REGION
+                  value: "us-east-1"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: stellargrant-secrets
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: stellargrant-secrets
+                      key: AWS_SECRET_ACCESS_KEY
