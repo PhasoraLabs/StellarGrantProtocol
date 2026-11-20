@@ -33,6 +33,24 @@ describe("formatAddressFor", () => {
   it("passes through an empty string", () => {
     expect(formatAddressFor("short", "")).toBe("");
   });
+
+  it("handles long addresses with short format", () => {
+    const longAddress = "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJ";
+    expect(formatAddressFor("short", longAddress)).toBe(
+      `${longAddress.slice(0, 6)}…${longAddress.slice(-4)}`,
+    );
+  });
+
+  it("handles long addresses with medium format", () => {
+    const longAddress = "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJ";
+    expect(formatAddressFor("medium", longAddress)).toBe(
+      `${longAddress.slice(0, 8)}…${longAddress.slice(-6)}`,
+    );
+  });
+
+  it("returns address as-is for invalid format falls through to short", () => {
+    expect(formatAddressFor("invalid", "GABC")).toBe("GABC");
+  });
 });
 
 describe("useAddressFormat", () => {
