@@ -97,22 +97,49 @@ export class ReconciliationService {
 
         this.isRunning = true;
         try {
-            return await this.runInner();
+            const latestLedger = await this.sorobanClient.getLatestLedger();
+            const checkpoint = await this.getOrCreateCheckpoint(latestLedger);
+            const fromLedger = Number(checkpoint.lastLedger) + 1;
+            const toLedger = Math.min(latestLedger, fromLedger + MAX_LEDGER_RANGE - 1);
+
+            return await this.reconcileRange(fromLedger, toLedger, checkpoint);
         } finally {
             this.isRunning = false;
         }
     }
 
-    private async runInner(): Promise<ReconciliationResult> {
+    /**
+     * Re-index activity from an explicit ledger sequence (admin event replay).
+     * The main checkpoint is deliberately left untouched: replaying an old
+     * range must not skip ledgers that still need normal reconciliation.
+     */
+    async replayFromLedger(fromLedger: number, toLedger?: number): Promise<ReconciliationResult> {
+        if (this.isRunning) {
+            logger.info("ReconciliationService: replay skipped, run already in progress");
+            return { fromLedger: 0, toLedger: 0, eventsFound: 0, gapsFound: 0, gapsFilled: 0, errors: [], durationMs: 0 };
+        }
+
+        this.isRunning = true;
+        try {
+            const latestLedger = await this.sorobanClient.getLatestLedger();
+            const requestedEnd = toLedger ?? fromLedger + MAX_LEDGER_RANGE - 1;
+            const endLedger = Math.min(requestedEnd, latestLedger);
+
+            return await this.reconcileRange(fromLedger, endLedger, null);
+        } finally {
+            this.isRunning = false;
+        }
+    }
+
+    private async reconcileRange(
+        fromLedger: number,
+        toLedger: number,
+        checkpoint: ReconciliationCheckpoint | null,
+    ): Promise<ReconciliationResult> {
         const startTime = Date.now();
         const errors: string[] = [];
 
-        const latestLedger = await this.sorobanClient.getLatestLedger();
-        const checkpoint = await this.getOrCreateCheckpoint(latestLedger);
-        const fromLedger = Number(checkpoint.lastLedger) + 1;
-        const toLedger = Math.min(latestLedger, fromLedger + MAX_LEDGER_RANGE - 1);
-
-        logger.info("ReconciliationService: starting run", { fromLedger, toLedger, latestLedger });
+        logger.info("ReconciliationService: starting run", { fromLedger, toLedger });
 
         if (fromLedger > toLedger) {
             logger.info("ReconciliationService: already up-to-date, nothing to reconcile");
@@ -141,8 +168,11 @@ export class ReconciliationService {
             }
         }
 
-        // 4. Advance the checkpoint to the last ledger we processed.
-        await this.advanceCheckpoint(checkpoint, toLedger);
+        // 4. Advance the checkpoint to the last ledger we processed. Normal
+        // runs do this; admin replays pass no checkpoint so history stays intact.
+        if (checkpoint) {
+            await this.advanceCheckpoint(checkpoint, toLedger);
+        }
 
         const result: ReconciliationResult = {
             fromLedger,

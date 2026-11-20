@@ -182,10 +182,18 @@ export const createApp = (
       grantRepo,
       proofRepo,
       activityRepo,
+      approvalRepo,
     ),
   );
   app.use("/ipfs", buildIpfsPresignRouter(signatureService, nonceService));
-  app.use("/events", buildEventsRouter(activityRepo));
+  app.use(
+    "/events",
+    buildEventsRouter(activityRepo, {
+      adminMiddleware,
+      replayEvents: (fromLedger, toLedger) =>
+        reconciliationService.replayFromLedger(fromLedger, toLedger),
+    }),
+  );
   app.use(
     "/webhooks",
     buildWebhooksRouter(
