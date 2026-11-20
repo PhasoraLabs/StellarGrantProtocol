@@ -32,6 +32,36 @@ describe("API e2e", () => {
     expect(response.body.data[0].title).toBe("Open Source Grants Q2");
   });
 
+  it("generates and returns a request ID when none is provided", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app).get("/health");
+
+    expect(response.headers["x-request-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("propagates a valid incoming request ID", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const requestId = "client-request-123";
+    const response = await request(app)
+      .get("/health")
+      .set("X-Request-Id", requestId);
+
+    expect(response.headers["x-request-id"]).toBe(requestId);
+  });
+
+  it("replaces invalid incoming request IDs", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const response = await request(app)
+      .get("/health")
+      .set("X-Request-Id", "invalid request id");
+
+    expect(response.headers["x-request-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
   it("returns a specific grant by id", async () => {
     const app = createApp(dataSource, sorobanClient);
     const response = await request(app).get("/grants/1");
