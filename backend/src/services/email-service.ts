@@ -13,8 +13,9 @@ export function escapeHtml(value: unknown): string {
 }
 
 import sgMail from '@sendgrid/mail';
+import { env } from "../config/env";
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
+sgMail.setApiKey(env.sendgridApiKey);
 
 export type EmailEventType =
   | "milestone_submitted"
@@ -39,7 +40,7 @@ interface EmailTemplate {
 }
 
 export function getEmailTemplate(type: EmailType, data: Record<string, any>): EmailTemplate {
-  const base = process.env.FRONTEND_URL || "http://localhost:3000";
+  const base = env.frontendUrl;
   const grantTitle = escapeHtml(data.grantTitle);
   const milestoneTitle = escapeHtml(data.milestoneTitle);
   const milestoneIdx = escapeHtml(data.milestoneIdx);
@@ -104,7 +105,7 @@ interface SendEmailParams {
 export async function sendEmail({ to, subject, html }: SendEmailParams) {
   const msg = {
     to,
-    from: process.env.SENDGRID_FROM_EMAIL!,
+    from: env.sendgridFromEmail,
     subject,
     html,
   };
