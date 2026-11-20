@@ -187,6 +187,10 @@ export const createApp = (
   app.use("/profiles", buildProfilesRouter(contributorRepo, grantRepo));
   app.use("/my-donations", buildMyDonationsRouter(dataSource, signedUserAuth));
   app.use(
+    "/watchlist",
+    buildWatchlistRouter(watchlistRepo, grantRepo, signedUserAuth),
+  );
+  app.use(
     "/communities",
     optionalSignedUserAuth,
     buildCommunitiesRouter(
