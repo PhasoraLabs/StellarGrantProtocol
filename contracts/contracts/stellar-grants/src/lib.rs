@@ -1950,6 +1950,17 @@ impl StellarGrantsContract {
         delegate::get_delegation(&env, &delegator, &scope)
     }
 
+    /// List every active delegation under which `delegate` may currently vote on
+    /// `grant_id` (one per delegating reviewer). Read-only; revoked, expired and
+    /// exhausted delegations are excluded.
+    pub fn get_delegate_permissions(
+        env: Env,
+        delegate: Address,
+        grant_id: u64,
+    ) -> soroban_sdk::Vec<Delegation> {
+        delegate::get_delegate_permissions(&env, &delegate, grant_id)
+    }
+
     // ── State Snapshots for Audit/Dispute Support (#726) ──────────────────────
 
     /// Manually capture a point-in-time state snapshot of a grant.
