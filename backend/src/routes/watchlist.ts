@@ -41,7 +41,7 @@ export const buildWatchlistRouter = (
   });
 
   router.post(
-    "/:grantId",
+    "/:id",
     validateParams(idParamSchema),
     async (req, res, next) => {
       try {
@@ -66,7 +66,15 @@ export const buildWatchlistRouter = (
 
         res.status(201).json({ ok: true });
       } catch (error: any) {
-        if (error?.code === "23505" || error?.code === "SQLITE_CONSTRAINT") {
+        const errorCode = error?.code ?? error?.driverError?.code;
+        const errorMessage = error?.driverError?.message ?? error?.message;
+        if (
+          errorCode === "23505" ||
+          errorCode === "SQLITE_CONSTRAINT" ||
+          /UNIQUE constraint failed: user_watchlist\.(address|grantId)/i.test(
+            errorMessage ?? "",
+          )
+        ) {
           res.status(409).json({ error: "Grant already in watchlist" });
           return;
         }
@@ -76,7 +84,7 @@ export const buildWatchlistRouter = (
   );
 
   router.delete(
-    "/:grantId",
+    "/:id",
     validateParams(idParamSchema),
     async (req, res, next) => {
       try {

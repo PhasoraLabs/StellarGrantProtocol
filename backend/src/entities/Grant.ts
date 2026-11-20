@@ -19,6 +19,9 @@ import { GrantReviewer } from "./GrantReviewer";
 @Entity({ name: "grants" })
 @Index("IDX_grant_community_id", ["communityId"])
 @Index("IDX_grant_updated_at_id", ["updatedAt", "id"])
+@Index("IDX_grants_status", ["status"])
+@Index("IDX_grants_recipient", ["recipient"])
+@Index("IDX_grants_updated_at", ["updatedAt"])
 export class Grant {
   @PrimaryGeneratedColumn("increment")
   id!: number;

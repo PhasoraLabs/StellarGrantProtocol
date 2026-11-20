@@ -613,6 +613,48 @@ mod tests {
     }
 
     #[test]
+    fn test_promote_next_preserves_fifo_order() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicants = [
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+        ];
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: applicants.len() as u32,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config).unwrap();
+            for applicant in &applicants {
+                setup_contributor(&env, applicant, 500);
+                join(&env, applicant, grant_id).unwrap();
+            }
+        });
+
+        for applicant in &applicants {
+            let promoted = env
+                .as_contract(&contract_id, || promote_next(&env, &owner, grant_id))
+                .unwrap();
+            assert_eq!(promoted, Some(applicant.clone()));
+        }
+
+        env.as_contract(&contract_id, || {
+            assert!(get_waitlist(&env, grant_id).is_empty());
+        });
+    }
+
+    #[test]
     fn test_promote_next_requires_owner() {
         let env = Env::default();
         env.mock_all_auths();

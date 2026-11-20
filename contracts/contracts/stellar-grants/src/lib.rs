@@ -1025,6 +1025,11 @@ impl StellarGrantsContract {
         migration::get_version(&env)
     }
 
+    /// Return the deployed contract's semantic version components.
+    pub fn version(env: Env) -> Option<(u32, u32, u32)> {
+        versioning::version(&env)
+    }
+
     /// Run a versioned schema migration. Admin only.
     pub fn run_migration(
         env: Env,

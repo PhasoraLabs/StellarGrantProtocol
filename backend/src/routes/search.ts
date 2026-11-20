@@ -42,6 +42,7 @@ export const buildSearchRouter = (dataSource: DataSource) => {
           dataSource.getRepository(Grant).find({
             where: [
               { title: Like(searchPattern) },
+              { description: Like(searchPattern) },
               { tags: Like(searchPattern) },
             ],
             take: 50,

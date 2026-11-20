@@ -8,6 +8,7 @@ import { GrantReviewer } from "../entities/GrantReviewer";
 import { GrantSyncService } from "../services/grant-sync-service";
 import { SignatureService } from "../services/signature-service";
 import { ResponseCacheService, responseCacheKeys } from "../services/response-cache";
+import { NotFoundError } from "../utils/errors";
 
 const feedbackSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -140,14 +141,16 @@ export const buildGrantRouter = (
    *                     limit:
    *                       type: integer
    *       400:
-   *         description: Cannot combine ?page= and ?cursor=
+   *         description: Invalid pagination parameters or cannot combine ?page= and ?cursor=
    */
-  router.get("/", async (req, res, next) => {
+  router.get("/", validateQuery(paginationSchema), async (req, res, next) => {
     try {
       await syncService.syncAllGrants();
 
       const rawCursor = req.query.cursor ? String(req.query.cursor) : undefined;
-      const rawPage   = req.query.page   ? String(req.query.page)   : undefined;
+      const rawPage =
+        req.query.page !== undefined ? String(req.query.page) : undefined;
+      const { page, limit } = (req as any).validatedQuery;
 
       // Reject combined usage
       if (hasCursorPageConflict(rawPage, rawCursor)) {
@@ -155,7 +158,6 @@ export const buildGrantRouter = (
         return;
       }
 
-      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
       const communityId = req.query.communityId !== undefined ? Number(req.query.communityId) : undefined;
       const lang = req.header("Accept-Language");
 
@@ -206,8 +208,6 @@ export const buildGrantRouter = (
       }
 
       // ── Offset-based path (backwards-compatible) — preserves original id ASC order
-      const parsedPage = Number(rawPage);
-      const page = Number.isFinite(parsedPage) && parsedPage >= 1 ? Math.floor(parsedPage) : 1;
       const skip = (page - 1) * limit;
 
       const grants = Number.isInteger(communityId)
@@ -244,8 +244,7 @@ export const buildGrantRouter = (
       const grant = await grantRepo.findOne({ where: { id } });
 
       if (!grant) {
-        res.status(404).json({ error: "Grant not found" });
-        return;
+        throw new NotFoundError("Grant not found");
       }
 
       const lang = req.header("Accept-Language");
