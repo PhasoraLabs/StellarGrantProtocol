@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { useWalletStore } from "@/lib/store/walletStore";
-import { useNotifications } from "@/hooks/useNotifications";
+import { useNotifications, formatUnreadBadge } from "@/hooks/useNotifications";
 import { NotificationDrawer } from "./NotificationDrawer";
 
 export function NotificationBell() {
@@ -35,7 +35,7 @@ export function NotificationBell() {
 
   if (!address) return null;
 
-  const badgeLabel = unreadCount > 9 ? "9+" : String(unreadCount);
+  const badgeLabel = formatUnreadBadge(unreadCount);
 
   return (
     <>

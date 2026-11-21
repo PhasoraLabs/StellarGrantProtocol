@@ -15,6 +15,7 @@ import { SocketProvider } from "@/hooks/useSocket";
 import { NotificationToast } from "@/components/ui/NotificationToast";
 
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
+import { NetworkMismatchBanner } from "@/components/layout/NetworkMismatchBanner";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -64,6 +65,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <StellarGrantsProvider>
         <SocketProvider>
           <OfflineBanner />
+          <NetworkMismatchBanner />
           {children}
           <NotificationToast />
         </SocketProvider>

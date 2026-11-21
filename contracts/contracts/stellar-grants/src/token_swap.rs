@@ -201,6 +201,9 @@ pub fn swap_and_pay(
     payer.require_auth();
 
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.status != crate::types::GrantStatus::Active {
+        return Err(ContractError::InvalidState);
+    }
     if grant.owner != *payer {
         return Err(ContractError::Unauthorized);
     }
@@ -227,6 +230,8 @@ pub fn swap_and_pay(
         .publish(env);
         return Ok(result);
     }
+
+    crate::escrow::release(env, grant_id, &env.current_contract_address(), amount)?;
 
     let route = SwapRoute {
         from_token: grant_token.clone(),
@@ -435,6 +440,71 @@ mod tests {
             swap_and_fund(&env, &funder, 1, &token, 1000)
         });
         assert_eq!(result, Err(ContractError::InvalidState));
+    }
+
+    #[test]
+    fn test_swap_and_pay_rejects_inactive_grant() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let funder = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let asset = env.register_stellar_asset_contract_v2(token_admin.clone());
+        StellarAssetClient::new(&env, &asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&owner, &owner);
+        let token = asset.address();
+        open_funded_grant(&env, &contract_id, &owner, &token, &funder, 50_000);
+
+        env.as_contract(&contract_id, || {
+            let mut grant = Storage::get_grant(&env, 1).unwrap();
+            grant.status = crate::types::GrantStatus::Cancelled;
+            Storage::set_grant(&env, 1, &grant);
+        });
+
+        let result = env.as_contract(&contract_id, || {
+            swap_and_pay(&env, &owner, 1, &recipient, &token, &token, 10_000)
+        });
+        assert_eq!(result, Err(ContractError::InvalidState));
+    }
+
+    #[test]
+    fn test_swap_and_pay_cross_token_checks_escrow_balance() {
+        let (env, contract_id) = setup_env();
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let preferred_token_admin = Address::generate(&env);
+        let preferred_asset = env.register_stellar_asset_contract_v2(preferred_token_admin.clone());
+        StellarAssetClient::new(&env, &preferred_asset.address()).mint(&owner, &1_000_000);
+
+        let grant_token_admin = Address::generate(&env);
+        let grant_asset = env.register_stellar_asset_contract_v2(grant_token_admin.clone());
+        StellarAssetClient::new(&env, &grant_asset.address()).mint(&funder, &1_000_000);
+
+        client.set_global_admin(&owner, &owner);
+
+        let grant_token = grant_asset.address();
+        let preferred_token = preferred_asset.address();
+        open_funded_grant(&env, &contract_id, &owner, &grant_token, &funder, 50_000);
+
+        let result = env.as_contract(&contract_id, || {
+            swap_and_pay(
+                &env,
+                &owner,
+                1,
+                &recipient,
+                &grant_token,
+                &preferred_token,
+                60_000,
+            )
+        });
+        assert_eq!(result, Err(ContractError::InvalidInput));
     }
 
     fn open_funded_grant(

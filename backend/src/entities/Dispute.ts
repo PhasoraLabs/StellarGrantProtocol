@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from "typeorm";
+import { timestampColumnType } from "../db/column-types";
 
 @Entity({ name: "disputes" })
 @Unique(["grantId", "milestoneIdx"])
@@ -38,6 +39,6 @@ export class Dispute {
   @CreateDateColumn()
   openedAt!: Date;
 
-  @Column({ type: "timestamp", nullable: true })
+  @Column({ type: timestampColumnType, nullable: true })
   resolvedAt!: Date | null;
 }

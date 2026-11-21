@@ -7,11 +7,13 @@ import { MockSorobanContractClient } from "../../src/soroban/mock-client";
 import * as emailService from "../../src/services/email-service";
 import * as signatureServiceModule from "../../src/services/signature-service";
 import { Grant } from "../../src/entities/Grant";
+import { GrantReviewer } from "../../src/entities/GrantReviewer";
 
 // Mock sendEmail to avoid sending real emails
-vi.spyOn(emailService, "sendEmail").mockImplementation(async () => {});
+vi.spyOn(emailService, "sendEmail").mockImplementation(async () => { });
 // Mock signatureService.verify to always return true
 vi.spyOn(signatureServiceModule.SignatureService.prototype, "verify").mockReturnValue(true);
+vi.spyOn(signatureServiceModule.SignatureService.prototype, "verifyMilestoneApproval").mockReturnValue(true);
 
 const owner = {
   email: "owner@example.com",
@@ -39,15 +41,11 @@ describe("Email notification and user preference integration", () => {
     // Insert a grant for testing (id: 1, matches owner.stellarAddress)
     const grantRepo = dataSource.getRepository(Grant);
     await grantRepo.save({
-      id: 1,
       title: "Test Grant",
       status: "active",
+      owner: owner.stellarAddress,
       recipient: owner.stellarAddress,
       totalAmount: "1000",
-      tags: null,
-      updatedAt: new Date(),
-      proofs: [],
-      reviewers: [],
     });
 
     // Create the app once and reuse across all tests so registered
@@ -57,9 +55,10 @@ describe("Email notification and user preference integration", () => {
     // Register users and wire up the reviewer once for the whole suite
     await request(app).post("/users/register").send(owner);
     await request(app).post("/users/register").send(reviewer);
-    await request(app)
-      .post("/grant_reviewers")
-      .send({ grantId: 1, reviewerStellarAddress: reviewer.stellarAddress });
+    await dataSource.getRepository(GrantReviewer).save({
+      grantId: 1,
+      reviewerStellarAddress: reviewer.stellarAddress,
+    });
   });
 
   // Clear the mock call log between tests so each test only sees its own calls
@@ -75,7 +74,7 @@ describe("Email notification and user preference integration", () => {
       relations: ["reviewers"],
     });
     expect(grantWithReviewers).toBeDefined();
-    expect(grantWithReviewers!.reviewers.length).toBeGreaterThan(0);
+    expect(grantWithReviewers?.reviewers?.length).toBeGreaterThan(0);
 
     // Submit milestone
     const payload = {
@@ -128,6 +127,10 @@ describe("Email notification and user preference integration", () => {
       milestoneIdx: 0,
       reviewerStellarAddress: reviewer.stellarAddress,
       approved: true,
+      address: reviewer.stellarAddress,
+      nonce: "approval-nonce",
+      timestamp: Date.now(),
+      signature: "a".repeat(32),
     });
 
     // Owner has notifyMilestoneApproved: true — should receive email

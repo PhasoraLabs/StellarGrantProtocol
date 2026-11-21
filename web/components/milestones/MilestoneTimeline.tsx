@@ -105,7 +105,7 @@ function MilestoneCard({
             {/* Mini vote progress on submitted milestones */}
             {m.submitted && quorum > 0 && (
               <MiniVoteProgress
-                approved={0}
+                approved={m.votes?.filter((v) => v.vote === "approve").length ?? 0}
                 quorum={quorum}
                 total={reviewers.length}
               />

@@ -127,27 +127,28 @@ pub use types::{
     ChecklistSubmission, ClaimVestedPayload, ClawbackRequest, ClawbackStatus, CollateralDeposit,
     CollateralRequirement, CollateralStatus, ComplianceAttestation, ComplianceLevel,
     ComplianceStatus, ConditionResult, ConditionType, ContractVersion, ContributionType,
-    ContributorPortfolio, ContributorRegisterPayload, CriterionStatus, CrossChainProof,
-    CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus, DaoProposal, DaoProposalStatus,
-    DaoProposalType, DashboardView, DecayConfig, DecayType, Delegation, DelegationScope, DexConfig,
-    Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode, EscrowReleaseApproval,
-    EscrowReleaseRequest, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema,
-    ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage, ExtensionRequest,
-    ExtensionStatus, FeeRecord, ForkRecord, FunderGrantSummary, FunderLedger, FunderReport,
-    FunderTokenSummary, Grant, GrantArchetype, GrantCard, GrantCategory, GrantDetailView,
-    GrantFund, GrantPortfolio, GrantStatus, GrantSummary, GrantTag, GrantTemplate, GrantVersion,
-    HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice,
-    InvoiceStatus, IpRights, LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus,
-    MatchingAllocation, MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof,
-    MigrationRecord, Milestone, MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState,
-    MilestoneSubmission, MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult,
-    MultisigProposal, MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord,
-    ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond,
-    PortfolioFilter, PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule,
-    ProvenanceRecord, PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction,
-    ReferralCode, ReferralRecord, ReferralReward, RefundCalculation, RefundPolicy,
-    RefundPolicyType, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig, RelayDispatch,
-    RelayRecord, RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus, ReputationTier,
+    ContributorPortfolio, ContributorProfile, ContributorRegisterPayload, CriterionStatus,
+    CrossChainProof, CrowdfundCampaign, CrowdfundPledge, CrowdfundStatus, DaoProposal,
+    DaoProposalStatus, DaoProposalType, DashboardView, DecayConfig, DecayType, Delegation,
+    DelegationScope, DexConfig, Dispute, DisputeStatus, EscrowAccount, EscrowLifecycleState,
+    EscrowMode, EscrowReleaseApproval, EscrowReleaseRequest, EscrowState, EvidenceField,
+    EvidenceFieldType, EvidenceSchema, ExportGrant, ExportGrantPage, ExportMilestone,
+    ExportMilestonePage, ExtensionRequest, ExtensionStatus, FeeRecord, ForkRecord,
+    FunderGrantSummary, FunderLedger, FunderReport, FunderTokenSummary, Grant, GrantArchetype,
+    GrantCard, GrantCategory, GrantDetailView, GrantFund, GrantPortfolio, GrantStatus,
+    GrantSummary, GrantTag, GrantTemplate, GrantVersion, HookCallResult, HookEvent,
+    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, InvoiceStatus, IpRights,
+    LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus, MatchingAllocation,
+    MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof, MigrationRecord, Milestone,
+    MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState, MilestoneSubmission,
+    MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult, MultisigProposal,
+    MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord, ParamType,
+    ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond, PortfolioFilter,
+    PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule, ProvenanceRecord,
+    PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction, ReferralCode,
+    ReferralRecord, ReferralReward, RefundCalculation, RefundPolicy, RefundPolicyType,
+    RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig, RelayDispatch, RelayRecord,
+    RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus, ReputationTier,
     RevenueEpoch, ReviewParticipation, ReviewerAvailability, ReviewerProfile, ReviewerRequest,
     ReviewerRequestStatus, ReviewerRewardPool, ReviewerRewardRecord, ReviewerView, Role,
     RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight,
@@ -283,6 +284,14 @@ impl StellarGrantsContract {
         internal_contributor_register(&env, &contributor, name, bio, skills, github_url)
     }
 
+    /// Retrieve a contributor profile by address.
+    pub fn get_contributor(
+        env: Env,
+        contributor: Address,
+    ) -> Result<ContributorProfile, ContractError> {
+        Storage::get_contributor(&env, contributor).ok_or(ContractError::InvalidInput)
+    }
+
     /// Cancel a grant and refund remaining balance to funders
     pub fn grant_cancel(
         env: Env,
@@ -333,6 +342,11 @@ impl StellarGrantsContract {
                     req.forfeit_on_abandon_bps,
                     forfeit_reason,
                 );
+                // The grant is about to be Cancelled, so `collateral::release`
+                // (which requires Completed) can never return what the
+                // forfeiture left; hand it back now. Errors only mean there
+                // is no releasable deposit.
+                let _ = collateral::release_authorized(&env, grant_id, &grant.owner);
             }
 
             let total_refundable = grant.escrow_balance;
@@ -774,6 +788,8 @@ impl StellarGrantsContract {
                     &SubscriptionScope::PerGrant(grant_id),
                     ((grant_id as u128) << 32) | milestone_idx as u128,
                 );
+                // Issue #1155: record milestone rejection in contributor reputation
+                reputation::record_rejection(&env, &grant.owner);
                 audit::log(
                     &env,
                     grant_id,
@@ -839,7 +855,6 @@ impl StellarGrantsContract {
 
         // Issue #574: a required bond must be posted before any milestone submission.
         require_bond_posted(&env, grant_id)?;
-        require_bond_posted(&env, grant_id)?;
 
         // Issue #564: a required collateral deposit must be posted before submission.
         collateral::require_deposited(&env, grant_id, &recipient)?;
@@ -887,7 +902,6 @@ impl StellarGrantsContract {
         }
 
         // Issue #574: a required bond must be posted before any milestone submission.
-        require_bond_posted(&env, grant_id)?;
         require_bond_posted(&env, grant_id)?;
 
         // Issue #564: a required collateral deposit must be posted before submission.
@@ -1009,6 +1023,11 @@ impl StellarGrantsContract {
     /// Query the stored contract version.
     pub fn get_contract_version(env: Env) -> Option<ContractVersion> {
         migration::get_version(&env)
+    }
+
+    /// Return the deployed contract's semantic version components.
+    pub fn version(env: Env) -> Option<(u32, u32, u32)> {
+        versioning::version(&env)
     }
 
     /// Run a versioned schema migration. Admin only.
@@ -1210,7 +1229,7 @@ impl StellarGrantsContract {
         multi_grant::filter_grants(&env, filter, offset, limit)
     }
 
-    /// Add a reviewer to multiple grants in one call.
+    /// Add a reviewer to at most MAX_PAGE_SIZE grants in one call.
     pub fn batch_add_reviewer(
         env: Env,
         owner: Address,
@@ -1221,7 +1240,7 @@ impl StellarGrantsContract {
         multi_grant::batch_add_reviewer(&env, &owner, grant_ids, &reviewer)
     }
 
-    /// Remove a reviewer from multiple grants.
+    /// Remove a reviewer from at most MAX_PAGE_SIZE grants.
     pub fn batch_remove_reviewer(
         env: Env,
         owner: Address,
@@ -1237,7 +1256,7 @@ impl StellarGrantsContract {
         multi_grant::total_escrow_balance(&env, &owner, &token)
     }
 
-    /// Get the n most recently active grants for an owner.
+    /// Get up to MAX_PAGE_SIZE of the most recently active grants for an owner.
     pub fn get_recent_grants(env: Env, owner: Address, n: u32) -> Vec<u64> {
         multi_grant::recent_grants(&env, &owner, n)
     }
@@ -4648,8 +4667,11 @@ impl StellarGrantsContract {
         waitlist::leave(&env, &applicant, grant_id)
     }
 
-    /// Promote the top-ranked entry. Called when a slot opens.
-    /// Returns the promoted address if successful, None if waitlist is empty.
+    /// Select the top-ranked waitlist entry for advisory promotion.
+    /// This does not assign a grant slot or change the applicant's contributor
+    /// or reviewer status; callers must handle any follow-up using the address.
+    /// Returns the selected address, or None if promotion is disabled or the
+    /// waitlist is empty.
     pub fn promote_from_waitlist(
         env: Env,
         caller: Address,

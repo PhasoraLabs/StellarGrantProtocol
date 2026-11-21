@@ -1,8 +1,15 @@
 use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::ContractError;
+use crate::migration;
 use crate::storage::Storage;
 use crate::types::{Amendment, AmendmentStatus, Grant, GrantVersion, Milestone, MilestoneState};
+
+/// Return the deployed contract's semantic version components.
+pub fn version(env: &Env) -> Option<(u32, u32, u32)> {
+    let version = migration::get_version(env)?;
+    Some((version.major, version.minor, version.patch))
+}
 
 fn field(env: &Env, name: &str) -> String {
     String::from_str(env, name)

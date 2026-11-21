@@ -55,6 +55,7 @@ pub const REPUTATION_REJECTION_PENALTY: u32 = 200; // bps subtracted per rejecti
 // ── Milestones ────────────────────────────────────────────────────────────────
 pub const MAX_MILESTONES_PER_GRANT: u32 = 20;
 pub const MAX_BATCH_SIZE: u32 = 10;
+pub const MAX_BATCH_CANCEL_FUNDERS_PER_GRANT: u32 = 50;
 
 // ── Limits ───────────────────────────────────────────────────────────────────
 pub const MAX_FORK_DEPTH: u32 = 5;

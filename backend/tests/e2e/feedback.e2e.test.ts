@@ -160,9 +160,20 @@ describe("Feedback E2E Tests", () => {
     expect(funderRes.status).toBe(201);
 
     // 7. POST feedback - reject duplicate submission (funder again)
+    const duplicatePayload = {
+      ...payloadFunder,
+      nonce: "nonce-funder-duplicate",
+    };
+    const duplicateMessage = signatureService.buildFeedbackIntentMessage({
+      grantId: 3,
+      ...duplicatePayload,
+    });
+    const duplicateSignature = funderKey
+      .sign(Buffer.from(duplicateMessage, "utf8"))
+      .toString("base64");
     const duplicateRes = await request(app)
       .post("/grants/3/feedback")
-      .send({ ...payloadFunder, signature: sigFunder });
+      .send({ ...duplicatePayload, signature: duplicateSignature });
     expect(duplicateRes.status).toBe(409);
     expect(duplicateRes.body.rating).toBe(5);
 

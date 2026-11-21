@@ -28,6 +28,7 @@ import { WebhookDeliveryLog } from "../entities/WebhookDeliveryLog";
 import { Role } from "../entities/Role";
 import { UserRole } from "../entities/UserRole";
 import { GrantFeedback } from "../entities/GrantFeedback";
+import { UsedNonce } from "../entities/UsedNonce";
 
 // Used by the TypeORM CLI (migration:generate, migration:run, migration:revert)
 export default new DataSource({
@@ -39,7 +40,7 @@ export default new DataSource({
     ReconciliationCheckpoint, RateLimitLog, Community, MilestoneComment,
     GrantHistory, FeeCollection, PlatformConfig, Report,
     WebhookSubscription, WebhookDeliveryLog, Role, UserRole, GrantFeedback,
-    Dispute, MilestoneAppeal,
+    Dispute, MilestoneAppeal, UsedNonce,
   ],
   migrations: ["src/db/migrations/*.ts"],
   synchronize: false,

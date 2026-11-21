@@ -11,6 +11,7 @@ import { Milestone } from "../../src/entities/Milestone";
 import { User } from "../../src/entities/User";
 import { Role, RoleName } from "../../src/entities/Role";
 import { UserRole } from "../../src/entities/UserRole";
+import { SignatureService } from "../../src/services/signature-service";
 
 describe("Communities, comments, and metrics e2e", () => {
   let dataSource: DataSource;
@@ -150,9 +151,24 @@ describe("Communities, comments, and metrics e2e", () => {
     expect(list.body.data[0].id).toBe(first.body.data.id);
     expect(list.body.data[1].parentCommentId).toBe(first.body.data.id);
 
+    const deletePath = `/milestones/${milestone!.id}/comments/${second.body.data.id}`;
+    const nonce = "comment-delete-nonce";
+    const timestamp = Date.now();
+    const signatureService = new SignatureService();
+    const message = signatureService.buildAdminIntentMessage({
+      address: adminAddress,
+      nonce,
+      timestamp,
+      action: `DELETE:${deletePath}`,
+    });
     const deleted = await request(app)
-      .delete(`/milestones/${milestone!.id}/comments/${second.body.data.id}`)
-      .set("x-admin-address", adminAddress);
+      .delete(deletePath)
+      .set({
+        "x-admin-address": adminAddress,
+        "x-admin-nonce": nonce,
+        "x-admin-timestamp": String(timestamp),
+        "x-admin-signature": adminKey.sign(Buffer.from(message, "utf8")).toString("base64"),
+      });
 
     expect(deleted.status).toBe(200);
 

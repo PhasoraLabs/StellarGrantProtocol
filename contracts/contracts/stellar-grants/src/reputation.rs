@@ -93,6 +93,20 @@ pub fn record_completion(
     Ok(new_score)
 }
 
+pub fn record_rejection(env: &Env, contributor: &soroban_sdk::Address) {
+    let mut profile = match Storage::get_contributor(env, contributor.clone()) {
+        Some(p) => p,
+        None => return, // If no profile exists, we can't record a rejection
+    };
+    profile.milestones_rejected = profile.milestones_rejected.saturating_add(1);
+
+    // Recalculate score with the new rejection count
+    let new_score = calculate_effective_score(env, &profile);
+    profile.reputation_score = new_score as u64;
+
+    Storage::set_contributor(env, contributor.clone(), &profile);
+}
+
 pub fn tier_from_score(score: u32) -> ReputationTier {
     match score {
         0..=99 => ReputationTier::Unranked,

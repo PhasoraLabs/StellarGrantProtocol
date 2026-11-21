@@ -9,6 +9,8 @@ use crate::types::{
     MilestoneState,
 };
 
+const MAX_BATCH_CANCEL_FUNDERS_PER_GRANT: u32 = constants::MAX_BATCH_CANCEL_FUNDERS_PER_GRANT;
+
 fn validate_batch_size(len: u32) -> Result<(), ContractError> {
     if len == 0 {
         return Err(ContractError::BatchEmpty);
@@ -46,15 +48,8 @@ fn item_success(index: u32) -> BatchItemResult {
     }
 }
 
-fn item_failure(index: u32, error: ContractError) -> BatchItemResult {
-    BatchItemResult {
-        index,
-        success: false,
-        error_code: Some(error as u32),
-    }
-}
-
 /// Vote on multiple milestones in one call. Reviewer only.
+/// Any failed vote aborts the batch and rolls back earlier changes.
 pub fn batch_vote_milestones(
     env: &Env,
     reviewer: &Address,
@@ -67,11 +62,8 @@ pub fn batch_vote_milestones(
 
     let mut results = Vec::new(env);
     for (index, vote) in votes.iter().enumerate() {
-        let item = match try_vote_milestone(env, reviewer, &vote) {
-            Ok(()) => item_success(index as u32),
-            Err(error) => item_failure(index as u32, error),
-        };
-        results.push_back(item);
+        try_vote_milestone(env, reviewer, &vote)?;
+        results.push_back(item_success(index as u32));
     }
 
     Ok(build_batch_result(results))
@@ -115,6 +107,7 @@ fn try_vote_milestone(
 }
 
 /// Fund multiple grants with the same token in one call. Funder only.
+/// Any failed funding operation aborts the batch and rolls back earlier changes.
 pub fn batch_fund_grants(
     env: &Env,
     funder: &Address,
@@ -129,11 +122,8 @@ pub fn batch_fund_grants(
     let mut results = Vec::new(env);
     for (index, item) in items.iter().enumerate() {
         let (grant_id, amount) = item;
-        let item = match try_fund_grant(env, funder, token, grant_id, amount) {
-            Ok(()) => item_success(index as u32),
-            Err(error) => item_failure(index as u32, error),
-        };
-        results.push_back(item);
+        try_fund_grant(env, funder, token, grant_id, amount)?;
+        results.push_back(item_success(index as u32));
     }
 
     Ok(build_batch_result(results))
@@ -146,6 +136,7 @@ fn try_fund_grant(
     grant_id: u64,
     amount: i128,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
     if amount <= 0 {
         return Err(ContractError::InvalidInput);
     }
@@ -187,20 +178,24 @@ fn try_fund_grant(
         });
     }
 
-    let token_client = token::Client::new(env, &grant.token);
-    let contract_address = env.current_contract_address();
-    token_client.transfer(funder, &contract_address, &amount);
-
     grant.escrow_balance = new_escrow_balance;
     grant.funders = funders;
-
     Storage::set_grant(env, grant_id, &grant);
+
+    let token_client = token::Client::new(env, &grant.token);
+    let contract_address = env.current_contract_address();
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(funder, &contract_address, &amount);
+        Ok(())
+    })?;
+
     Events::emit_grant_funded(env, grant_id, funder.clone(), amount, grant.escrow_balance);
 
     Ok(())
 }
 
 /// Cancel multiple grants. Admin or owner only.
+/// Any failed cancellation aborts the batch and rolls back earlier changes.
 pub fn batch_cancel_grants(
     env: &Env,
     caller: &Address,
@@ -212,13 +207,27 @@ pub fn batch_cancel_grants(
 
     caller.require_auth();
 
+    let mut total_nested_funders = 0u32;
+    for grant_id in grant_ids.iter() {
+        if let Some(grant) = Storage::get_grant(env, grant_id) {
+            if grant.funders.len() > MAX_BATCH_CANCEL_FUNDERS_PER_GRANT {
+                return Err(ContractError::BatchTooLarge);
+            }
+            total_nested_funders = total_nested_funders
+                .checked_add(grant.funders.len())
+                .ok_or(ContractError::BatchTooLarge)?;
+            if total_nested_funders
+                > (constants::MAX_BATCH_SIZE * MAX_BATCH_CANCEL_FUNDERS_PER_GRANT)
+            {
+                return Err(ContractError::BatchTooLarge);
+            }
+        }
+    }
+
     let mut results = Vec::new(env);
     for (index, grant_id) in grant_ids.iter().enumerate() {
-        let item = match try_cancel_grant(env, caller, grant_id, &reason) {
-            Ok(()) => item_success(index as u32),
-            Err(error) => item_failure(index as u32, error),
-        };
-        results.push_back(item);
+        try_cancel_grant(env, caller, grant_id, &reason)?;
+        results.push_back(item_success(index as u32));
     }
 
     Ok(build_batch_result(results))
@@ -230,7 +239,12 @@ pub fn try_cancel_grant(
     grant_id: u64,
     reason: &String,
 ) -> Result<(), ContractError> {
+    crate::reentrancy::protect(env)?;
+
     let mut grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.funders.len() > MAX_BATCH_CANCEL_FUNDERS_PER_GRANT {
+        return Err(ContractError::BatchTooLarge);
+    }
 
     let caller_is_owner = grant.owner == *caller;
     let caller_is_admin = Storage::get_global_admin(env) == Some(caller.clone());
@@ -247,6 +261,12 @@ pub fn try_cancel_grant(
     }
 
     let total_refundable = grant.escrow_balance;
+    grant.status = GrantStatus::Cancelled;
+    grant.escrow_balance = 0;
+    grant.reason = Some(reason.clone());
+    grant.timestamp = env.ledger().timestamp();
+    Storage::set_grant(env, grant_id, &grant);
+
     if total_refundable > 0 {
         let mut total_contributions: i128 = 0;
         for fund_entry in grant.funders.iter() {
@@ -280,22 +300,19 @@ pub fn try_cancel_grant(
             };
 
             if refund_amount > 0 {
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &fund_entry.funder,
-                    &refund_amount,
-                );
+                crate::reentrancy::protect_external_call(env, || {
+                    token_client.transfer(
+                        &env.current_contract_address(),
+                        &fund_entry.funder,
+                        &refund_amount,
+                    );
+                    Ok(())
+                })?;
                 Events::emit_refund_issued(env, grant_id, fund_entry.funder.clone(), refund_amount);
             }
         }
     }
 
-    grant.status = GrantStatus::Cancelled;
-    grant.escrow_balance = 0;
-    grant.reason = Some(reason.clone());
-    grant.timestamp = env.ledger().timestamp();
-
-    Storage::set_grant(env, grant_id, &grant);
     Events::emit_grant_cancelled(
         env,
         grant_id,
@@ -402,6 +419,64 @@ mod tests {
         assert_eq!(result, Ok(()));
     }
 
+    #[test]
+    fn test_try_cancel_grant_rejects_reentry() {
+        let (env, contract_id) = setup_contract_env();
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+            create_grant(&env, 1, &owner, &token);
+            env.storage()
+                .temporary()
+                .set(&crate::reentrancy::ReentrancyKey::ExternalCallGuard, &());
+
+            let reason = String::from_str(&env, "reentry");
+            assert_eq!(
+                try_cancel_grant(&env, &owner, 1, &reason),
+                Err(ContractError::Reentrancy)
+            );
+        });
+    }
+
+    #[test]
+    fn test_batch_cancel_grants_rejects_too_many_funders_per_grant() {
+        let (env, contract_id) = setup_contract_env();
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+            let mut grant = crate::types::Grant {
+                id: 1,
+                owner: owner.clone(),
+                title: String::from_str(&env, "Test Grant"),
+                description: String::from_str(&env, "Description"),
+                token: token.clone(),
+                status: GrantStatus::Active,
+                total_amount: 100_000,
+                milestone_amount: 50_000,
+                reviewers: Vec::new(&env),
+                total_milestones: 3,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: Vec::new(&env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            for _ in 0..(constants::MAX_BATCH_CANCEL_FUNDERS_PER_GRANT + 1) {
+                grant.funders.push_back(GrantFund {
+                    funder: Address::generate(&env),
+                    amount: 10,
+                });
+            }
+            Storage::set_grant(&env, 1, &grant);
+
+            let grant_ids = Vec::from_array(&env, [1u64]);
+            let result =
+                batch_cancel_grants(&env, &owner, grant_ids, String::from_str(&env, "too many"));
+            assert_eq!(result, Err(ContractError::BatchTooLarge));
+        });
+    }
+
     // ── build_batch_result ───────────────────────────────────────────────
 
     #[test]
@@ -417,37 +492,6 @@ mod tests {
         assert_eq!(batch_result.succeeded, 3);
         assert_eq!(batch_result.failed, 0);
         assert_eq!(batch_result.results.len(), 3);
-    }
-
-    #[test]
-    fn test_build_batch_result_all_failure() {
-        let env = setup_env();
-        let mut results = Vec::new(&env);
-        results.push_back(item_failure(0, ContractError::GrantNotFound));
-        results.push_back(item_failure(1, ContractError::Unauthorized));
-        results.push_back(item_failure(2, ContractError::InvalidInput));
-
-        let batch_result = build_batch_result(results);
-        assert_eq!(batch_result.total, 3);
-        assert_eq!(batch_result.succeeded, 0);
-        assert_eq!(batch_result.failed, 3);
-        assert_eq!(batch_result.results.len(), 3);
-    }
-
-    #[test]
-    fn test_build_batch_result_mixed() {
-        let env = setup_env();
-        let mut results = Vec::new(&env);
-        results.push_back(item_success(0));
-        results.push_back(item_failure(1, ContractError::GrantNotFound));
-        results.push_back(item_success(2));
-        results.push_back(item_failure(3, ContractError::Unauthorized));
-
-        let batch_result = build_batch_result(results);
-        assert_eq!(batch_result.total, 4);
-        assert_eq!(batch_result.succeeded, 2);
-        assert_eq!(batch_result.failed, 2);
-        assert_eq!(batch_result.results.len(), 4);
     }
 
     // ── batch_vote_milestones ─────────────────────────────────────────────
@@ -481,114 +525,39 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_vote_milestones_mixed_valid_invalid() {
+    fn test_batch_vote_milestones_failure_rolls_back_earlier_votes() {
         let (env, contract_id) = setup_contract_env();
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let reviewer = Address::generate(&env);
+        let token = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let owner = Address::generate(&env);
-            let reviewer = Address::generate(&env);
-            let token = Address::generate(&env);
-
-            // Create grant 1 with reviewer
             create_grant(&env, 1, &owner, &token);
             setup_reviewer(&env, 1, &reviewer);
-
-            // Create grant 2 without reviewer (will fail)
-            create_grant(&env, 2, &owner, &token);
-
-            // Create grant 3 with reviewer
-            create_grant(&env, 3, &owner, &token);
-            setup_reviewer(&env, 3, &reviewer);
-
-            // Batch: grant 1 (valid), grant 2 (invalid - not reviewer), grant 3 (valid)
-            let mut votes = Vec::new(&env);
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 1,
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 2,
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 3,
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-
-            let result = batch_vote_milestones(&env, &reviewer, votes).unwrap();
-            assert_eq!(result.total, 3);
-            assert_eq!(result.succeeded, 2);
-            assert_eq!(result.failed, 1);
-
-            // Check that valid votes were recorded
-            let ms1 = Storage::get_milestone(&env, 1, 0).unwrap();
-            assert!(ms1.votes.contains_key(reviewer.clone()));
-
-            let ms3 = Storage::get_milestone(&env, 3, 0).unwrap();
-            assert!(ms3.votes.contains_key(reviewer.clone()));
-
-            // Check that invalid vote didn't corrupt state
-            let ms2 = Storage::get_milestone(&env, 2, 0).unwrap();
-            assert!(!ms2.votes.contains_key(reviewer.clone()));
         });
-    }
 
-    #[test]
-    fn test_batch_vote_milestones_failed_item_doesnt_corrupt_others() {
-        let (env, contract_id) = setup_contract_env();
-        env.as_contract(&contract_id, || {
-            let owner = Address::generate(&env);
-            let reviewer = Address::generate(&env);
-            let token = Address::generate(&env);
-
-            // Create grant 1 with reviewer
-            create_grant(&env, 1, &owner, &token);
-            setup_reviewer(&env, 1, &reviewer);
-
-            // Create grant 2 (nonexistent - will fail)
-            // Don't create grant 2
-
-            // Create grant 3 with reviewer
-            create_grant(&env, 3, &owner, &token);
-            setup_reviewer(&env, 3, &reviewer);
-
-            let mut votes = Vec::new(&env);
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 1,
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 2, // doesn't exist
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-            votes.push_back(BatchMilestoneVote {
-                grant_id: 3,
-                milestone_idx: 0,
-                approve: true,
-                reason: Some(String::from_str(&env, "approve")),
-            });
-
-            let result = batch_vote_milestones(&env, &reviewer, votes).unwrap();
-            assert_eq!(result.total, 3);
-            assert_eq!(result.succeeded, 2);
-            assert_eq!(result.failed, 1);
-
-            // Verify valid votes succeeded despite middle failure
-            let ms1 = Storage::get_milestone(&env, 1, 0).unwrap();
-            assert!(ms1.votes.contains_key(reviewer.clone()));
-
-            let ms3 = Storage::get_milestone(&env, 3, 0).unwrap();
-            assert!(ms3.votes.contains_key(reviewer.clone()));
+        let mut votes = Vec::new(&env);
+        votes.push_back(BatchMilestoneVote {
+            grant_id: 1,
+            milestone_idx: 0,
+            approve: true,
+            reason: Some(String::from_str(&env, "approve")),
         });
+        votes.push_back(BatchMilestoneVote {
+            grant_id: 2,
+            milestone_idx: 0,
+            approve: true,
+            reason: Some(String::from_str(&env, "approve")),
+        });
+
+        assert_eq!(
+            client.try_batch_vote_milestones(&reviewer, &votes),
+            Err(Ok(ContractError::GrantNotFound.into()))
+        );
+
+        let milestone =
+            env.as_contract(&contract_id, || Storage::get_milestone(&env, 1, 0).unwrap());
+        assert!(!milestone.votes.contains_key(reviewer));
     }
 
     // ── batch_fund_grants ─────────────────────────────────────────────────
@@ -605,53 +574,33 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_fund_grants_mixed_valid_invalid() {
+    fn test_batch_fund_grants_failure_rolls_back_earlier_transfers() {
         let (env, contract_id) = setup_contract_env();
-
-        // The funder actually transfers tokens during a successful batch item,
-        // so this needs a real asset contract behind `token`, not a bare
-        // generated address.
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
         let token_admin = Address::generate(&env);
         let token = env
             .register_stellar_asset_contract_v2(token_admin)
             .address();
         let funder = Address::generate(&env);
-        token::StellarAssetClient::new(&env, &token).mint(&funder, &2_000);
+        token::StellarAssetClient::new(&env, &token).mint(&funder, &1_000);
+        let owner = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
-            let owner = Address::generate(&env);
-
-            // Create grant 1 with matching token
             create_grant(&env, 1, &owner, &token);
-
-            // Create grant 2 with different token (will fail)
-            let token2 = Address::generate(&env);
-            create_grant(&env, 2, &owner, &token2);
-
-            // Create grant 3 with matching token
-            create_grant(&env, 3, &owner, &token);
-
-            let mut items = Vec::new(&env);
-            items.push_back((1, 1_000));
-            items.push_back((2, 1_000)); // wrong token
-            items.push_back((3, 1_000));
-
-            let result = batch_fund_grants(&env, &funder, &token, items).unwrap();
-            assert_eq!(result.total, 3);
-            assert_eq!(result.succeeded, 2);
-            assert_eq!(result.failed, 1);
-
-            // Check that valid funding succeeded
-            let grant1 = Storage::get_grant(&env, 1).unwrap();
-            assert_eq!(grant1.escrow_balance, 1_000);
-
-            let grant3 = Storage::get_grant(&env, 3).unwrap();
-            assert_eq!(grant3.escrow_balance, 1_000);
-
-            // Check that invalid funding didn't corrupt state
-            let grant2 = Storage::get_grant(&env, 2).unwrap();
-            assert_eq!(grant2.escrow_balance, 0);
         });
+
+        let items = Vec::from_array(&env, [(1u64, 1_000i128), (2u64, 1_000i128)]);
+        assert_eq!(
+            client.try_batch_fund_grants(&funder, &token, &items),
+            Err(Ok(ContractError::GrantNotFound.into()))
+        );
+
+        let grant = env.as_contract(&contract_id, || Storage::get_grant(&env, 1).unwrap());
+        assert_eq!(grant.escrow_balance, 0);
+        assert!(grant.funders.is_empty());
+        let token_client = token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&funder), 1_000);
+        assert_eq!(token_client.balance(&contract_id), 0);
     }
 
     // ── batch_cancel_grants ───────────────────────────────────────────────
@@ -668,84 +617,23 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_cancel_grants_mixed_valid_invalid() {
+    fn test_batch_cancel_grants_failure_rolls_back_earlier_cancellations() {
         let (env, contract_id) = setup_contract_env();
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let owner = Address::generate(&env);
-            let admin = Address::generate(&env);
-            let token = Address::generate(&env);
-
-            Storage::set_global_admin(&env, &admin);
-
-            // Create grant 1 owned by owner
             create_grant(&env, 1, &owner, &token);
-
-            // Create grant 2 owned by different person (caller can't cancel)
-            let other = Address::generate(&env);
-            create_grant(&env, 2, &other, &token);
-
-            // Create grant 3 owned by owner
-            create_grant(&env, 3, &owner, &token);
-
-            let mut grant_ids = Vec::new(&env);
-            grant_ids.push_back(1);
-            grant_ids.push_back(2); // unauthorized
-            grant_ids.push_back(3);
-
-            let reason = String::from_str(&env, "test");
-            let result = batch_cancel_grants(&env, &owner, grant_ids, reason).unwrap();
-            assert_eq!(result.total, 3);
-            assert_eq!(result.succeeded, 2);
-            assert_eq!(result.failed, 1);
-
-            // Check that valid cancels succeeded
-            let grant1 = Storage::get_grant(&env, 1).unwrap();
-            assert_eq!(grant1.status, GrantStatus::Cancelled);
-
-            let grant3 = Storage::get_grant(&env, 3).unwrap();
-            assert_eq!(grant3.status, GrantStatus::Cancelled);
-
-            // Check that invalid cancel didn't corrupt state
-            let grant2 = Storage::get_grant(&env, 2).unwrap();
-            assert_eq!(grant2.status, GrantStatus::Active);
         });
-    }
 
-    #[test]
-    fn test_batch_cancel_grants_failed_item_doesnt_corrupt_others() {
-        let (env, contract_id) = setup_contract_env();
-        env.as_contract(&contract_id, || {
-            let owner = Address::generate(&env);
-            let admin = Address::generate(&env);
-            let token = Address::generate(&env);
+        let grant_ids = Vec::from_array(&env, [1u64, 2u64]);
+        let reason = String::from_str(&env, "test");
+        assert_eq!(
+            client.try_batch_cancel_grants(&owner, &grant_ids, &reason),
+            Err(Ok(ContractError::GrantNotFound.into()))
+        );
 
-            Storage::set_global_admin(&env, &admin);
-
-            // Create grant 1
-            create_grant(&env, 1, &owner, &token);
-
-            // Don't create grant 2 (will fail)
-
-            // Create grant 3
-            create_grant(&env, 3, &owner, &token);
-
-            let mut grant_ids = Vec::new(&env);
-            grant_ids.push_back(1);
-            grant_ids.push_back(2); // doesn't exist
-            grant_ids.push_back(3);
-
-            let reason = String::from_str(&env, "test");
-            let result = batch_cancel_grants(&env, &admin, grant_ids, reason).unwrap();
-            assert_eq!(result.total, 3);
-            assert_eq!(result.succeeded, 2);
-            assert_eq!(result.failed, 1);
-
-            // Verify valid cancels succeeded despite middle failure
-            let grant1 = Storage::get_grant(&env, 1).unwrap();
-            assert_eq!(grant1.status, GrantStatus::Cancelled);
-
-            let grant3 = Storage::get_grant(&env, 3).unwrap();
-            assert_eq!(grant3.status, GrantStatus::Cancelled);
-        });
+        let grant = env.as_contract(&contract_id, || Storage::get_grant(&env, 1).unwrap());
+        assert_eq!(grant.status, GrantStatus::Active);
     }
 }

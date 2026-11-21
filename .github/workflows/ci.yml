@@ -54,10 +54,14 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/stellargrant_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
     defaults:
       run:
         working-directory: backend
@@ -77,8 +81,6 @@ jobs:
 
       - name: Run migrations
         run: npm run migration:run
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/stellargrant_test
 
       - name: Run E2E tests
         run: npm run test:e2e

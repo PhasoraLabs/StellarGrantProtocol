@@ -41,6 +41,17 @@ export function extractWalletAddress(req: Request): string | null {
   );
 }
 
+/**
+ * Extract the authenticated user ID from the request when available.
+ * Passport (and compatible middleware) attaches the session user to req.user.
+ * Returns undefined for anonymous requests so callers fall back to IP.
+ */
+export function extractUserId(req: Request): string | undefined {
+  const user = (req as Request & { user?: { id?: string | number } }).user;
+  if (!user?.id) return undefined;
+  return String(user.id);
+}
+
 export const createRateLimiter = (dataSource: DataSource) => {
   const repo = dataSource.getRepository(RateLimitLog);
 
@@ -49,6 +60,16 @@ export const createRateLimiter = (dataSource: DataSource) => {
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
+
+    /**
+     * Key by authenticated user ID when present so that multiple users
+     * sharing the same IP address each get their own independent bucket.
+     * Anonymous requests fall back to the IP as before.
+     */
+    keyGenerator: (req) => {
+      const userId = extractUserId(req);
+      return userId ? `user:${userId}` : (req.ip ?? "unknown");
+    },
 
     handler: async (req, res) => {
       try {

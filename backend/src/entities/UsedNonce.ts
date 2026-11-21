@@ -1,4 +1,5 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, Index } from "typeorm";
+import { timestampColumnType } from "../db/column-types";
 
 /**
  * Consumed signature nonces for signed intents (milestone proofs, grant
@@ -15,6 +16,6 @@ export class UsedNonce {
   usedAt!: Date;
 
   /** Rows may be purged after this time; the nonce window is minutes. */
-  @Column({ type: "timestamp" })
+  @Column({ type: timestampColumnType })
   expiresAt!: Date;
 }

@@ -26,6 +26,7 @@ describe("Search API e2e", () => {
         id: 101,
         title: "Stellar Wallet Integration",
         status: "active",
+        owner: "GOWNER",
         recipient: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD",
         totalAmount: "1000000",
         tags: "wallet,stellar,integration",
@@ -34,6 +35,7 @@ describe("Search API e2e", () => {
         id: 102,
         title: "DEX Aggregator",
         status: "pending",
+        owner: "GOWNER",
         recipient: "GCBQ6JQXQTVV7T7OUVPR4Q6PGACCUAKS6S2YDG3YQYQYRR2NJB5A6NAA",
         totalAmount: "500000",
         tags: "dex,defi,aggregator",
@@ -78,9 +80,9 @@ describe("Search API e2e", () => {
     expect(match.type).toBe("grant");
   });
 
-  it("returns results for contributor email search", async () => {
+  it("returns results for public contributor address search", async () => {
     const app = createApp(dataSource, sorobanClient);
-    const response = await request(app).get("/search?q=alice");
+    const response = await request(app).get("/search?q=GDZAPKZ");
 
     expect(response.status).toBe(200);
     expect(response.body.data).toHaveLength(1);

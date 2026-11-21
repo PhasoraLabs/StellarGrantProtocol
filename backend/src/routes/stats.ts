@@ -4,6 +4,8 @@ import { Grant } from "../entities/Grant";
 import { MilestoneProof } from "../entities/MilestoneProof";
 import { ResponseCacheService, responseCacheKeys } from "../services/response-cache";
 
+const STATS_CACHE_TTL_SECONDS = 30;
+
 export const buildStatsRouter = (
   grantRepo: Repository<Grant>,
   proofRepo: Repository<MilestoneProof>,
@@ -17,6 +19,10 @@ export const buildStatsRouter = (
       if (responseCache.isEnabled()) {
         const hit = await responseCache.get(cacheKey);
         if (hit) {
+          res.setHeader(
+            "Cache-Control",
+            `public, max-age=${STATS_CACHE_TTL_SECONDS}`,
+          );
           res.type("application/json").send(hit);
           return;
         }
@@ -39,7 +45,11 @@ export const buildStatsRouter = (
         milestonesCompleted: proofsCount,
       });
 
-      await responseCache.set(cacheKey, body);
+      await responseCache.set(cacheKey, body, STATS_CACHE_TTL_SECONDS);
+      res.setHeader(
+        "Cache-Control",
+        `public, max-age=${STATS_CACHE_TTL_SECONDS}`,
+      );
       res.type("application/json").send(body);
     } catch (error) {
       next(error);

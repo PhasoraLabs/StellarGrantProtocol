@@ -44,3 +44,6 @@ export type { DatePickerProps, RelativeDateLabel, RelativeDateTone } from "./Dat
 
 export { KeyboardShortcutsOverlay } from "./KeyboardShortcutsOverlay";
 export type { KeyboardShortcutsOverlayProps } from "./KeyboardShortcutsOverlay";
+
+export { Tooltip } from "./Tooltip";
+export type { TooltipProps } from "./Tooltip";

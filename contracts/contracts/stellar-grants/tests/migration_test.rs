@@ -46,6 +46,22 @@ fn test_initialize_sets_version_1_0_0() {
 }
 
 #[test]
+fn test_version_returns_semver_components() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, deployer) = setup(&env);
+
+    assert_eq!(client.version(), None);
+    client.initialize(&deployer);
+    assert_eq!(client.version(), Some((1, 0, 0)));
+
+    client.set_global_admin(&deployer, &deployer);
+    let target = make_version(&env, 2, 1, 3, &deployer);
+    client.run_migration(&deployer, &target);
+    assert_eq!(client.version(), Some((2, 1, 3)));
+}
+
+#[test]
 fn test_initialize_is_idempotent() {
     let env = Env::default();
     env.mock_all_auths();

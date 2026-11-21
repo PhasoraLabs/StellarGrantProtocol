@@ -1,7 +1,7 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import helmet from "helmet";
 import cors from "cors";
-import morgan from "morgan";
 import { DataSource } from "typeorm";
 import { Grant } from "./entities/Grant";
 import { MilestoneProof } from "./entities/MilestoneProof";
@@ -31,6 +31,7 @@ import { ReconciliationService } from "./services/reconciliation-service";
 import { SorobanContractClient } from "./soroban/types";
 import { AppError } from "./utils/errors";
 import { errorHandler } from "./middlewares/error-handler";
+import { logger } from "./config/logger";
 
 import { User } from "./entities/User";
 import { Role } from "./entities/Role";
@@ -68,13 +69,39 @@ import { buildStatsRouter } from "./routes/stats";
 import { buildWatchlistRouter } from "./routes/watchlist";
 import { GrantView } from "./entities/GrantView";
 import { UserWatchlist } from "./entities/UserWatchlist";
+import { WebhookSubscription } from "./entities/WebhookSubscription";
 import { IpfsService } from "./services/ipfs-service";
+import { buildWebhooksRouter } from "./routes/webhooks";
+import { buildHealthRouter } from "./routes/health";
 
 export const createApp = (
   dataSource: DataSource,
   sorobanClient: SorobanContractClient,
 ) => {
   const app = express();
+  app.use((req, res, next) => {
+    const incomingRequestId = req.get("X-Request-Id");
+    const requestId =
+      incomingRequestId && /^[A-Za-z0-9._-]{1,128}$/.test(incomingRequestId)
+        ? incomingRequestId
+        : randomUUID();
+
+    req.headers["x-request-id"] = requestId;
+    res.setHeader("X-Request-Id", requestId);
+
+    const requestLogger = logger.child({ requestId });
+    const startedAt = process.hrtime.bigint();
+    res.on("finish", () => {
+      requestLogger.info("HTTP request", {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+      });
+    });
+
+    next();
+  });
   app.use(helmet());
   app.use(
     cors({
@@ -88,7 +115,6 @@ export const createApp = (
       },
     }),
   );
-  app.use(morgan("tiny"));
   app.use(express.json());
 
   const grantRepo = dataSource.getRepository(Grant);
@@ -107,6 +133,7 @@ export const createApp = (
   const feedbackRepo = dataSource.getRepository(GrantFeedback);
   const grantViewRepo = dataSource.getRepository(GrantView);
   const watchlistRepo = dataSource.getRepository(UserWatchlist);
+  const webhookSubscriptionRepo = dataSource.getRepository(WebhookSubscription);
 
   const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
   const signatureService = new SignatureService();
@@ -128,7 +155,7 @@ export const createApp = (
   );
   const webhookDispatcher = new WebhookDispatcher(dataSource);
 
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.use("/health", buildHealthRouter(dataSource, sorobanClient));
   app.use(
     "/grants",
     buildGrantRouter(
@@ -157,9 +184,17 @@ export const createApp = (
     ),
   );
   app.use("/search", buildSearchRouter(dataSource));
+  app.use(
+    "/stats",
+    buildStatsRouter(grantRepo, proofRepo, responseCacheService),
+  );
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
   app.use("/profiles", buildProfilesRouter(contributorRepo, grantRepo));
   app.use("/my-donations", buildMyDonationsRouter(dataSource, signedUserAuth));
+  app.use(
+    "/watchlist",
+    buildWatchlistRouter(watchlistRepo, grantRepo, signedUserAuth),
+  );
   app.use(
     "/communities",
     optionalSignedUserAuth,
@@ -179,10 +214,18 @@ export const createApp = (
       grantRepo,
       proofRepo,
       activityRepo,
+      approvalRepo,
     ),
   );
   app.use("/ipfs", buildIpfsPresignRouter(signatureService, nonceService));
-  app.use("/events", buildEventsRouter(activityRepo));
+  app.use(
+    "/events",
+    buildEventsRouter(activityRepo, {
+      adminMiddleware,
+      replayEvents: (fromLedger, toLedger) =>
+        reconciliationService.replayFromLedger(fromLedger, toLedger),
+    }),
+  );
   app.use(
     "/webhooks",
     buildWebhooksRouter(
@@ -234,7 +277,7 @@ export const createApp = (
     try {
       if (
         env.metricsAllowedIps.length > 0 &&
-        !env.metricsAllowedIps.includes(req.ip)
+        !env.metricsAllowedIps.includes(req.ip ?? "")
       ) {
         res.status(403).json({ error: "Forbidden" });
         return;

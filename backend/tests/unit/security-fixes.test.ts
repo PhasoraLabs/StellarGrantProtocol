@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { escapeHtml, getEmailTemplate } from "../src/services/email-service";
-import { NonceService, NonceReplayError } from "../src/services/nonce-service";
+import { escapeHtml, getEmailTemplate } from "../../src/services/email-service";
+import { NonceService, NonceReplayError } from "../../src/services/nonce-service";
 
 describe("escapeHtml", () => {
   it("escapes HTML metacharacters", () => {

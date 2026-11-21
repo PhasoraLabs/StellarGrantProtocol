@@ -25,6 +25,7 @@ import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { useContractEvents } from "@/hooks/useContractEvents";
 import { useOptimisticGrant } from "@/hooks/useOptimisticGrant";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { getMilestoneProgress } from "@/hooks/useMilestone";
 import { toast } from "@/lib/toast";
 import { ErrorCard } from "@/components/ui/ErrorCard";
 import type { TokenMetadata, Grant, Milestone } from "@/types";
@@ -162,7 +163,14 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
     applyMutation
   } = useOptimisticGrant(data?.grant ?? {} as Grant, data?.milestones ?? []);
 
-  const { funders, isLoading: fundersLoading, refetch: refetchFunders } = useFunders(grantId);
+  const {
+    funders,
+    visibleFunders,
+    hasMore: hasMoreFunders,
+    loadMore: loadMoreFunders,
+    isLoading: fundersLoading,
+    refetch: refetchFunders,
+  } = useFunders(grantId);
   const [fundModalOpen, setFundModalOpen] = useState(false);
   const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
@@ -382,6 +390,27 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
             <h2 className="font-orbitron text-sm uppercase tracking-wider text-text-muted mb-4">
               Milestones
             </h2>
+            {milestones.length > 0 && (() => {
+              const progress = getMilestoneProgress(milestones);
+              return (
+                <div className="mb-4">
+                  <div className="flex justify-between font-mono text-xs text-text-muted mb-1">
+                    <span>{progress.approved} of {progress.total} approved</span>
+                    <span>{progress.percent}%</span>
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-label="Milestones approved"
+                    aria-valuemin={0}
+                    aria-valuemax={progress.total}
+                    aria-valuenow={progress.approved}
+                    className="h-2 w-full bg-border-color"
+                  >
+                    <div className="h-full bg-accent-primary" style={{ width: `${progress.percent}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
             <MilestoneTimeline milestones={milestones} grantId={grant.id} />
           </section>
 
@@ -461,22 +490,33 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
                 Be the first to fund this grant
               </p>
             ) : (
-              <ul className="space-y-2">
-                {funders.map((f) => (
-                  <li
-                    key={f.address}
-                    className="flex items-center justify-between gap-2 font-mono text-xs"
+              <>
+                <ul className="space-y-2">
+                  {visibleFunders.map((f) => (
+                    <li
+                      key={f.address}
+                      className="flex items-center justify-between gap-2 font-mono text-xs"
+                    >
+                      <WalletAddress address={f.address} showCopyIcon={false} />
+                      <span className="text-text-primary shrink-0">
+                        {formatTokenAmount(f.amount, decimals, {
+                          symbol,
+                          showSymbol: true,
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {hasMoreFunders && (
+                  <button
+                    type="button"
+                    onClick={loadMoreFunders}
+                    className="mt-3 w-full font-mono text-xs text-accent-secondary hover:underline"
                   >
-                    <WalletAddress address={f.address} showCopyIcon={false} />
-                    <span className="text-text-primary shrink-0">
-                      {formatTokenAmount(f.amount, decimals, {
-                        symbol,
-                        showSymbol: true,
-                      })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    Show more funders ({funders.length - visibleFunders.length} more)
+                  </button>
+                )}
+              </>
             )}
           </section>
 

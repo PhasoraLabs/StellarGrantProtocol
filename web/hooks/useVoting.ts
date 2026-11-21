@@ -52,6 +52,14 @@ export interface UseVotingReturn {
   vote: (approve: boolean) => Promise<void>;
   /** Last error message, if any */
   error: string | null;
+  /** Confirmation dialog state */
+  confirmationDialog: {
+    isOpen: boolean;
+    voteToConfirm: boolean | null;
+    openConfirmation: (approve: boolean) => void;
+    closeConfirmation: () => void;
+    submitConfirmedVote: () => Promise<void>;
+  };
 }
 
 // ─── Toast helpers ───────────────────────────────────────────────────────────
@@ -128,6 +136,8 @@ export function useVoting({
   const [votes, setVotes] = useState<MilestoneVote[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingVoteValue, setPendingVoteValue] = useState<boolean | null>(null);
 
   // Keep a ref to the last synced liveVotes so we can compare content, not
   // reference identity (the stub always returns a new [] literal).
@@ -144,7 +154,7 @@ export function useVoting({
   const { hasVoted, currentVote } = deriveHasVoted(votes, walletAddress);
   const voteCount = deriveVoteCount(votes);
 
-  // ── vote() ─────────────────────────────────────────────────────────────
+  // ── vote() — Opens confirmation dialog ──────────────────────────────────
   const vote = useCallback(
     async (approve: boolean) => {
       if (!walletAddress) {
@@ -156,6 +166,21 @@ export function useVoting({
         return;
       }
 
+      setPendingVoteValue(approve);
+      setConfirmDialogOpen(true);
+    },
+    [walletAddress, hasVoted],
+  );
+
+  // ── submitConfirmedVote() — Executes the vote after confirmation ───────
+  const submitConfirmedVote = useCallback(
+    async () => {
+      if (pendingVoteValue === null || !walletAddress) {
+        return;
+      }
+
+      const approve = pendingVoteValue;
+      setConfirmDialogOpen(false);
       setError(null);
       setIsSubmitting(true);
 
@@ -219,10 +244,32 @@ export function useVoting({
         });
       } finally {
         setIsSubmitting(false);
+        setPendingVoteValue(null);
       }
     },
-    [walletAddress, hasVoted, grantId, milestoneIdx, network],
+    [pendingVoteValue, walletAddress, grantId, milestoneIdx, network, execute, queryClient],
   );
 
-  return { hasVoted, currentVote, votes, voteCount, isSubmitting, vote, error };
+  // ── Confirmation dialog handlers ────────────────────────────────────────
+  const closeConfirmation = useCallback(() => {
+    setConfirmDialogOpen(false);
+    setPendingVoteValue(null);
+  }, []);
+
+  return {
+    hasVoted,
+    currentVote,
+    votes,
+    voteCount,
+    isSubmitting,
+    vote,
+    error,
+    confirmationDialog: {
+      isOpen: confirmDialogOpen,
+      voteToConfirm: pendingVoteValue,
+      openConfirmation: vote,
+      closeConfirmation,
+      submitConfirmedVote,
+    },
+  };
 }

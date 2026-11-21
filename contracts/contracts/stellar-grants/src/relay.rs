@@ -322,9 +322,9 @@ mod tests {
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{token::StellarAssetClient, Env, String, Vec};
 
-    fn setup_relay_config(
+    fn setup_relay_config<'a>(
         env: &Env,
-        client: &StellarGrantsContractClient,
+        client: &StellarGrantsContractClient<'a>,
         admin: &Address,
         relayer: &Address,
     ) {
@@ -349,10 +349,10 @@ mod tests {
         );
     }
 
-    fn bootstrap(
-        env: &Env,
+    fn bootstrap<'a>(
+        env: &'a Env,
     ) -> (
-        StellarGrantsContractClient,
+        StellarGrantsContractClient<'a>,
         Address, // admin
         Address, // relayer
         Address, // sender (also recipient of stream)
@@ -586,7 +586,10 @@ mod tests {
         assert_eq!(result.err().unwrap().unwrap(), ContractError::InvalidInput);
     }
 
-    fn relax_allowance(client: &StellarGrantsContractClient, sender: &Address) -> RelayAllowance {
+    fn relax_allowance<'a>(
+        client: &StellarGrantsContractClient<'a>,
+        sender: &Address,
+    ) -> RelayAllowance {
         client.get_relay_allowance(sender)
     }
 }

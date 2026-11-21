@@ -49,6 +49,23 @@ export type MilestoneApprovalIntent = {
   signature: string;
 };
 
+export type UserIntent = {
+  address: string;
+  nonce: string;
+  timestamp: number;
+  action: string;
+  signature: string;
+};
+
+export type DisputeResolveIntent = {
+  disputeId: number;
+  approvePayout: boolean;
+  resolverAddress: string;
+  nonce: string;
+  timestamp: number;
+  signature: string;
+};
+
 export class SignatureService {
   buildUserIntentMessage(payload: Omit<UserIntent, "signature">): string {
     return [

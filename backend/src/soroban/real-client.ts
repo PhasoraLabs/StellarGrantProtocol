@@ -65,7 +65,7 @@ export class RealSorobanClient implements SorobanContractClient {
   }
 
   async fetchGrantById(id: number): Promise<SorobanGrant | null> {
-    const arg = xdr.ScVal.scvU64(xdr.Uint64.fromNumber(id));
+    const arg = xdr.ScVal.scvU64(xdr.Uint64.fromBytes(id, 0));
     const result = await this.callView<xdr.ScVal | null>("grant_get", [arg]);
     if (!result) return null;
     return this.decodeGrant(result);
@@ -206,8 +206,8 @@ export class RealSorobanClient implements SorobanContractClient {
       typeof grantIdRaw === "bigint"
         ? Number(grantIdRaw)
         : typeof grantIdRaw === "number"
-        ? grantIdRaw
-        : 0;
+          ? grantIdRaw
+          : 0;
 
     const actorRaw =
       raw.topic.length > 2 ? String(scValToNative(raw.topic[2])) : "";

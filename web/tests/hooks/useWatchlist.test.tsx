@@ -55,4 +55,52 @@ describe("useWatchlist", () => {
     expect(result.current.isWatched("99")).toBe(true);
     expect(result.current.watchedIds).toEqual(["99", "100"]);
   });
+
+  it("remove drops only the given id", () => {
+    const { result } = renderHook(() => useWatchlist());
+
+    act(() => {
+      result.current.add("1");
+      result.current.add("2");
+      result.current.remove("1");
+    });
+
+    expect(result.current.watchedIds).toEqual(["2"]);
+    expect(JSON.parse(localStorage.getItem(WATCHLIST_STORAGE_KEY) ?? "[]")).toEqual(["2"]);
+  });
+
+  it("clear empties the watchlist", () => {
+    const { result } = renderHook(() => useWatchlist());
+
+    act(() => {
+      result.current.add("1");
+      result.current.clear();
+    });
+
+    expect(result.current.watchedIds).toEqual([]);
+    expect(localStorage.getItem(WATCHLIST_STORAGE_KEY)).toBe("[]");
+  });
+
+  it("ignores blank ids and does not duplicate an existing id", () => {
+    const { result } = renderHook(() => useWatchlist());
+
+    act(() => {
+      result.current.add("   ");
+      result.current.add("7");
+      result.current.add("7");
+    });
+
+    expect(result.current.watchedIds).toEqual(["7"]);
+  });
+
+  it("syncs when another tab changes the stored list", () => {
+    const { result } = renderHook(() => useWatchlist());
+
+    act(() => {
+      localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(["5"]));
+      window.dispatchEvent(new StorageEvent("storage", { key: WATCHLIST_STORAGE_KEY }));
+    });
+
+    expect(result.current.isWatched("5")).toBe(true);
+  });
 });

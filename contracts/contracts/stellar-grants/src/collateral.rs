@@ -91,11 +91,25 @@ pub fn release(
         return Err(ContractError::InvalidState);
     }
 
+    release_authorized(env, grant_id, contributor)
+}
+
+/// Release without checking a caller or the grant's status. For internal
+/// paths that have already authorized the operation, like grant cancellation
+/// returning whatever the abandonment forfeiture left behind.
+pub(crate) fn release_authorized(
+    env: &Env,
+    grant_id: u64,
+    contributor: &Address,
+) -> Result<i128, ContractError> {
     crate::reentrancy::protect(env)?;
     let mut deposit = Storage::get_collateral_deposit(env, grant_id, contributor)
         .ok_or(ContractError::InvalidState)?;
 
-    if deposit.status != CollateralStatus::Deposited {
+    // A partial forfeiture leaves the remainder owed to the contributor.
+    if deposit.status != CollateralStatus::Deposited
+        && deposit.status != CollateralStatus::PartiallyForfeited
+    {
         return Err(ContractError::InvalidState);
     }
 
@@ -184,6 +198,16 @@ pub(crate) fn forfeit_authorized(
         forfeited_amount
     };
 
+    // Nothing to take (e.g. a 0-bps forfeiture): leave the deposit untouched
+    // so it stays releasable.
+    if actual_forfeit == 0 {
+        return Ok(0);
+    }
+
+    // Resolve the destination before persisting anything, so a missing
+    // treasury can't record a forfeiture whose tokens never left the contract.
+    let treasury_addr = Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
+
     deposit.forfeited_amount = deposit
         .forfeited_amount
         .checked_add(actual_forfeit)
@@ -199,20 +223,16 @@ pub(crate) fn forfeit_authorized(
     // Persist state before external transfer (checks-effects-interactions pattern).
     Storage::set_collateral_deposit(env, grant_id, contributor, &deposit);
 
-    if actual_forfeit > 0 {
-        // Send forfeited amount to treasury, protected against reentrancy.
-        let treasury_addr =
-            Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
-        let token_client = token::Client::new(env, &deposit.token);
-        crate::reentrancy::protect_external_call(env, || {
-            token_client.transfer(
-                &env.current_contract_address(),
-                &treasury_addr,
-                &actual_forfeit,
-            );
-            Ok(())
-        })?;
-    }
+    // Send forfeited amount to treasury, protected against reentrancy.
+    let token_client = token::Client::new(env, &deposit.token);
+    crate::reentrancy::protect_external_call(env, || {
+        token_client.transfer(
+            &env.current_contract_address(),
+            &treasury_addr,
+            &actual_forfeit,
+        );
+        Ok(())
+    })?;
 
     Events::emit_collateral_forfeited(env, grant_id, contributor.clone(), actual_forfeit, reason);
 
@@ -500,5 +520,164 @@ mod tests {
         let updated = client.collateral_get_deposit(&1, &contributor).unwrap();
         assert_eq!(updated.status, CollateralStatus::Forfeited);
         assert_eq!(updated.forfeited_amount, 1000);
+    }
+
+    /// Registers the contract with grant 1 owned by `owner`, a 1000-token
+    /// collateral deposit from `owner` held by the contract, and a treasury.
+    /// Returns the contract id, token and treasury.
+    fn setup_owner_deposit(env: &Env, owner: &Address) -> (Address, Address, Address) {
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let token = env
+            .register_stellar_asset_contract_v2(Address::generate(env))
+            .address();
+        let treasury = Address::generate(env);
+
+        let mut grant = make_grant(env, owner);
+        grant.token = token.clone();
+        let req = CollateralRequirement {
+            grant_id: 1,
+            token: token.clone(),
+            amount: 1000,
+            forfeit_on_abandon_bps: 0,
+            forfeit_on_dispute_loss_bps: 0,
+        };
+        let deposit = CollateralDeposit {
+            grant_id: 1,
+            contributor: owner.clone(),
+            token: token.clone(),
+            amount: 1000,
+            status: CollateralStatus::Deposited,
+            deposited_at: 0,
+            forfeited_amount: 0,
+        };
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(env, 1, &grant);
+            Storage::set_global_admin(env, owner);
+            Storage::set_collateral_requirement(env, 1, &req);
+            Storage::set_collateral_deposit(env, 1, owner, &deposit);
+            Storage::set_treasury(env, &treasury);
+        });
+        soroban_sdk::token::StellarAssetClient::new(env, &token).mint(&contract_id, &1000);
+        (contract_id, token, treasury)
+    }
+
+    fn complete_grant(env: &Env, contract_id: &Address) {
+        env.as_contract(contract_id, || {
+            let mut grant = Storage::get_grant(env, 1).unwrap();
+            grant.status = GrantStatus::Completed;
+            Storage::set_grant(env, 1, &grant);
+        });
+    }
+
+    #[test]
+    fn test_zero_bps_forfeit_leaves_deposit_releasable() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let (contract_id, token, _treasury) = setup_owner_deposit(&env, &owner);
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let reason = soroban_sdk::String::from_str(&env, "abandoned");
+        assert_eq!(
+            client.collateral_forfeit(&owner, &1, &owner, &0, &reason),
+            0
+        );
+
+        let deposit = client.collateral_get_deposit(&1, &owner).unwrap();
+        assert_eq!(deposit.status, CollateralStatus::Deposited);
+        assert_eq!(deposit.forfeited_amount, 0);
+
+        complete_grant(&env, &contract_id);
+        assert_eq!(client.collateral_release(&owner, &1, &owner), 1000);
+        let token_client = soroban_sdk::token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&owner), 1000);
+        assert_eq!(token_client.balance(&contract_id), 0);
+    }
+
+    #[test]
+    fn test_partially_forfeited_remainder_releasable() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let (contract_id, token, treasury) = setup_owner_deposit(&env, &owner);
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        let reason = soroban_sdk::String::from_str(&env, "dispute lost");
+        assert_eq!(
+            client.collateral_forfeit(&owner, &1, &owner, &2000, &reason),
+            200
+        );
+        let deposit = client.collateral_get_deposit(&1, &owner).unwrap();
+        assert_eq!(deposit.status, CollateralStatus::PartiallyForfeited);
+
+        complete_grant(&env, &contract_id);
+        assert_eq!(client.collateral_release(&owner, &1, &owner), 800);
+
+        let token_client = soroban_sdk::token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&owner), 800);
+        assert_eq!(token_client.balance(&treasury), 200);
+        assert_eq!(token_client.balance(&contract_id), 0);
+        let deposit = client.collateral_get_deposit(&1, &owner).unwrap();
+        assert_eq!(deposit.status, CollateralStatus::Released);
+    }
+
+    #[test]
+    fn test_forfeit_without_treasury_leaves_deposit_untouched() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let (contract_id, _token, _treasury) = setup_owner_deposit(&env, &owner);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .remove(&crate::storage::DataKey::Treasury);
+            let reason = soroban_sdk::String::from_str(&env, "abandoned");
+            assert_eq!(
+                forfeit_authorized(&env, 1, &owner, 2000, reason),
+                Err(ContractError::TreasuryNotConfigured)
+            );
+            let deposit = get_deposit(&env, 1, &owner).unwrap();
+            assert_eq!(deposit.status, CollateralStatus::Deposited);
+            assert_eq!(deposit.forfeited_amount, 0);
+        });
+    }
+
+    #[test]
+    fn test_cancel_with_zero_abandon_bps_returns_full_deposit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let (contract_id, token, _treasury) = setup_owner_deposit(&env, &owner);
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        client.cancel_grant(&1, &owner, &soroban_sdk::String::from_str(&env, "done"));
+
+        let token_client = soroban_sdk::token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&owner), 1000);
+        assert_eq!(token_client.balance(&contract_id), 0);
+        let deposit = client.collateral_get_deposit(&1, &owner).unwrap();
+        assert_eq!(deposit.status, CollateralStatus::Released);
+    }
+
+    #[test]
+    fn test_cancel_returns_remainder_after_abandon_forfeit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let (contract_id, token, treasury) = setup_owner_deposit(&env, &owner);
+        env.as_contract(&contract_id, || {
+            let mut req = Storage::get_collateral_requirement(&env, 1).unwrap();
+            req.forfeit_on_abandon_bps = 2500;
+            Storage::set_collateral_requirement(&env, 1, &req);
+        });
+        let client = crate::StellarGrantsContractClient::new(&env, &contract_id);
+
+        client.cancel_grant(&1, &owner, &soroban_sdk::String::from_str(&env, "done"));
+
+        let token_client = soroban_sdk::token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&treasury), 250);
+        assert_eq!(token_client.balance(&owner), 750);
+        assert_eq!(token_client.balance(&contract_id), 0);
     }
 }

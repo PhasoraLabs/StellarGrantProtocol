@@ -249,6 +249,7 @@ mod tests {
     #[test]
     fn test_public_attach_license_preserves_record_and_events_on_retry() {
         use soroban_sdk::testutils::{Events, Ledger};
+        use soroban_sdk::Event;
 
         let (env, contract_id, owner, _) = setup();
         env.as_contract(&contract_id, || {
@@ -272,7 +273,23 @@ mod tests {
             &rights,
             &restrictions,
         );
-        let events = env.events().all();
+        let attached_event = LicenseAttached {
+            grant_id: 1,
+            milestone_idx: 0,
+            spdx_id: spdx_id.clone(),
+            attached_by: owner.clone(),
+        };
+        assert_eq!(
+            env.events().all(),
+            Vec::from_array(
+                &env,
+                [(
+                    contract_id.clone(),
+                    attached_event.topics(&env),
+                    attached_event.data(&env),
+                )]
+            )
+        );
         env.ledger().with_mut(|ledger| ledger.timestamp += 60);
 
         assert_eq!(
@@ -288,7 +305,7 @@ mod tests {
             Err(Ok(ContractError::InvalidState))
         );
         assert_eq!(client.get_license(&1, &0), Some(original));
-        assert_eq!(env.events().all(), events);
+        assert_eq!(env.events().all(), Vec::new(&env));
     }
 
     #[test]

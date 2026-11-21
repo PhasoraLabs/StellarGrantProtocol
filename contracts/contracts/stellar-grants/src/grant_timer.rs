@@ -273,6 +273,10 @@ fn cancel_grant_internal(env: &Env, grant_id: u64, reason: &String) -> Result<()
             req.forfeit_on_abandon_bps,
             forfeit_reason,
         );
+        // Once Cancelled, `collateral::release` can never return what the
+        // forfeiture left; hand it back now. Errors only mean there is no
+        // releasable deposit.
+        let _ = crate::collateral::release_authorized(env, grant_id, &grant.owner);
     }
 
     let total_refundable = grant.escrow_balance;
@@ -695,7 +699,12 @@ mod tests {
             let deposit = Storage::get_collateral_deposit(env, 1, owner).unwrap();
             // 25% (forfeit_on_abandon_bps = 2_500) of 1_000 = 250.
             assert_eq!(deposit.forfeited_amount, 250);
-            assert_eq!(deposit.status, CollateralStatus::PartiallyForfeited);
+            // The untouched 750 goes back to the owner rather than staying
+            // locked in the contract.
+            assert_eq!(deposit.status, CollateralStatus::Released);
+            let token_client = soroban_sdk::token::Client::new(env, &token_contract);
+            assert_eq!(token_client.balance(owner), 750);
+            assert_eq!(token_client.balance(&env.current_contract_address()), 0);
 
             let grant = Storage::get_grant(env, 1).unwrap();
             assert_eq!(grant.status, GrantStatus::Cancelled);
