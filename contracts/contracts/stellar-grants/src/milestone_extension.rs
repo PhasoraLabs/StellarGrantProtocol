@@ -13,6 +13,7 @@ pub struct ExtensionRequested {
     pub grant_id: u64,
     pub milestone_idx: u32,
     pub requested_by: Address,
+    pub original_deadline: u64,
     pub new_deadline: u64,
 }
 
@@ -21,6 +22,7 @@ pub struct ExtensionRequested {
 pub struct ExtensionApproved {
     pub grant_id: u64,
     pub milestone_idx: u32,
+    pub original_deadline: u64,
     pub new_deadline: u64,
 }
 
@@ -29,6 +31,7 @@ pub struct ExtensionApproved {
 pub struct ExtensionDenied {
     pub grant_id: u64,
     pub milestone_idx: u32,
+    pub original_deadline: u64,
 }
 
 #[contractevent]
@@ -100,6 +103,7 @@ pub fn request_extension(
         grant_id,
         milestone_idx,
         requested_by: contributor.clone(),
+        original_deadline,
         new_deadline,
     }
     .publish(env);
@@ -168,6 +172,7 @@ pub fn vote_extension(
         ExtensionApproved {
             grant_id,
             milestone_idx,
+            original_deadline: request.original_deadline,
             new_deadline: request.new_deadline,
         }
         .publish(env);
@@ -181,6 +186,7 @@ pub fn vote_extension(
         ExtensionDenied {
             grant_id,
             milestone_idx,
+            original_deadline: request.original_deadline,
         }
         .publish(env);
     } else {
