@@ -168,6 +168,7 @@ mod tests {
     use crate::types::{Grant, GrantStatus};
     use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Events as _, Ledger};
+    use soroban_sdk::Event;
 
     fn setup(env: &Env) -> Address {
         env.mock_all_auths();
@@ -364,5 +365,112 @@ mod tests {
         // event tests.
         let events = env.events().all();
         assert_eq!(events.events().len(), 1);
+    }
+
+    #[test]
+    fn test_add_emits_event_with_address() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let admin = Address::generate(&env);
+        let addr = Address::generate(&env);
+        let scope = WhitelistScope::GlobalReviewer;
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+        });
+        env.as_contract(&contract_id, || {
+            add(&env, &admin, &addr, &scope).unwrap();
+        });
+
+        let expected = crate::events::WhitelistAddressAdded {
+            address: addr.clone(),
+            scope: scope.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        let events = env.events().all();
+        assert_eq!(events.events().len(), 1);
+        assert_eq!(
+            events,
+            soroban_sdk::Vec::from_array(
+                &env,
+                [(
+                    contract_id.clone(),
+                    expected.topics(&env),
+                    expected.data(&env),
+                )]
+            )
+        );
+    }
+
+    #[test]
+    fn test_remove_emits_event_with_address() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let admin = Address::generate(&env);
+        let addr = Address::generate(&env);
+        let scope = WhitelistScope::GlobalReviewer;
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+        });
+        env.as_contract(&contract_id, || {
+            add(&env, &admin, &addr, &scope).unwrap();
+        });
+        env.as_contract(&contract_id, || {
+            remove(&env, &admin, &addr, &scope).unwrap();
+        });
+
+        let expected = crate::events::WhitelistAddressRemoved {
+            address: addr.clone(),
+            scope: scope.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        let events = env.events().all();
+        assert_eq!(events.events().len(), 1);
+        assert_eq!(
+            events,
+            soroban_sdk::Vec::from_array(
+                &env,
+                [(
+                    contract_id.clone(),
+                    expected.topics(&env),
+                    expected.data(&env),
+                )]
+            )
+        );
+    }
+
+    #[test]
+    fn test_remove_missing_address_emits_no_event() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let admin = Address::generate(&env);
+        let addr = Address::generate(&env);
+        let scope = WhitelistScope::GlobalReviewer;
+
+        env.as_contract(&contract_id, || {
+            Storage::set_global_admin(&env, &admin);
+        });
+        env.as_contract(&contract_id, || {
+            remove(&env, &admin, &addr, &scope).unwrap();
+        });
+        assert_eq!(env.events().all().events().len(), 0);
+    }
+
+    #[test]
+    fn test_rejected_add_emits_no_event() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let stranger = Address::generate(&env);
+        let addr = Address::generate(&env);
+        let scope = WhitelistScope::GlobalContributor;
+
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                add(&env, &stranger, &addr, &scope),
+                Err(ContractError::Unauthorized)
+            );
+        });
+        assert_eq!(env.events().all().events().len(), 0);
     }
 }

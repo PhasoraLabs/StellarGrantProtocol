@@ -196,6 +196,9 @@ pub enum ContractError {
     BountySubmissionLimitExceeded = 150,
     // RBAC bootstrap (#1077)
     AlreadyInitialized = 151,
+    // Grant tags (#1378) — storage bloat guards
+    TagTooLong = 152,
+    TooManyTags = 153,
 }
 
 // ─── Discriminant uniqueness tests ────────────────────────────────────────────
