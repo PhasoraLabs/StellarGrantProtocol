@@ -7,6 +7,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToMany,
   JoinTable,
 } from "typeorm";
@@ -64,6 +65,9 @@ export class Grant {
 
   @Column({ type: "simple-json", nullable: true })
   draftData!: Record<string, unknown> | null;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt!: Date | null;
 
   @OneToMany(() => GrantReviewer, (reviewer) => reviewer.grant)
   reviewers?: GrantReviewer[];
