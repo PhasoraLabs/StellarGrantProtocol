@@ -1,3 +1,25 @@
+//! # Dispute Lifecycle
+//!
+//! ```text
+//!   Open ──evidence_submitted──> Evidence ──arbitration──> Resolved
+//!    │                              │                        │
+//!    │                              │                   Escalated
+//!    │                              │                        │
+//!    └──────────────────────────────┴──────────────────> Withdrawn
+//! ```
+//!
+//! ## State Transitions
+//!
+//! | From       | Event                | To          | Rule                              |
+//! |------------|----------------------|-------------|-----------------------------------|
+//! | Open       | evidence submitted   | Evidence    | Only grant owner or reviewer      |
+//! | Evidence   | arbitration starts   | Resolved    | Arbitration pool reaches decision |
+//! | Evidence   | either party withdraws| Withdrawn  | Within evidence window           |
+//! | Resolved   | appeal filed         | Escalated   | Within appeal window              |
+//! | Escalated  | final ruling         | Resolved    | Senior arbitrator decides         |
+//!
+//! All transitions emit events and update `DisputeStatus` in storage.
+
 use soroban_sdk::{token, Address, Env, String, Vec};
 
 use crate::arbitration_pool;
