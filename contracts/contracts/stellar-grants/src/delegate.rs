@@ -213,3 +213,309 @@ pub fn get_delegation(
 ) -> Option<Delegation> {
     active_for_scope(env, delegator, scope)
 }
+
+/// Return every active delegation under which `delegate` may currently vote on
+/// `grant_id`, one entry per delegating reviewer.
+///
+/// Each [`Delegation`] carries its `scope`, `expires_at` and `uses_remaining`,
+/// so callers can see exactly what the delegate holds and for how long. For a
+/// given reviewer a per-grant delegation takes precedence over a global one,
+/// matching the resolution order used when a vote is cast. Revoked, expired and
+/// exhausted delegations are never returned. Unknown grants yield an empty list.
+pub fn get_delegate_permissions(env: &Env, delegate: &Address, grant_id: u64) -> Vec<Delegation> {
+    let mut held = Vec::new(env);
+    let Some(grant) = Storage::get_grant(env, grant_id) else {
+        return held;
+    };
+    for reviewer in grant.reviewers.iter() {
+        if let Some(d) = active_matching(env, &reviewer, grant_id) {
+            if d.delegate == *delegate {
+                held.push_back(d);
+            }
+        }
+    }
+    held
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Grant, GrantStatus};
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::String;
+
+    const GRANT_ID: u64 = 1;
+
+    fn setup(reviewer_count: u32) -> (Env, soroban_sdk::Vec<Address>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        crate::test_utils::register_contract(&env);
+        let mut reviewers = Vec::new(&env);
+        for _ in 0..reviewer_count {
+            reviewers.push_back(Address::generate(&env));
+        }
+        crate::test_utils::in_contract(&env, || {
+            Storage::set_grant(
+                &env,
+                GRANT_ID,
+                &Grant {
+                    id: GRANT_ID,
+                    owner: Address::generate(&env),
+                    title: String::from_str(&env, "Delegates"),
+                    description: String::from_str(&env, "Delegate permissions"),
+                    token: Address::generate(&env),
+                    status: GrantStatus::Active,
+                    total_amount: 100,
+                    milestone_amount: 100,
+                    reviewers: reviewers.clone(),
+                    total_milestones: 1,
+                    milestones_paid_out: 0,
+                    escrow_balance: 0,
+                    funders: Vec::new(&env),
+                    reason: None,
+                    timestamp: 0,
+                    require_compliance: None,
+                },
+            );
+        });
+        (env, reviewers)
+    }
+
+    fn delegate_to(
+        env: &Env,
+        delegator: &Address,
+        delegate: &Address,
+        scope: DelegationScope,
+        expires_at: Option<u64>,
+        max_uses: Option<u32>,
+    ) {
+        // One frame per call: `require_auth` may only be satisfied once per frame.
+        crate::test_utils::in_contract(env, || {
+            delegate_vote(env, delegator, delegate, scope, expires_at, max_uses).unwrap();
+        });
+    }
+
+    fn permissions(env: &Env, delegate: &Address) -> Vec<Delegation> {
+        crate::test_utils::in_contract(env, || get_delegate_permissions(env, delegate, GRANT_ID))
+    }
+
+    #[test]
+    fn test_no_delegation_returns_empty() {
+        let (env, _) = setup(1);
+        let delegate = Address::generate(&env);
+        assert!(permissions(&env, &delegate).is_empty());
+    }
+
+    #[test]
+    fn test_unknown_grant_returns_empty() {
+        let (env, _) = setup(1);
+        let delegate = Address::generate(&env);
+        let held =
+            crate::test_utils::in_contract(&env, || get_delegate_permissions(&env, &delegate, 999));
+        assert!(held.is_empty());
+    }
+
+    #[test]
+    fn test_per_grant_delegation_is_reported_with_limits() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        env.ledger().set_timestamp(100);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::PerGrant(GRANT_ID),
+            Some(500),
+            Some(3),
+        );
+
+        let held = permissions(&env, &delegate);
+        assert_eq!(held.len(), 1);
+        let d = held.get(0).unwrap();
+        assert_eq!(d.delegator, reviewer);
+        assert_eq!(d.delegate, delegate);
+        assert_eq!(d.scope, DelegationScope::PerGrant(GRANT_ID));
+        assert_eq!(d.created_at, 100);
+        assert_eq!(d.expires_at, Some(500));
+        assert_eq!(d.uses_remaining, Some(3));
+        assert!(!d.revoked);
+    }
+
+    #[test]
+    fn test_global_delegation_applies_to_the_grant() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            None,
+            None,
+        );
+
+        let held = permissions(&env, &delegate);
+        assert_eq!(held.len(), 1);
+        assert_eq!(held.get(0).unwrap().scope, DelegationScope::Global);
+    }
+
+    #[test]
+    fn test_per_grant_scope_takes_precedence_over_global() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            None,
+            None,
+        );
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::PerGrant(GRANT_ID),
+            None,
+            Some(1),
+        );
+
+        let held = permissions(&env, &delegate);
+        assert_eq!(held.len(), 1);
+        assert_eq!(
+            held.get(0).unwrap().scope,
+            DelegationScope::PerGrant(GRANT_ID)
+        );
+    }
+
+    #[test]
+    fn test_only_the_named_delegate_holds_permissions() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        let bystander = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            None,
+            None,
+        );
+
+        assert_eq!(permissions(&env, &delegate).len(), 1);
+        assert!(permissions(&env, &bystander).is_empty());
+        // The delegator itself is not a delegate of its own delegation.
+        assert!(permissions(&env, &reviewer).is_empty());
+    }
+
+    #[test]
+    fn test_delegations_from_multiple_reviewers_are_all_listed() {
+        let (env, reviewers) = setup(2);
+        let delegate = Address::generate(&env);
+        for reviewer in reviewers.iter() {
+            delegate_to(
+                &env,
+                &reviewer,
+                &delegate,
+                DelegationScope::Global,
+                None,
+                None,
+            );
+        }
+
+        let held = permissions(&env, &delegate);
+        assert_eq!(held.len(), 2);
+        assert_eq!(held.get(0).unwrap().delegator, reviewers.get(0).unwrap());
+        assert_eq!(held.get(1).unwrap().delegator, reviewers.get(1).unwrap());
+    }
+
+    #[test]
+    fn test_revoked_delegation_is_not_reported() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            None,
+            None,
+        );
+        assert_eq!(permissions(&env, &delegate).len(), 1);
+
+        crate::test_utils::in_contract(&env, || {
+            revoke_delegation(&env, &reviewer, &DelegationScope::Global).unwrap();
+        });
+        assert!(permissions(&env, &delegate).is_empty());
+    }
+
+    #[test]
+    fn test_expired_delegation_is_not_reported() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        env.ledger().set_timestamp(100);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            Some(200),
+            None,
+        );
+
+        env.ledger().set_timestamp(199);
+        assert_eq!(permissions(&env, &delegate).len(), 1);
+        env.ledger().set_timestamp(200);
+        assert!(permissions(&env, &delegate).is_empty());
+    }
+
+    #[test]
+    fn test_exhausted_delegation_is_not_reported() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::Global,
+            None,
+            Some(1),
+        );
+        assert_eq!(
+            permissions(&env, &delegate).get(0).unwrap().uses_remaining,
+            Some(1)
+        );
+
+        crate::test_utils::in_contract(&env, || {
+            consume_delegation_use(&env, &reviewer, &DelegationScope::Global).unwrap();
+        });
+        assert!(permissions(&env, &delegate).is_empty());
+    }
+
+    #[test]
+    fn test_per_grant_delegation_for_another_grant_is_not_reported() {
+        let (env, reviewers) = setup(1);
+        let reviewer = reviewers.get(0).unwrap();
+        let delegate = Address::generate(&env);
+        delegate_to(
+            &env,
+            &reviewer,
+            &delegate,
+            DelegationScope::PerGrant(GRANT_ID),
+            None,
+            None,
+        );
+
+        let other = crate::test_utils::in_contract(&env, || {
+            get_delegate_permissions(&env, &delegate, GRANT_ID + 1)
+        });
+        assert!(other.is_empty());
+    }
+}

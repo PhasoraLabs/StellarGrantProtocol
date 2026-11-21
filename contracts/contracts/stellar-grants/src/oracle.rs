@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{contractevent, Address, Env};
 
 use crate::errors::ContractError;
 use crate::storage::Storage;
@@ -6,6 +6,19 @@ use crate::types::{OracleConfig, PriceQuote, ProtocolModule};
 
 /// Seven-decimal fixed-point scale for oracle prices.
 pub const PRICE_SCALE: i128 = 10_000_000;
+
+/// Emitted every time a fresh oracle price is accepted by [`get_price`].
+///
+/// Gives off-chain indexers the asset, the price (7-decimal fixed point) and
+/// the oracle's own `fetched_at` timestamp, so stale-price incidents can be
+/// reconstructed from the event stream alone.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OraclePriceUpdated {
+    pub asset: Address,
+    pub price: i128,
+    pub timestamp: u64,
+}
 
 mod math {
     use crate::errors::ContractError;
@@ -100,6 +113,13 @@ pub fn get_price(env: &Env, token: &Address) -> Result<PriceQuote, ContractError
         return Err(ContractError::InvalidInput);
     }
 
+    OraclePriceUpdated {
+        asset: token.clone(),
+        price: price_in_base,
+        timestamp: fetched_at,
+    }
+    .publish(env);
+
     Ok(PriceQuote {
         is_stale: false,
         ..quote
@@ -134,8 +154,8 @@ mod tests {
     use super::*;
     use soroban_sdk::{
         contract, contractimpl, contracttype,
-        testutils::{Address as _, Ledger},
-        Address, Env,
+        testutils::{Address as _, Events as _, Ledger},
+        Address, Env, Event as _,
     };
 
     #[contracttype]
@@ -286,6 +306,70 @@ mod tests {
             let xlm_back = convert_amount(&env, usdc_amount, &usdc_token, &xlm_token).unwrap();
             assert_eq!(xlm_back, xlm_amount);
         });
+    }
+
+    fn price_events(env: &Env, expected: &OraclePriceUpdated) -> usize {
+        let expected = expected.to_xdr(env, &crate::test_utils::contract_id(env));
+        env.events()
+            .all()
+            .events()
+            .iter()
+            .filter(|e| **e == expected)
+            .count()
+    }
+
+    /// #1397: every accepted price emits `OraclePriceUpdated` carrying the
+    /// asset, the price and the oracle's `fetched_at` timestamp.
+    #[test]
+    fn test_get_price_emits_price_updated_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        crate::test_utils::register_contract(&env);
+        let (oracle_addr, _, xlm_token) =
+            crate::test_utils::in_contract(&env, || setup_oracle(&env));
+        let oracle_client = MockOracleClient::new(&env, &oracle_addr);
+
+        env.ledger().set_timestamp(2_000);
+        oracle_client.set_price(&xlm_token, &12_000_000i128, &1_900);
+
+        crate::test_utils::in_contract(&env, || {
+            get_price(&env, &xlm_token).unwrap();
+        });
+
+        let expected = OraclePriceUpdated {
+            asset: xlm_token,
+            price: 12_000_000,
+            timestamp: 1_900,
+        };
+        assert_eq!(price_events(&env, &expected), 1);
+    }
+
+    /// #1397: a rejected (stale) price must not be announced as an update.
+    #[test]
+    fn test_stale_price_does_not_emit_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        crate::test_utils::register_contract(&env);
+        let (oracle_addr, _, xlm_token) =
+            crate::test_utils::in_contract(&env, || setup_oracle(&env));
+        let oracle_client = MockOracleClient::new(&env, &oracle_addr);
+
+        oracle_client.set_price(&xlm_token, &PRICE_SCALE, &100);
+        env.ledger().set_timestamp(10_000);
+
+        crate::test_utils::in_contract(&env, || {
+            assert_eq!(
+                get_price(&env, &xlm_token),
+                Err(ContractError::InvalidInput)
+            );
+        });
+
+        let would_be = OraclePriceUpdated {
+            asset: xlm_token,
+            price: PRICE_SCALE,
+            timestamp: 100,
+        };
+        assert_eq!(price_events(&env, &would_be), 0);
     }
 
     // A deliberately broken oracle contract whose `price` method panics.
