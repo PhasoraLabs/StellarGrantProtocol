@@ -2,6 +2,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import helmet from "helmet";
 import cors from "cors";
+import compression from "compression";
 import { DataSource } from "typeorm";
 import { Grant } from "./entities/Grant";
 import { MilestoneProof } from "./entities/MilestoneProof";
@@ -115,6 +116,7 @@ export const createApp = (
       },
     }),
   );
+  app.use(compression({ threshold: 1024 }));
   app.use(express.json());
 
   const grantRepo = dataSource.getRepository(Grant);
