@@ -5,6 +5,10 @@ use soroban_sdk::{Address, Env, Symbol, Vec};
 
 const MAX_HISTORY_SIZE: u32 = 20;
 
+/// #1391: Maximum number of milestones per grant. Governance-configurable.
+/// Prevents unbounded loops in milestone iteration. Default: 50.
+pub const DEFAULT_MAX_MILESTONES: u32 = 50;
+
 /// Set a parameter directly. Admin only for non-DAO params; DAO-flagged
 /// parameters are rejected until real DAO-proposal verification is wired up.
 pub fn set_param(
