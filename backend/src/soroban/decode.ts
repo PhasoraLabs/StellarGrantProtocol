@@ -78,3 +78,81 @@ export function decodeMap(val: xdr.ScVal): Map<string, xdr.ScVal> {
   }
   return result;
 }
+
+/**
+ * Fixtures for constructing valid ScVal instances for each supported Soroban type.
+ * Useful for unit tests, RPC mocks, and testing decoders.
+ */
+export const scValFixtures = {
+  u32: (n = 42): xdr.ScVal => xdr.ScVal.scvU32(n),
+
+  u64: (n: number | bigint = 1000): xdr.ScVal =>
+    xdr.ScVal.scvU64(new xdr.Uint64(BigInt(n))),
+
+  i128: (n: bigint | number | string = "123456789012345678901234567890"): xdr.ScVal => {
+    const val = BigInt(n);
+    const hi = val >> 64n;
+    const lo = val & 0xffffffffffffffffn;
+    return xdr.ScVal.scvI128(
+      new xdr.Int128Parts({
+        hi: new xdr.Int64(hi),
+        lo: new xdr.Uint64(lo),
+      }),
+    );
+  },
+
+  string: (s = "test-string"): xdr.ScVal => xdr.ScVal.scvString(s),
+
+  symbol: (s = "TEST_SYM"): xdr.ScVal => xdr.ScVal.scvSymbol(s),
+
+  address: (
+    addr = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  ): xdr.ScVal => Address.fromString(addr).toScVal(),
+
+  bool: (b = true): xdr.ScVal => xdr.ScVal.scvBool(b),
+
+  vec: (items: xdr.ScVal[] = []): xdr.ScVal => xdr.ScVal.scvVec(items),
+
+  map: (
+    entries: Record<string, xdr.ScVal> | [string, xdr.ScVal][] = {},
+    keyType: "symbol" | "string" = "symbol",
+  ): xdr.ScVal => {
+    const entryPairs = Array.isArray(entries) ? entries : Object.entries(entries);
+    const scMapEntries = entryPairs.map(
+      ([k, v]) =>
+        new xdr.ScMapEntry({
+          key: keyType === "string" ? xdr.ScVal.scvString(k) : xdr.ScVal.scvSymbol(k),
+          val: v,
+        }),
+    );
+    return xdr.ScVal.scvMap(scMapEntries);
+  },
+
+  /** Helper creating nested maps with arbitrary depth */
+  nestedMap: (): xdr.ScVal => {
+    const innerMap = scValFixtures.map({
+      innerKey: scValFixtures.string("innerValue"),
+      innerNum: scValFixtures.u32(99),
+      innerAmount: scValFixtures.i128("98765432109876543210"),
+    });
+    return scValFixtures.map({
+      name: scValFixtures.string("outer"),
+      subMap: innerMap,
+      tags: scValFixtures.vec([
+        scValFixtures.string("alpha"),
+        scValFixtures.string("beta"),
+      ]),
+    });
+  },
+
+  /** Helper creating nested vecs with arbitrary depth */
+  nestedVec: (): xdr.ScVal => {
+    return scValFixtures.vec([
+      scValFixtures.vec([scValFixtures.u32(1), scValFixtures.u32(2)]),
+      scValFixtures.vec([
+        scValFixtures.string("nested-item"),
+        scValFixtures.i128("-5000000000000000000"),
+      ]),
+    ]);
+  },
+};

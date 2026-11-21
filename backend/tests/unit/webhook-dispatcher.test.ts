@@ -4,6 +4,10 @@ import { WebhookSubscription, WebhookEventType } from "../../src/entities/Webhoo
 import { WebhookDeliveryLog, WebhookDeliveryStatus } from "../../src/entities/WebhookDeliveryLog";
 import { Repository, DataSource, FindOperator } from "typeorm";
 
+vi.mock("../../src/utils/ssrf-guard", () => ({
+  assertSafeWebhookUrl: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("WebhookDispatcher", () => {
   let dispatcher: WebhookDispatcher;
   let subscriptionRepo: Repository<WebhookSubscription>;

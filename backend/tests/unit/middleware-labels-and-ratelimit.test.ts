@@ -5,22 +5,15 @@
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { metricsService } from "../../src/services/metrics-service";
+import { metricsMiddleware } from "../../src/middlewares/metrics-middleware";
 
 // ── #1438: metrics-middleware ─────────────────────────────────────────────────
 
 describe("metricsMiddleware — route and status code labels (issue #1438)", () => {
-  it("calls observeHttpRequest with the route template once the response finishes", async () => {
+  it("calls observeHttpRequest with the route template once the response finishes", () => {
     // Arrange: build a minimal fake req/res pair
-    const observeSpy = vi.fn();
-
-    // We need to control the import of metricsService, so we mock it inline
-    vi.doMock("../../src/services/metrics-service", () => ({
-      metricsService: { observeHttpRequest: observeSpy },
-    }));
-
-    const { metricsMiddleware } = await import(
-      "../../src/middlewares/metrics-middleware"
-    );
+    const observeSpy = vi.spyOn(metricsService, "observeHttpRequest").mockImplementation(() => {});
 
     const finishListeners: Array<() => void> = [];
     const req = {
@@ -58,19 +51,11 @@ describe("metricsMiddleware — route and status code labels (issue #1438)", () 
     expect(route).toBe("/api/grants/:id");
     expect(status).toBe(200);
 
-    vi.doUnmock("../../src/services/metrics-service");
+    observeSpy.mockRestore();
   });
 
-  it("falls back to req.path when no route is matched", async () => {
-    const observeSpy = vi.fn();
-
-    vi.doMock("../../src/services/metrics-service", () => ({
-      metricsService: { observeHttpRequest: observeSpy },
-    }));
-
-    const { metricsMiddleware } = await import(
-      "../../src/middlewares/metrics-middleware"
-    );
+  it("falls back to req.path when no route is matched", () => {
+    const observeSpy = vi.spyOn(metricsService, "observeHttpRequest").mockImplementation(() => {});
 
     const finishListeners: Array<() => void> = [];
     const req = {
@@ -99,7 +84,7 @@ describe("metricsMiddleware — route and status code labels (issue #1438)", () 
     expect(route).toBe("/unknown-path");
     expect(status).toBe(404);
 
-    vi.doUnmock("../../src/services/metrics-service");
+    observeSpy.mockRestore();
   });
 });
 
