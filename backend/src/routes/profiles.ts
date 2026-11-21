@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Repository } from "typeorm";
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { createHash } from "node:crypto";
 import { Contributor } from "../entities/Contributor";
 import { Grant } from "../entities/Grant";
 import { validateBody, validateParams } from "../middlewares/validation-middleware";
@@ -58,6 +59,11 @@ function toProfile(c: Contributor, grants?: Grant[]) {
   };
 }
 
+function computeETag(profile: ReturnType<typeof toProfile>): string {
+  const profileJson = JSON.stringify(profile);
+  return createHash("sha256").update(profileJson).digest("base64");
+}
+
 export const buildProfilesRouter = (contributorRepo: Repository<Contributor>, grantRepo: Repository<Grant>) => {
   const router = Router();
 
@@ -72,7 +78,17 @@ export const buildProfilesRouter = (contributorRepo: Repository<Contributor>, gr
       }
 
       const grants = await grantRepo.find({ where: { recipient: address } });
-      res.json({ data: toProfile(contributor, grants) });
+      const profile = toProfile(contributor, grants);
+      const etag = computeETag(profile);
+
+      const ifNoneMatch = req.header("If-None-Match");
+      if (ifNoneMatch === etag) {
+        res.status(304).end();
+        return;
+      }
+
+      res.set("ETag", etag);
+      res.json({ data: profile });
     } catch (error) {
       next(error);
     }

@@ -194,6 +194,13 @@ export const buildAdminRouter = (
         .limit(limit)
         .getRawMany<{ ip: string; address: string | null; hits: string; lastSeenAt: string }>();
 
+      await auditLogRepo.save({
+        adminAddress: (req as any).adminAddress,
+        action: "VIEW_RATE_LIMITS",
+        target: `params:${sinceMinutes}-${limit}`,
+        details: `Viewed rate limits for last ${sinceMinutes} minutes`,
+      });
+
       res.json({
         data: rows.map((r) => ({
           ip: r.ip,
@@ -220,6 +227,14 @@ export const buildAdminRouter = (
         order: { createdAt: "DESC" },
         relations: ["grant"]
       });
+
+      await auditLogRepo.save({
+        adminAddress: (req as any).adminAddress,
+        action: "VIEW_REPORTS",
+        target: "reports:all",
+        details: `Viewed all reports (${reports.length} total)`,
+      });
+
       res.json({ data: reports });
     } catch (error) {
       next(error);

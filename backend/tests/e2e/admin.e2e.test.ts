@@ -109,4 +109,38 @@ describe("Admin API e2e", () => {
     expect(log).toBeDefined();
     expect(log?.target).toBe(`user:${targetUser}`);
   });
+
+  it("logs admin access to rate limits endpoint", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const path = "/admin/rate-limits";
+    const headers = getAdminHeaders("GET", path);
+
+    const response = await request(app).get(path).set(headers);
+
+    expect(response.status).toBe(200);
+
+    // Verify AuditLog
+    const auditLogRepo = dataSource.getRepository(AuditLog);
+    const log = await auditLogRepo.findOne({ where: { action: "VIEW_RATE_LIMITS" } });
+    expect(log).toBeDefined();
+    expect(log?.adminAddress).toBe(adminAddress);
+    expect(log?.target).toBe("params:60-50");
+  });
+
+  it("logs admin access to reports endpoint", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const path = "/admin/reports";
+    const headers = getAdminHeaders("GET", path);
+
+    const response = await request(app).get(path).set(headers);
+
+    expect(response.status).toBe(200);
+
+    // Verify AuditLog
+    const auditLogRepo = dataSource.getRepository(AuditLog);
+    const log = await auditLogRepo.findOne({ where: { action: "VIEW_REPORTS" } });
+    expect(log).toBeDefined();
+    expect(log?.adminAddress).toBe(adminAddress);
+    expect(log?.target).toBe("reports:all");
+  });
 });

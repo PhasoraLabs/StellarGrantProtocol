@@ -81,5 +81,103 @@ describe("Profiles API e2e", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("returns ETag header for profile responses", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const keypair = Keypair.random();
+    const timestamp = Date.now();
+    const nonce = "nonce-profile-etag-1";
+    const patch = { bio: "ETag test profile" };
+
+    const message = [
+      "stellargrant:profile_update:v1",
+      keypair.publicKey(),
+      nonce,
+      timestamp,
+      "PATCH:/profiles/me",
+      JSON.stringify(patch),
+    ].join("|");
+    const signature = keypair.sign(Buffer.from(message, "utf8")).toString("base64");
+
+    await request(app).patch("/profiles/me").send({
+      address: keypair.publicKey(),
+      nonce,
+      timestamp,
+      signature,
+      ...patch,
+    });
+
+    const getRes = await request(app).get(`/profiles/${keypair.publicKey()}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers["etag"]).toBeDefined();
+    expect(typeof getRes.headers["etag"]).toBe("string");
+  });
+
+  it("returns 304 when If-None-Match matches current ETag", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const keypair = Keypair.random();
+    const timestamp = Date.now();
+    const nonce = "nonce-profile-etag-2";
+    const patch = { bio: "ETag 304 test" };
+
+    const message = [
+      "stellargrant:profile_update:v1",
+      keypair.publicKey(),
+      nonce,
+      timestamp,
+      "PATCH:/profiles/me",
+      JSON.stringify(patch),
+    ].join("|");
+    const signature = keypair.sign(Buffer.from(message, "utf8")).toString("base64");
+
+    await request(app).patch("/profiles/me").send({
+      address: keypair.publicKey(),
+      nonce,
+      timestamp,
+      signature,
+      ...patch,
+    });
+
+    const firstRes = await request(app).get(`/profiles/${keypair.publicKey()}`);
+    expect(firstRes.status).toBe(200);
+    const etag = firstRes.headers["etag"];
+
+    const secondRes = await request(app)
+      .get(`/profiles/${keypair.publicKey()}`)
+      .set("If-None-Match", etag);
+    expect(secondRes.status).toBe(304);
+  });
+
+  it("returns 200 when If-None-Match does not match current ETag", async () => {
+    const app = createApp(dataSource, sorobanClient);
+    const keypair = Keypair.random();
+    const timestamp = Date.now();
+    const nonce = "nonce-profile-etag-3";
+    const patch = { bio: "ETag mismatch test" };
+
+    const message = [
+      "stellargrant:profile_update:v1",
+      keypair.publicKey(),
+      nonce,
+      timestamp,
+      "PATCH:/profiles/me",
+      JSON.stringify(patch),
+    ].join("|");
+    const signature = keypair.sign(Buffer.from(message, "utf8")).toString("base64");
+
+    await request(app).patch("/profiles/me").send({
+      address: keypair.publicKey(),
+      nonce,
+      timestamp,
+      signature,
+      ...patch,
+    });
+
+    const res = await request(app)
+      .get(`/profiles/${keypair.publicKey()}`)
+      .set("If-None-Match", "invalid-etag");
+    expect(res.status).toBe(200);
+    expect(res.headers["etag"]).toBeDefined();
+  });
 });
 
