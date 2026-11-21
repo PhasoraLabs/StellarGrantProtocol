@@ -749,4 +749,110 @@ mod tests {
             assert_eq!(grant.escrow_balance, 0);
         });
     }
+
+    // ── Issue #1379: slippage protection / min_out ───────────────────────────
+    //
+    // No DEX/AMM is integrated yet, so `quote()` always reverts with
+    // `SwapNotImplemented`. These tests pin the guarantee that matters for
+    // slippage protection today: a swap whose `min_out` cannot be satisfied
+    // (adverse price movement) reverts and leaves every balance untouched.
+
+    fn setup_swap(max_slippage_bps: u32, is_active: bool) -> (Env, Address, Address, Address) {
+        let (env, contract_id) = setup_env();
+        let admin = Address::generate(&env);
+        let caller = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let from_asset = env.register_stellar_asset_contract_v2(token_admin);
+        StellarAssetClient::new(&env, &from_asset.address()).mint(&caller, &1_000_000);
+
+        let client = StellarGrantsContractClient::new(&env, &contract_id);
+        client.set_global_admin(&admin, &admin);
+        env.as_contract(&contract_id, || {
+            Storage::set_dex_config(
+                &env,
+                &DexConfig {
+                    dex_contract: Address::generate(&env),
+                    max_slippage_bps,
+                    is_active,
+                },
+            );
+        });
+        (env, contract_id, caller, from_asset.address())
+    }
+
+    #[test]
+    fn test_swap_with_unreachable_min_out_reverts_and_keeps_funds() {
+        let (env, contract_id, caller, from_token) = setup_swap(100, true);
+        let route = SwapRoute {
+            from_token: from_token.clone(),
+            to_token: Address::generate(&env),
+            intermediary: None,
+            // Far above any plausible output: simulates adverse price movement.
+            min_out: i128::MAX,
+        };
+        let result = env.as_contract(&contract_id, || swap(&env, &caller, route, 1_000));
+        assert!(result.is_err());
+
+        let token_client = token::Client::new(&env, &from_token);
+        assert_eq!(token_client.balance(&caller), 1_000_000);
+        assert_eq!(token_client.balance(&contract_id), 0);
+    }
+
+    #[test]
+    fn test_swap_with_zero_slippage_tolerance_still_reverts_on_adverse_price() {
+        let (env, contract_id, caller, from_token) = setup_swap(0, true);
+        let route = SwapRoute {
+            from_token: from_token.clone(),
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: 1_000,
+        };
+        let result = env.as_contract(&contract_id, || swap(&env, &caller, route, 1_000));
+        assert!(result.is_err());
+
+        let token_client = token::Client::new(&env, &from_token);
+        assert_eq!(token_client.balance(&caller), 1_000_000);
+    }
+
+    #[test]
+    fn test_quote_with_high_min_out_reverts() {
+        let (env, contract_id, _caller, from_token) = setup_swap(50, true);
+        let route = SwapRoute {
+            from_token,
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: i128::MAX,
+        };
+        let result = env.as_contract(&contract_id, || quote(&env, &route, 1_000));
+        assert_eq!(result, Err(ContractError::SwapNotImplemented));
+    }
+
+    #[test]
+    fn test_swap_rejected_when_dex_inactive_regardless_of_min_out() {
+        let (env, contract_id, caller, from_token) = setup_swap(100, false);
+        let route = SwapRoute {
+            from_token: from_token.clone(),
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: 1,
+        };
+        let result = env.as_contract(&contract_id, || swap(&env, &caller, route, 1_000));
+        assert_eq!(result, Err(ContractError::DexNotConfigured));
+
+        let token_client = token::Client::new(&env, &from_token);
+        assert_eq!(token_client.balance(&caller), 1_000_000);
+    }
+
+    #[test]
+    fn test_swap_negative_amount_rejected() {
+        let (env, contract_id, caller, from_token) = setup_swap(100, true);
+        let route = SwapRoute {
+            from_token,
+            to_token: Address::generate(&env),
+            intermediary: None,
+            min_out: 0,
+        };
+        let result = env.as_contract(&contract_id, || swap(&env, &caller, route, -5));
+        assert_eq!(result, Err(ContractError::InvalidInput));
+    }
 }

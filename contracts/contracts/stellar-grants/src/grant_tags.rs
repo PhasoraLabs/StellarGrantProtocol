@@ -2,7 +2,23 @@ use crate::storage::Storage;
 use crate::types::{ContractError, GrantCategory, GrantTag};
 use soroban_sdk::{Address, Bytes, Env, String, Vec};
 
-const MAX_FREEFORM_TAGS: u32 = 10;
+/// Maximum number of freeform tags allowed per grant.
+pub const MAX_FREEFORM_TAGS: u32 = 10;
+/// Maximum length (in bytes) of a single freeform tag string.
+pub const MAX_TAG_LENGTH: u32 = 32;
+
+/// Validate the tag count and per-tag length bounds.
+fn validate_freeform_tags(tags: &Vec<String>) -> Result<(), ContractError> {
+    if tags.len() > MAX_FREEFORM_TAGS {
+        return Err(ContractError::TooManyTags);
+    }
+    for tag in tags.iter() {
+        if tag.len() > MAX_TAG_LENGTH {
+            return Err(ContractError::TagTooLong);
+        }
+    }
+    Ok(())
+}
 
 pub fn create_category(
     env: &Env,
@@ -47,9 +63,7 @@ pub fn tag_grant(
         return Err(ContractError::Unauthorized);
     }
 
-    if freeform_tags.len() > MAX_FREEFORM_TAGS {
-        return Err(ContractError::InvalidInput);
-    }
+    validate_freeform_tags(&freeform_tags)?;
 
     if let Some(cat_id) = category_id {
         let categories = Storage::get_category_list(env);
@@ -129,9 +143,7 @@ pub fn update_tags(
         return Err(ContractError::Unauthorized);
     }
 
-    if freeform_tags.len() > MAX_FREEFORM_TAGS {
-        return Err(ContractError::InvalidInput);
-    }
+    validate_freeform_tags(&freeform_tags)?;
 
     let mut tag = Storage::get_grant_tags(env, grant_id).ok_or(ContractError::InvalidState)?;
 
@@ -454,6 +466,88 @@ mod tests {
         env.as_contract(&contract_id, || {
             assert_eq!(find_by_category(&env, cat_a, 0, 50).len(), 0);
             assert_eq!(find_by_category(&env, cat_b, 0, 50).len(), 1);
+        });
+    }
+
+    fn make_tags(env: &Env, count: u32, len: usize) -> Vec<String> {
+        let mut tags = Vec::new(env);
+        let mut buf = [b'a'; 64];
+        for i in 0..count {
+            buf[0] = b'a' + (i as u8);
+            tags.push_back(String::from_bytes(env, &buf[..len]));
+        }
+        tags
+    }
+
+    #[test]
+    fn test_tag_at_max_length_and_count_accepted() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let owner = Address::generate(&env);
+        let tags = make_tags(&env, MAX_FREEFORM_TAGS, MAX_TAG_LENGTH as usize);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, 1, &owner);
+            assert_eq!(tag_grant(&env, &owner, 1, None, None, tags), Ok(()));
+        });
+    }
+
+    #[test]
+    fn test_tag_too_long_rejected() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let owner = Address::generate(&env);
+        let tags = make_tags(&env, 1, MAX_TAG_LENGTH as usize + 1);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, 1, &owner);
+            assert_eq!(
+                tag_grant(&env, &owner, 1, None, None, tags),
+                Err(ContractError::TagTooLong)
+            );
+        });
+    }
+
+    #[test]
+    fn test_too_many_tags_rejected() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let owner = Address::generate(&env);
+        let tags = make_tags(&env, MAX_FREEFORM_TAGS + 1, 8);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, 1, &owner);
+            assert_eq!(
+                tag_grant(&env, &owner, 1, None, None, tags),
+                Err(ContractError::TooManyTags)
+            );
+        });
+    }
+
+    #[test]
+    fn test_update_tags_enforces_bounds() {
+        let env = Env::default();
+        let contract_id = setup(&env);
+        let owner = Address::generate(&env);
+        let ok_tags = make_tags(&env, 2, 8);
+        let long_tags = make_tags(&env, 1, MAX_TAG_LENGTH as usize + 1);
+        let many_tags = make_tags(&env, MAX_FREEFORM_TAGS + 1, 8);
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, 1, &owner);
+            tag_grant(&env, &owner, 1, None, None, ok_tags).unwrap();
+        });
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                update_tags(&env, &owner, 1, long_tags),
+                Err(ContractError::TagTooLong)
+            );
+        });
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                update_tags(&env, &owner, 1, many_tags),
+                Err(ContractError::TooManyTags)
+            );
+        });
+        env.as_contract(&contract_id, || {
+            // Original tags untouched after rejected updates.
+            assert_eq!(get_tags(&env, 1).unwrap().freeform_tags.len(), 2);
         });
     }
 }

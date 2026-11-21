@@ -5,6 +5,23 @@ use crate::events::{Events, MultisigExecuted, MultisigProposalCreated, MultisigS
 use crate::storage::Storage;
 use crate::types::{MultisigProposal, MultisigSigner, SignatureStatus};
 
+// ── Threshold semantics ───────────────────────────────────────────────────────
+//
+// The signing threshold is **snapshotted on the proposal at creation time** and
+// stored in `MultisigProposal::threshold`. `is_threshold_met`, `sign` and
+// `execute` only ever read that stored value, so:
+//
+// * Creating later proposals with a different threshold never affects proposals
+//   that are already pending.
+// * Changing the protocol-wide `multisig_threshold` config only decides whether
+//   *new* payouts require a proposal; it does not retroactively re-evaluate
+//   pending ones.
+// * If a pending proposal's stored threshold is lowered/raised, the very next
+//   `execute` call evaluates the signatures collected so far against the new
+//   value (signatures are never discarded).
+//
+// See the `threshold_change_*` tests in this module for executable examples.
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Create a new multisig proposal for a grant action. Grant owner or admin only.
@@ -363,6 +380,125 @@ mod test {
             // Cannot sign either
             assert_eq!(
                 sign(&env, &signer, id, true),
+                Err(ContractError::ProposalAlreadyExecuted)
+            );
+        });
+    }
+
+    fn two_signers(env: &Env) -> (Address, Address, Vec<Address>) {
+        let a = Address::generate(env);
+        let b = Address::generate(env);
+        let mut v = Vec::new(env);
+        v.push_back(a.clone());
+        v.push_back(b.clone());
+        (a, b, v)
+    }
+
+    #[test]
+    fn threshold_change_new_proposals_do_not_affect_pending() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let (s1, s2, signers) = two_signers(&env);
+
+            // Pending proposal with threshold 2, one signature collected.
+            let pending =
+                create_proposal(&env, &creator, 1, Bytes::new(&env), signers.clone(), 2, 100)
+                    .unwrap();
+            sign(&env, &s1, pending, true).unwrap();
+
+            // A later proposal for the same grant uses a lower threshold.
+            let relaxed =
+                create_proposal(&env, &creator, 1, Bytes::new(&env), signers, 1, 100).unwrap();
+            sign(&env, &s1, relaxed, true).unwrap();
+            assert_eq!(execute(&env, &creator, relaxed), Ok(Bytes::new(&env)));
+
+            // The pending proposal keeps its original threshold of 2.
+            assert_eq!(get_proposal(&env, pending).unwrap().threshold, 2);
+            assert_eq!(
+                execute(&env, &creator, pending),
+                Err(ContractError::ThresholdNotMet)
+            );
+            sign(&env, &s2, pending, true).unwrap();
+            assert!(execute(&env, &creator, pending).is_ok());
+        });
+    }
+
+    #[test]
+    fn threshold_change_lowered_on_pending_unlocks_execution() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let (s1, _s2, signers) = two_signers(&env);
+
+            let id = create_proposal(&env, &creator, 2, Bytes::new(&env), signers, 2, 100).unwrap();
+            sign(&env, &s1, id, true).unwrap();
+            assert_eq!(
+                execute(&env, &creator, id),
+                Err(ContractError::ThresholdNotMet)
+            );
+
+            // Lower the stored threshold: existing signatures are preserved
+            // and now satisfy the new bar.
+            let mut proposal = get_proposal(&env, id).unwrap();
+            proposal.threshold = 1;
+            Storage::set_multisig_proposal(&env, &proposal);
+
+            assert!(is_threshold_met(&get_proposal(&env, id).unwrap()));
+            assert!(execute(&env, &creator, id).is_ok());
+        });
+    }
+
+    #[test]
+    fn threshold_change_raised_on_pending_blocks_execution() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let (s1, s2, signers) = two_signers(&env);
+
+            let id = create_proposal(&env, &creator, 3, Bytes::new(&env), signers, 1, 100).unwrap();
+            sign(&env, &s1, id, true).unwrap();
+            assert!(is_threshold_met(&get_proposal(&env, id).unwrap()));
+
+            // Raise the stored threshold before execution.
+            let mut proposal = get_proposal(&env, id).unwrap();
+            proposal.threshold = 2;
+            Storage::set_multisig_proposal(&env, &proposal);
+
+            assert!(!is_threshold_met(&get_proposal(&env, id).unwrap()));
+            assert_eq!(
+                execute(&env, &creator, id),
+                Err(ContractError::ThresholdNotMet)
+            );
+
+            // Collected signature is retained; one more satisfies the bar.
+            assert_eq!(get_proposal(&env, id).unwrap().total_weight_signed, 1);
+            sign(&env, &s2, id, true).unwrap();
+            assert!(execute(&env, &creator, id).is_ok());
+        });
+    }
+
+    #[test]
+    fn threshold_change_executed_proposal_stays_executed() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.as_contract(&contract_id, || {
+            let creator = Address::generate(&env);
+            let (s1, _s2, signers) = two_signers(&env);
+
+            let id = create_proposal(&env, &creator, 4, Bytes::new(&env), signers, 1, 100).unwrap();
+            sign(&env, &s1, id, true).unwrap();
+            execute(&env, &creator, id).unwrap();
+
+            let mut proposal = get_proposal(&env, id).unwrap();
+            proposal.threshold = 2;
+            Storage::set_multisig_proposal(&env, &proposal);
+
+            assert_eq!(
+                execute(&env, &creator, id),
                 Err(ContractError::ProposalAlreadyExecuted)
             );
         });
