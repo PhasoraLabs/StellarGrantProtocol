@@ -109,6 +109,8 @@ pub fn on_contributor_assigned(env: &Env, grant_id: u64, contributor: &Address) 
     );
 }
 
+/// List grant IDs owned by `owner`, paginated by `offset` and `limit`.
+/// Results are capped at [`crate::constants::MAX_PAGE_SIZE`].
 pub fn by_owner(env: &Env, owner: &Address, offset: u32, limit: u32) -> Vec<u64> {
     let list: Vec<u64> = env
         .storage()
@@ -118,6 +120,8 @@ pub fn by_owner(env: &Env, owner: &Address, offset: u32, limit: u32) -> Vec<u64>
     crate::pagination::paginate(env, &list, offset, limit)
 }
 
+/// List grant IDs with the given `status`, paginated by `offset` and `limit`.
+/// Results are capped at [`crate::constants::MAX_PAGE_SIZE`].
 pub fn by_status(env: &Env, status: GrantStatus, offset: u32, limit: u32) -> Vec<u64> {
     let list: Vec<u64> = env
         .storage()
@@ -127,6 +131,8 @@ pub fn by_status(env: &Env, status: GrantStatus, offset: u32, limit: u32) -> Vec
     crate::pagination::paginate(env, &list, offset, limit)
 }
 
+/// List grant IDs using the given `token`, paginated by `offset` and `limit`.
+/// Results are capped at [`crate::constants::MAX_PAGE_SIZE`].
 pub fn by_token(env: &Env, token: &Address, offset: u32, limit: u32) -> Vec<u64> {
     let list: Vec<u64> = env
         .storage()
@@ -136,6 +142,8 @@ pub fn by_token(env: &Env, token: &Address, offset: u32, limit: u32) -> Vec<u64>
     crate::pagination::paginate(env, &list, offset, limit)
 }
 
+/// List grant IDs where `contributor` is assigned, paginated by `offset` and `limit`.
+/// Results are capped at [`crate::constants::MAX_PAGE_SIZE`].
 pub fn by_contributor(env: &Env, contributor: &Address, offset: u32, limit: u32) -> Vec<u64> {
     let list: Vec<u64> = env
         .storage()
@@ -145,6 +153,8 @@ pub fn by_contributor(env: &Env, contributor: &Address, offset: u32, limit: u32)
     crate::pagination::paginate(env, &list, offset, limit)
 }
 
+/// List all grant IDs in chronological creation order, paginated by `offset` and `limit`.
+/// Results are capped at [`crate::constants::MAX_PAGE_SIZE`].
 pub fn recent(env: &Env, offset: u32, limit: u32) -> Vec<u64> {
     let list: Vec<u64> = env
         .storage()
@@ -257,6 +267,150 @@ mod tests {
 
             let list: Vec<u64> = env.storage().persistent().get(&key).unwrap();
             assert_eq!(list.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_by_owner_pagination() {
+        use soroban_sdk::testutils::Address as _;
+        let env = Env::default();
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+
+            for id in 1..=5 {
+                on_grant_created(&env, id, &owner, &token, GrantStatus::Active);
+            }
+
+            // Normal slices
+            let page1 = by_owner(&env, &owner, 0, 2);
+            assert_eq!(page1.len(), 2);
+            assert_eq!(page1.get(0), Some(1));
+            assert_eq!(page1.get(1), Some(2));
+
+            let page2 = by_owner(&env, &owner, 2, 2);
+            assert_eq!(page2.len(), 2);
+            assert_eq!(page2.get(0), Some(3));
+            assert_eq!(page2.get(1), Some(4));
+
+            let page3 = by_owner(&env, &owner, 4, 2);
+            assert_eq!(page3.len(), 1);
+            assert_eq!(page3.get(0), Some(5));
+
+            // Offset past total entries
+            let empty = by_owner(&env, &owner, 5, 2);
+            assert_eq!(empty.len(), 0);
+
+            // Zero limit returns empty
+            let zero = by_owner(&env, &owner, 0, 0);
+            assert_eq!(zero.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_by_status_pagination() {
+        use soroban_sdk::testutils::Address as _;
+        let env = Env::default();
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+
+            for id in 1..=4 {
+                on_grant_created(&env, id, &owner, &token, GrantStatus::Active);
+            }
+
+            let slice = by_status(&env, GrantStatus::Active, 1, 2);
+            assert_eq!(slice.len(), 2);
+            assert_eq!(slice.get(0), Some(2));
+            assert_eq!(slice.get(1), Some(3));
+
+            let empty = by_status(&env, GrantStatus::Cancelled, 0, 10);
+            assert_eq!(empty.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_by_token_pagination() {
+        use soroban_sdk::testutils::Address as _;
+        let env = Env::default();
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+
+            for id in 1..=4 {
+                on_grant_created(&env, id, &owner, &token, GrantStatus::Active);
+            }
+
+            let slice = by_token(&env, &token, 0, 3);
+            assert_eq!(slice.len(), 3);
+            assert_eq!(slice.get(0), Some(1));
+            assert_eq!(slice.get(1), Some(2));
+            assert_eq!(slice.get(2), Some(3));
+
+            let other_token = Address::generate(&env);
+            let empty = by_token(&env, &other_token, 0, 10);
+            assert_eq!(empty.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_by_contributor_pagination() {
+        use soroban_sdk::testutils::Address as _;
+        let env = Env::default();
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let contributor = Address::generate(&env);
+
+            for id in 10..=14 {
+                on_contributor_assigned(&env, id, &contributor);
+            }
+
+            let slice = by_contributor(&env, &contributor, 1, 3);
+            assert_eq!(slice.len(), 3);
+            assert_eq!(slice.get(0), Some(11));
+            assert_eq!(slice.get(1), Some(12));
+            assert_eq!(slice.get(2), Some(13));
+
+            let unknown = Address::generate(&env);
+            let empty = by_contributor(&env, &unknown, 0, 10);
+            assert_eq!(empty.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_recent_pagination_and_max_page_size_cap() {
+        use soroban_sdk::testutils::Address as _;
+        let env = Env::default();
+        let contract_id = setup(&env);
+
+        env.as_contract(&contract_id, || {
+            let owner = Address::generate(&env);
+            let token = Address::generate(&env);
+
+            for id in 1..=10 {
+                on_grant_created(&env, id, &owner, &token, GrantStatus::Active);
+            }
+
+            let first_two = recent(&env, 0, 2);
+            assert_eq!(first_two.len(), 2);
+            assert_eq!(first_two.get(0), Some(1));
+            assert_eq!(first_two.get(1), Some(2));
+
+            let next_three = recent(&env, 2, 3);
+            assert_eq!(next_three.len(), 3);
+            assert_eq!(next_three.get(0), Some(3));
+            assert_eq!(next_three.get(2), Some(5));
+
+            // Requesting more than MAX_PAGE_SIZE is capped to MAX_PAGE_SIZE (or total items)
+            let all = recent(&env, 0, constants::MAX_PAGE_SIZE + 10);
+            assert_eq!(all.len(), 10);
         });
     }
 }
