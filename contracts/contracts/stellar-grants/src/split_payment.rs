@@ -272,4 +272,76 @@ mod tests {
             assert!(!has_split(&env, 999, 0));
         });
     }
+
+    // --- Under/over-allocated split tests (issue #1375) ---
+
+    #[test]
+    fn register_split_rejects_under_allocated_shares() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+
+            // 4000 + 4000 = 8000 bps — 2000 short of 10_000
+            let recipients = vec![
+                &env,
+                SplitRecipient { recipient: r1, share_bps: 4000 },
+                SplitRecipient { recipient: r2, share_bps: 4000 },
+            ];
+
+            let err = register_split(&env, &owner, 1, 0, recipients).unwrap_err();
+            assert_eq!(err, ContractError::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn register_split_rejects_over_allocated_shares() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+
+            // 6000 + 6000 = 12000 bps — 2000 over 10_000
+            let recipients = vec![
+                &env,
+                SplitRecipient { recipient: r1, share_bps: 6000 },
+                SplitRecipient { recipient: r2, share_bps: 6000 },
+            ];
+
+            let err = register_split(&env, &owner, 1, 0, recipients).unwrap_err();
+            assert_eq!(err, ContractError::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn register_split_accepts_exactly_10000_bps() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, &owner, 1, 1, GrantStatus::Active);
+
+            let recipients = vec![
+                &env,
+                SplitRecipient { recipient: r1, share_bps: 3000 },
+                SplitRecipient { recipient: r2, share_bps: 7000 },
+            ];
+
+            assert!(register_split(&env, &owner, 1, 0, recipients).is_ok());
+        });
+    }
 }

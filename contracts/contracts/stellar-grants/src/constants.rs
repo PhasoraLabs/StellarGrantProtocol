@@ -99,6 +99,10 @@ pub const DEFAULT_VOICE_CREDITS: u32 = 100;
 // ── Insurance (#538) ─────────────────────────────────────────────────────────
 pub const DEFAULT_INSURANCE_PREMIUM_RATE_BPS: u32 = 50; // 0.5%
 pub const DEFAULT_INSURANCE_DURATION_LEDGERS: u32 = 1_000_000;
+/// Hard cap on how large the insurance pool may grow. Deposits that would
+/// push the balance above this limit are rejected. Callers can read
+/// `remaining_capacity` to discover how much room remains before the cap.
+pub const MAX_INSURANCE_POOL_BALANCE: i128 = 1_000_000_000_000; // 1 trillion stroops
 
 // ── Hooks (#539) ─────────────────────────────────────────────────────────────
 pub const MAX_HOOKS_PER_EVENT: u32 = 5;

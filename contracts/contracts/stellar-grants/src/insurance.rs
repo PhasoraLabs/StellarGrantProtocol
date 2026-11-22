@@ -2,6 +2,7 @@ use soroban_sdk::{contractevent, token, Address, Env, String};
 
 use crate::constants::{
     BASIS_POINTS_SCALE, DEFAULT_INSURANCE_DURATION_LEDGERS, DEFAULT_INSURANCE_PREMIUM_RATE_BPS,
+    MAX_INSURANCE_POOL_BALANCE,
 };
 use crate::errors::ContractError;
 use crate::storage::Storage;
@@ -312,6 +313,15 @@ pub fn pool_balance(env: &Env, token: &Address) -> i128 {
     Storage::get_insurance_pool(env, token)
 }
 
+/// Return how much more coverage capacity is available before the pool hits its hard cap.
+///
+/// Remaining capacity = MAX_INSURANCE_POOL_BALANCE − current pool balance.
+/// Returns 0 when the pool is at or above the cap.
+pub fn remaining_capacity(env: &Env, token: &Address) -> i128 {
+    let balance = Storage::get_insurance_pool(env, token);
+    MAX_INSURANCE_POOL_BALANCE.saturating_sub(balance).max(0)
+}
+
 /// Return the insurance policy for a grant.
 pub fn get_policy(env: &Env, grant_id: u64) -> Option<InsurancePolicy> {
     Storage::get_insurance_policy(env, grant_id)
@@ -423,6 +433,10 @@ mod tests {
         crate::test_utils::in_contract(env, || super::pool_balance(env, token))
     }
 
+    fn remaining_capacity(env: &Env, token: &Address) -> i128 {
+        crate::test_utils::in_contract(env, || super::remaining_capacity(env, token))
+    }
+
     fn get_policy(env: &Env, grant_id: u64) -> Option<InsurancePolicy> {
         crate::test_utils::in_contract(env, || super::get_policy(env, grant_id))
     }
@@ -439,6 +453,36 @@ mod tests {
         let policy = purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap();
         assert_eq!(policy.premium_paid, 5_000);
         assert_eq!(pool_balance(&env, &token), 5_000);
+    }
+
+    // --- Remaining capacity tests (issue #1373) ---
+
+    #[test]
+    fn remaining_capacity_full_when_pool_empty() {
+        let (env, _admin, _policyholder, token) = setup();
+        let cap = crate::constants::MAX_INSURANCE_POOL_BALANCE;
+        assert_eq!(remaining_capacity(&env, &token), cap);
+    }
+
+    #[test]
+    fn remaining_capacity_decreases_after_premium_deposit() {
+        let (env, _admin, policyholder, token) = setup();
+        let coverage = 1_000_000i128;
+        // Premium = 5_000; pool grows by 5_000
+        purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap();
+        let cap = crate::constants::MAX_INSURANCE_POOL_BALANCE;
+        assert_eq!(remaining_capacity(&env, &token), cap - 5_000);
+    }
+
+    #[test]
+    fn remaining_capacity_zero_at_cap() {
+        // Directly write the pool to the cap and verify remaining_capacity = 0.
+        let (env, _admin, _policyholder, token) = setup();
+        crate::test_utils::in_contract(&env, || {
+            let cap = crate::constants::MAX_INSURANCE_POOL_BALANCE;
+            Storage::set_insurance_pool(&env, &token, cap);
+        });
+        assert_eq!(remaining_capacity(&env, &token), 0);
     }
 
     #[test]

@@ -230,4 +230,58 @@ mod tests {
             record_activity(&env, &Address::generate(&env));
         });
     }
+
+    // --- Long-inactivity / overflow tests (issue #1372) ---
+
+    #[test]
+    fn linear_decay_saturates_at_floor_after_multi_year_inactivity() {
+        let mut c = cfg(DecayType::Linear);
+        c.decay_floor = 1;
+        c.linear_decay_per_day = 10;
+
+        // 5 years = 1_825 days; loss = 18_250 >> raw 1_000 — saturates to floor
+        let days_5yr: u32 = 365 * 5;
+        assert_eq!(linear_decay(1_000, days_5yr, &c), 1);
+
+        // 10 years — same floor
+        let days_10yr: u32 = 365 * 10;
+        assert_eq!(linear_decay(1_000, days_10yr, &c), 1);
+    }
+
+    #[test]
+    fn linear_decay_no_overflow_with_max_u32_days() {
+        let mut c = cfg(DecayType::Linear);
+        c.decay_floor = 0;
+        c.linear_decay_per_day = u32::MAX;
+
+        // saturating_mul prevents overflow: result clamps to 0
+        assert_eq!(linear_decay(u32::MAX, u32::MAX, &c), 0);
+    }
+
+    #[test]
+    fn exponential_decay_saturates_at_floor_after_multi_year_inactivity() {
+        let mut c = cfg(DecayType::Exponential);
+        c.decay_floor = 5;
+        c.half_life_ledgers = 1;
+
+        // multi-year inactivity in ledgers: shifts >>> 32 -> caught by guard -> decayed = 0, clamped to floor
+        let ledgers_5yr: u32 = (365u32 * 5 * 86_400) / 5;
+        assert_eq!(exponential_decay(1_000_000, ledgers_5yr, &c), 5);
+    }
+
+    #[test]
+    fn apply_decay_linear_saturates_after_very_long_inactivity() {
+        let env = Env::default();
+        // 10 years of elapsed time
+        let ten_years_secs: u64 = 365 * 10 * 86_400;
+        env.ledger().set_timestamp(ten_years_secs);
+
+        let mut c = cfg(DecayType::Linear);
+        c.decay_floor = 1;
+        c.inactivity_threshold_ledgers = 0;
+
+        // last_action_at = 0, now = 10yr -> reputation must not go below floor
+        let result = apply_decay(&env, 999, 0, &c);
+        assert_eq!(result, 1);
+    }
 }
