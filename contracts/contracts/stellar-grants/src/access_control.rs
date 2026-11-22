@@ -631,7 +631,14 @@ mod tests {
         let (env, super_admin, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let protocol_admin = Address::generate(&env);
-            grant_role(&env, &super_admin, &protocol_admin, Role::ProtocolAdmin, None).unwrap();
+            grant_role(
+                &env,
+                &super_admin,
+                &protocol_admin,
+                Role::ProtocolAdmin,
+                None,
+            )
+            .unwrap();
             assert_eq!(require_admin(&env, &protocol_admin), Ok(()));
         });
     }
@@ -661,7 +668,7 @@ mod tests {
         });
     }
 
-// ── has_role / negative cases ─────────────────────────────────────────
+    // ── has_role / negative cases ─────────────────────────────────────────
 
     #[test]
     fn has_role_false_when_no_assignment() {

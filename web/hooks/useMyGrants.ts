@@ -61,7 +61,7 @@ export function useMyGrants(): UseMyGrantsResult {
   });
 
   const hasGrants =
-    data?.owned?.length > 0 || data?.funded?.length > 0;
+    (data?.owned?.length ?? 0) > 0 || (data?.funded?.length ?? 0) > 0;
   return {
     data: data ?? null,
     isLoading,

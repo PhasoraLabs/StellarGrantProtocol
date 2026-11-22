@@ -7,11 +7,11 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { useGrants } from "@/hooks/useGrants";
+import { useGrants, buildGrantsUrl } from "@/hooks/useGrants";
 import { grants } from "@/mock-server/fixtures/grants";
 
 /** The exact payload `mock-server/routes/grants.ts` sends over the wire. */
@@ -95,5 +95,68 @@ describe("useGrants list fetch (#1287)", () => {
     expect(result.current.error?.message).toMatch(/grants/i);
     expect(result.current.data).toBeNull();
     expect(result.current.errorType).toBe("generic");
+  });
+
+  it("builds the grant URL with status filter and sort by amount", () => {
+    const urlDesc = buildGrantsUrl(
+      { status: "active", sort: "amount_desc", token: "USDC", q: "stellar" },
+      1,
+    );
+    expect(urlDesc).toContain("status=active");
+    expect(urlDesc).toContain("sort=amount_desc");
+    expect(urlDesc).toContain("token=USDC");
+    expect(urlDesc).toContain("q=stellar");
+    expect(urlDesc).toContain("page=1");
+
+    const urlAsc = buildGrantsUrl({ status: "completed", sort: "amount_asc" }, 2);
+    expect(urlAsc).toContain("status=completed");
+    expect(urlAsc).toContain("sort=amount_asc");
+    expect(urlAsc).toContain("page=2");
+  });
+
+  it("exposes controls that update filters and sync to URL router", async () => {
+    respondWith(mockListPayload());
+    const pushMock = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(
+      () =>
+        useGrants({
+          syncWithUrl: true,
+          router: { push: pushMock },
+          searchParams: new URLSearchParams("status=open&sort=newest&page=1"),
+        }),
+      { wrapper },
+    );
+
+    expect(result.current.status).toBe("open");
+    expect(result.current.sort).toBe("newest");
+
+    // Change status
+    act(() => {
+      result.current.setStatus("active");
+    });
+    expect(result.current.status).toBe("active");
+    expect(pushMock).toHaveBeenCalledWith("/grants?status=active&sort=newest");
+
+    // Change sort to amount_desc
+    act(() => {
+      result.current.setSort("amount_desc");
+    });
+    expect(result.current.sort).toBe("amount_desc");
+    expect(pushMock).toHaveBeenCalledWith("/grants?status=active&sort=amount_desc");
+
+    // Reset filters
+    act(() => {
+      result.current.resetFilters();
+    });
+    expect(result.current.status).toBe("");
+    expect(result.current.sort).toBe("newest");
+    expect(pushMock).toHaveBeenCalledWith("/grants");
   });
 });

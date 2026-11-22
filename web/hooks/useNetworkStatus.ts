@@ -91,7 +91,7 @@ export function useNetworkStatus(): NetworkStatus {
     const detectWalletNetwork = async () => {
       try {
         // Try Freighter first (most common)
-        const freighter = (window as any).stellar;
+        const freighter = (window as unknown as { stellar?: { freighter?: unknown } }).stellar;
         if (freighter?.freighter) {
           const { getNetworkDetails } = await import("@stellar/freighter-api");
           const networkDetails = await getNetworkDetails();
@@ -111,7 +111,7 @@ export function useNetworkStatus(): NetworkStatus {
             // ignore parse errors
           }
         }
-      } catch (err) {
+      } catch (_err) {
         // wallet detection failed, continue gracefully
       }
     };

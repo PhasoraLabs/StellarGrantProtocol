@@ -45,6 +45,9 @@ const SORTERS: Record<string, (a: Grant, b: Grant) => number> = {
   newest: (a, b) => Number(b.created_at - a.created_at),
   funded: (a, b) => (b.funded === a.funded ? 0 : b.funded > a.funded ? 1 : -1),
   deadline: (a, b) => Number(a.deadline - b.deadline),
+  amount: (a, b) => (b.budget === a.budget ? 0 : b.budget > a.budget ? 1 : -1),
+  amount_desc: (a, b) => (b.budget === a.budget ? 0 : b.budget > a.budget ? 1 : -1),
+  amount_asc: (a, b) => (a.budget === b.budget ? 0 : a.budget > b.budget ? 1 : -1),
 };
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────

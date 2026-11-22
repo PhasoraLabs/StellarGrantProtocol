@@ -290,8 +290,14 @@ mod tests {
             // 4000 + 4000 = 8000 bps — 2000 short of 10_000
             let recipients = vec![
                 &env,
-                SplitRecipient { recipient: r1, share_bps: 4000 },
-                SplitRecipient { recipient: r2, share_bps: 4000 },
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 4000,
+                },
+                SplitRecipient {
+                    recipient: r2,
+                    share_bps: 4000,
+                },
             ];
 
             let err = register_split(&env, &owner, 1, 0, recipients).unwrap_err();
@@ -314,8 +320,14 @@ mod tests {
             // 6000 + 6000 = 12000 bps — 2000 over 10_000
             let recipients = vec![
                 &env,
-                SplitRecipient { recipient: r1, share_bps: 6000 },
-                SplitRecipient { recipient: r2, share_bps: 6000 },
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 6000,
+                },
+                SplitRecipient {
+                    recipient: r2,
+                    share_bps: 6000,
+                },
             ];
 
             let err = register_split(&env, &owner, 1, 0, recipients).unwrap_err();
@@ -337,8 +349,14 @@ mod tests {
 
             let recipients = vec![
                 &env,
-                SplitRecipient { recipient: r1, share_bps: 3000 },
-                SplitRecipient { recipient: r2, share_bps: 7000 },
+                SplitRecipient {
+                    recipient: r1,
+                    share_bps: 3000,
+                },
+                SplitRecipient {
+                    recipient: r2,
+                    share_bps: 7000,
+                },
             ];
 
             assert!(register_split(&env, &owner, 1, 0, recipients).is_ok());
