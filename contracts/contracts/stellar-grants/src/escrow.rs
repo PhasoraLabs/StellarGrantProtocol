@@ -23,6 +23,27 @@ fn proportional_share(funder_net: i128, total_net: i128, total_balance: i128) ->
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Initialize an escrow account for a grant. Called once on grant creation.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must not already exist in storage.
+///
+/// # Auth
+/// * Contract-internal initialization called during grant creation.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `owner` - The address of the grant owner.
+/// * `token` - The contract address of the token used for escrow.
+///
+/// # Returns
+/// * `Ok(())` on successful account creation.
+///
+/// # Errors
+/// * `ContractError::EscrowAlreadyOpen` - if an escrow account already exists for `grant_id`.
+///
+/// # Events
+/// * Emitted at the workflow level (`GrantCreated` event emitted by `grant_create`).
 pub fn open(
     env: &Env,
     grant_id: u64,
@@ -45,6 +66,37 @@ pub fn open(
 }
 
 /// Deposit funds from a funder into the grant's escrow.
+///
+/// Transfers `amount` tokens from `funder` to the contract, updates the escrow
+/// balance, registers the funder's contribution in `FunderLedger`, and mirrors
+/// the new balance on the `Grant` record.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+/// * `amount` must be greater than zero.
+/// * `funder` must have sufficient balance and token allowance.
+///
+/// # Auth
+/// * Requires `funder` authorization for the token transfer.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant to fund.
+/// * `funder` - The address of the contributing funder.
+/// * `amount` - Amount of tokens to deposit (must be positive).
+///
+/// # Returns
+/// * `Ok(())` on successful deposit.
+///
+/// # Errors
+/// * `ContractError::ZeroAmount` - if `amount <= 0`.
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::GrantNotFound` - if the associated grant record does not exist.
+/// * `ContractError::InvalidInput` - on arithmetic overflow when updating balances.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` event from `funder` to the contract.
 pub fn deposit(
     env: &Env,
     grant_id: u64,
@@ -157,6 +209,37 @@ pub(crate) fn credit_matching_pool(
 }
 
 /// Release `amount` from escrow to `recipient` (milestone payout).
+///
+/// Deducts `amount` from the escrow balance, increments `total_released`, and
+/// transfers tokens from the contract to `recipient`.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+/// * Escrow account must not be locked (`!account.locked`).
+/// * Escrow balance must be greater than or equal to `amount`.
+/// * `amount` must be greater than zero.
+///
+/// # Auth
+/// * Invoked internally following approved milestone release or admin resolution.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `recipient` - The destination address receiving the payout.
+/// * `amount` - Amount of tokens to release.
+///
+/// # Returns
+/// * `Ok(())` on successful token release.
+///
+/// # Errors
+/// * `ContractError::ZeroAmount` - if `amount <= 0`.
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::EscrowLocked` - if escrow is locked due to an active dispute.
+/// * `ContractError::InvalidInput` - if `amount > account.balance` or on arithmetic overflow.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` event from the contract to `recipient`.
 pub fn release(
     env: &Env,
     grant_id: u64,
@@ -198,6 +281,35 @@ pub fn release(
 }
 
 /// Refund remaining contribution from escrow back to a specific funder.
+///
+/// Calculates refundable amount as `contributed - refunded`, clamped to current
+/// escrow balance, transfers tokens to `funder`, and updates ledger.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist and not be locked.
+/// * `funder` must have a non-zero refundable balance (`contributed > refunded`).
+/// * Current escrow balance must be greater than zero.
+///
+/// # Auth
+/// * Invoked by authorized refund flows (e.g. grant cancellation or funder withdrawal).
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `funder` - The address of the funder to refund.
+///
+/// # Returns
+/// * `Ok(i128)` returning the actual token amount refunded.
+///
+/// # Errors
+/// * `ContractError::NoRefundableAmount` - if funder has no ledger entry, has already been fully refunded, or escrow balance is 0.
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::EscrowLocked` - if escrow is currently locked.
+/// * `ContractError::InvalidInput` - on arithmetic overflow.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` event from the contract to `funder`.
 pub fn refund(env: &Env, grant_id: u64, funder: &Address) -> Result<i128, ContractError> {
     crate::reentrancy::protect(env)?;
     let mut ledger = Storage::get_funder_ledger(env, grant_id, funder)
@@ -315,6 +427,29 @@ fn distribute_refund(env: &Env, grant_id: u64, amount: i128) -> Result<(), Contr
 /// only the surplus above what is already reserved should be returned — e.g.
 /// a multisig-gated payout that has been reserved but not yet transferred
 /// (issue #1025).
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+/// * `amount` must be non-negative and `<= account.balance`.
+///
+/// # Auth
+/// * Invoked by authorized administrative or surplus refund handlers.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `amount` - Amount of tokens to refund across funders.
+///
+/// # Returns
+/// * `Ok(())` on successful distribution.
+///
+/// # Errors
+/// * `ContractError::InvalidInput` - if `amount < 0` or `amount > account.balance`.
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` event to each receiving funder.
 pub fn refund_partial(env: &Env, grant_id: u64, amount: i128) -> Result<(), ContractError> {
     crate::reentrancy::protect(env)?;
     if amount < 0 {
@@ -331,6 +466,32 @@ pub fn refund_partial(env: &Env, grant_id: u64, amount: i128) -> Result<(), Cont
 }
 
 /// Refund all remaining escrow balance proportionally to all funders.
+///
+/// Drains the entire escrow balance and distributes it proportionally to all
+/// funders based on their net contribution.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+/// * Escrow account must not be locked.
+///
+/// # Auth
+/// * Invoked upon grant cancellation or completion with surplus.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+///
+/// # Returns
+/// * `Ok(())` on successful full refund.
+///
+/// # Errors
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::EscrowLocked` - if escrow is currently locked.
+/// * `ContractError::InvalidInput` - on internal arithmetic error.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` events to all refunded funders.
 pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
     crate::reentrancy::protect(env)?;
     let account = load_account(env, grant_id)?;
@@ -366,6 +527,25 @@ pub fn refund_all(env: &Env, grant_id: u64) -> Result<(), ContractError> {
 }
 
 /// Lock escrow during a dispute (blocks release but not deposit).
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+///
+/// # Auth
+/// * Authorized caller during dispute raising or emergency halt.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+///
+/// # Returns
+/// * `Ok(())` after setting `account.locked = true`.
+///
+/// # Errors
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+///
+/// # Events
+/// * Emitted at the workflow level (e.g. `DisputeRaised`).
 pub fn lock(env: &Env, grant_id: u64) -> Result<(), ContractError> {
     let mut account = load_account(env, grant_id)?;
     account.locked = true;
@@ -374,6 +554,25 @@ pub fn lock(env: &Env, grant_id: u64) -> Result<(), ContractError> {
 }
 
 /// Unlock escrow after dispute resolution.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+///
+/// # Auth
+/// * Authorized caller during dispute resolution or emergency unpause.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+///
+/// # Returns
+/// * `Ok(())` after setting `account.locked = false`.
+///
+/// # Errors
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+///
+/// # Events
+/// * Emitted at the workflow level (e.g. `DisputeResolved`).
 pub fn unlock(env: &Env, grant_id: u64) -> Result<(), ContractError> {
     let mut account = load_account(env, grant_id)?;
     account.locked = false;
@@ -381,17 +580,74 @@ pub fn unlock(env: &Env, grant_id: u64) -> Result<(), ContractError> {
     Ok(())
 }
 
-/// Return current escrow account state.
+/// Return current escrow account state for a grant.
+///
+/// # Preconditions
+/// * Escrow account for `grant_id` must exist.
+///
+/// # Auth
+/// * Public read-only entrypoint; requires no authorization.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+///
+/// # Returns
+/// * `Ok(EscrowAccount)` containing current balances, totals, and lock status.
+///
+/// # Errors
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
 pub fn get_account(env: &Env, grant_id: u64) -> Result<EscrowAccount, ContractError> {
     load_account(env, grant_id)
 }
 
 /// Return funder ledger for a specific contributor.
+///
+/// # Preconditions
+/// * None.
+///
+/// # Auth
+/// * Public read-only entrypoint; requires no authorization.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `funder` - The address of the funder.
+///
+/// # Returns
+/// * `Some(FunderLedger)` containing contributed, refunded, and timestamp info, or `None` if funder has not contributed.
 pub fn get_funder_ledger(env: &Env, grant_id: u64, funder: &Address) -> Option<FunderLedger> {
     Storage::get_funder_ledger(env, grant_id, funder)
 }
 
 /// Release funds proportionally to funders (dispute funder-favor resolution).
+///
+/// # Preconditions
+/// * Escrow account exists, is not locked, and `account.balance >= amount`.
+/// * `amount` must be greater than zero.
+/// * `funders` list must not be empty, and total contributed amount must be positive.
+///
+/// # Auth
+/// * Authorized caller during dispute resolution favoring funders.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - The unique identifier of the grant.
+/// * `funders` - List of funders and their relative stakes.
+/// * `amount` - Total amount to distribute proportionally.
+///
+/// # Returns
+/// * `Ok(())` on successful distribution.
+///
+/// # Errors
+/// * `ContractError::ZeroAmount` - if `amount <= 0`.
+/// * `ContractError::EscrowNotFound` - if no escrow account exists for `grant_id`.
+/// * `ContractError::EscrowLocked` - if escrow is locked.
+/// * `ContractError::InvalidInput` - if `amount > account.balance`, `funders` is empty, or arithmetic error occurs.
+/// * `ContractError::ReentrancyDetected` - if reentrancy is detected.
+///
+/// # Events
+/// * Emits token `Transfer` events for each funder's distributed share.
 pub fn release_to_funders(
     env: &Env,
     grant_id: u64,
@@ -464,6 +720,24 @@ pub fn release_to_funders(
 }
 
 /// Thin wrapper for non-escrow token transfers (e.g. reviewer staking).
+///
+/// Transfers `amount` tokens from `from` to `to` using the token client.
+///
+/// # Preconditions
+/// * `from` must hold sufficient token balance and have authorized the contract.
+///
+/// # Auth
+/// * Requires `from` authorization via Soroban token interface.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `token` - The contract address of the token being transferred.
+/// * `from` - Source address for the transfer.
+/// * `to` - Destination address for the transfer.
+/// * `amount` - Amount of tokens to transfer.
+///
+/// # Events
+/// * Emits token `Transfer` event from `from` to `to`.
 pub fn transfer_token(env: &Env, token: &Address, from: &Address, to: &Address, amount: i128) {
     token::Client::new(env, token).transfer(from, to, &amount);
 }
