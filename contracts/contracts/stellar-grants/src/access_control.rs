@@ -183,6 +183,18 @@ pub fn require_any_role(
     Err(ContractError::Unauthorized)
 }
 
+/// Assert that `address` holds `SuperAdmin` or `ProtocolAdmin`.
+///
+/// Use this in place of inline `has_role(env, addr, Role::SuperAdmin)` checks
+/// scattered across modules — a single call site makes it easy to audit and
+/// extend the admin tier without touching every caller.
+pub fn require_admin(env: &Env, address: &Address) -> Result<(), ContractError> {
+    if has_role(env, address, Role::SuperAdmin) || has_role(env, address, Role::ProtocolAdmin) {
+        return Ok(());
+    }
+    Err(ContractError::Unauthorized)
+}
+
 /// Return all addresses holding a specific role.
 pub fn role_members(env: &Env, role: Role) -> Vec<Address> {
     Storage::get_role_members(env, &role)
@@ -604,7 +616,52 @@ mod tests {
         ));
     }
 
-    // ── has_role / negative cases ─────────────────────────────────────────
+    // ── require_admin (issue #1374) ────────────────────────────────────────
+
+    #[test]
+    fn require_admin_ok_for_super_admin() {
+        let (env, admin, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            assert_eq!(require_admin(&env, &admin), Ok(()));
+        });
+    }
+
+    #[test]
+    fn require_admin_ok_for_protocol_admin() {
+        let (env, super_admin, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let protocol_admin = Address::generate(&env);
+            grant_role(&env, &super_admin, &protocol_admin, Role::ProtocolAdmin, None).unwrap();
+            assert_eq!(require_admin(&env, &protocol_admin), Ok(()));
+        });
+    }
+
+    #[test]
+    fn require_admin_err_for_no_role() {
+        let (env, _admin, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let nobody = Address::generate(&env);
+            assert_eq!(
+                require_admin(&env, &nobody),
+                Err(ContractError::Unauthorized)
+            );
+        });
+    }
+
+    #[test]
+    fn require_admin_err_for_lesser_role() {
+        let (env, super_admin, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let reviewer = Address::generate(&env);
+            grant_role(&env, &super_admin, &reviewer, Role::ReviewerModerator, None).unwrap();
+            assert_eq!(
+                require_admin(&env, &reviewer),
+                Err(ContractError::Unauthorized)
+            );
+        });
+    }
+
+// ── has_role / negative cases ─────────────────────────────────────────
 
     #[test]
     fn has_role_false_when_no_assignment() {
