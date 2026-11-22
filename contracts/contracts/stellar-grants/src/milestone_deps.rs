@@ -556,4 +556,124 @@ mod tests {
             Err(ContractError::InvalidInput)
         );
     }
+
+    #[test]
+    fn test_milestone_deps_direct_cycle_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+
+        // 1. attach_dag rejects direct cycle A -> B -> A (milestone 0 depends on 1, 1 depends on 0)
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner, 4));
+
+            let mut direct_cycle = SorobanVec::new(&env);
+            direct_cycle.push_back(dep(&env, 0, &[1]));
+            direct_cycle.push_back(dep(&env, 1, &[0]));
+
+            let res = attach_dag(&env, &owner, 1, direct_cycle);
+            assert_eq!(res, Err(ContractError::InvalidInput));
+        });
+
+        // 2. topological_order rejects direct cycle A -> B -> A
+        let mut deps = SorobanVec::new(&env);
+        deps.push_back(dep(&env, 0, &[1]));
+        deps.push_back(dep(&env, 1, &[0]));
+        assert_eq!(
+            topological_order(&env, &deps, 2),
+            Err(ContractError::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_milestone_deps_indirect_cycle_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+
+        // 1. attach_dag rejects indirect cycle A -> B -> C -> A
+        // (milestone 1 depends on 0, 2 depends on 1, 0 depends on 2)
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner, 4));
+
+            let mut indirect_cycle = SorobanVec::new(&env);
+            indirect_cycle.push_back(dep(&env, 1, &[0]));
+            indirect_cycle.push_back(dep(&env, 2, &[1]));
+            indirect_cycle.push_back(dep(&env, 0, &[2]));
+
+            let res = attach_dag(&env, &owner, 1, indirect_cycle);
+            assert_eq!(res, Err(ContractError::InvalidInput));
+        });
+
+        // 2. topological_order rejects 3-node indirect cycle (0 <- 2, 1 <- 0, 2 <- 1)
+        let mut deps3 = SorobanVec::new(&env);
+        deps3.push_back(dep(&env, 0, &[2]));
+        deps3.push_back(dep(&env, 1, &[0]));
+        deps3.push_back(dep(&env, 2, &[1]));
+        assert_eq!(
+            topological_order(&env, &deps3, 3),
+            Err(ContractError::InvalidInput)
+        );
+
+        // 3. topological_order rejects 4-node indirect cycle (0 -> 1 -> 2 -> 3 -> 0)
+        let mut deps4 = SorobanVec::new(&env);
+        deps4.push_back(dep(&env, 1, &[0]));
+        deps4.push_back(dep(&env, 2, &[1]));
+        deps4.push_back(dep(&env, 3, &[2]));
+        deps4.push_back(dep(&env, 0, &[3]));
+        assert_eq!(
+            topological_order(&env, &deps4, 4),
+            Err(ContractError::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_milestone_deps_self_dependency_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(StellarGrantsContract, ());
+        let owner = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &make_grant(&env, &owner, 4));
+        });
+
+        // 1. attach_dag rejects self-dependency A -> A (milestone 0 depends on 0)
+        env.as_contract(&contract_id, || {
+            let mut self_dep_0 = SorobanVec::new(&env);
+            self_dep_0.push_back(dep(&env, 0, &[0]));
+            assert_eq!(
+                attach_dag(&env, &owner, 1, self_dep_0),
+                Err(ContractError::InvalidInput)
+            );
+        });
+
+        // 2. attach_dag rejects self-dependency for milestone 2
+        env.as_contract(&contract_id, || {
+            let mut self_dep_2 = SorobanVec::new(&env);
+            self_dep_2.push_back(dep(&env, 2, &[2]));
+            assert_eq!(
+                attach_dag(&env, &owner, 1, self_dep_2),
+                Err(ContractError::InvalidInput)
+            );
+        });
+
+        // 3. topological_order rejects self-dependency A -> A
+        let mut deps_self = SorobanVec::new(&env);
+        deps_self.push_back(dep(&env, 0, &[0]));
+        assert_eq!(
+            topological_order(&env, &deps_self, 1),
+            Err(ContractError::InvalidInput)
+        );
+
+        let mut deps_self_multi = SorobanVec::new(&env);
+        deps_self_multi.push_back(dep(&env, 1, &[0]));
+        deps_self_multi.push_back(dep(&env, 2, &[2]));
+        assert_eq!(
+            topological_order(&env, &deps_self_multi, 3),
+            Err(ContractError::InvalidInput)
+        );
+    }
 }
