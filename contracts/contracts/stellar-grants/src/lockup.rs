@@ -46,6 +46,10 @@ pub fn attach_lockup(
         .checked_add(lockup_duration_seconds)
         .ok_or(ContractError::InvalidInput)?;
 
+    if unlocks_at <= now {
+        return Err(ContractError::InvalidInput);
+    }
+
     let record = LockupRecord {
         grant_id,
         milestone_idx,
@@ -736,20 +740,24 @@ mod tests {
     // ── edge cases ────────────────────────────────────────────────────────
 
     #[test]
-    fn attach_lockup_zero_duration() {
+    fn attach_lockup_rejects_expiry_at_or_before_current_timestamp() {
         let (env, _admin, owner) = setup();
-        attach_lockup(&env, &owner, 1, 0, 0).unwrap();
-        let record = get_lockup(&env, 1, 0).unwrap();
-        assert_eq!(record.unlocks_at, 1000);
+        // Current ledger timestamp is 1000.
+        // A duration of 0 sets unlocks_at == now (1000), which is rejected.
+        let err = attach_lockup(&env, &owner, 1, 0, 0);
+        assert_eq!(err, Err(ContractError::InvalidInput));
+        assert!(get_lockup(&env, 1, 0).is_none());
     }
 
     #[test]
-    fn release_immediately_when_zero_duration() {
+    fn release_when_unlocked_after_ledger_advance() {
         let (env, admin, owner) = setup();
-        attach_lockup(&env, &owner, 1, 0, 0).unwrap();
+        // Create lockup with positive duration (future expiry).
+        attach_lockup(&env, &owner, 1, 0, 10).unwrap();
         let payout_token = funded_token(&env, &admin);
         lock_payout(&env, 1, 0, &admin, &payout_token, 1_000).unwrap();
-        // Current time is 1000, unlocks_at is 1000, so now >= unlocks_at
+        // Advance ledger to unlocks_at (1000 + 10 = 1010)
+        set_ledger(&env, 1010, 102);
         let amount = release(&env, &admin, 1, 0).unwrap();
         assert_eq!(amount, 1_000);
     }
