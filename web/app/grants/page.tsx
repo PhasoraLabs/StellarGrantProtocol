@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { GrantCard } from "@/components/grants/GrantCard";
 import { ErrorCard, PageHeader, Pagination } from "@/components/ui";
-import { useGrants } from "@/hooks/useGrants";
+import { useGrants, type GrantSort } from "@/hooks/useGrants";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GRANTS_PER_PAGE } from "@/lib/constants";
 
@@ -29,6 +29,8 @@ const TOKEN_OPTIONS = [
 const SORT_OPTIONS = [
   { label: "Newest", value: "newest" },
   { label: "Most Funded", value: "funded" },
+  { label: "Amount: High to Low", value: "amount_desc" },
+  { label: "Amount: Low to High", value: "amount_asc" },
   { label: "Deadline Soon", value: "deadline" },
 ] as const;
 
@@ -59,12 +61,29 @@ export default function GrantsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Read URL params
-  const statusParam = searchParams.get("status") ?? "";
-  const tokenParam = searchParams.get("token") ?? "all";
-  const sortParam = searchParams.get("sort") ?? "newest";
-  const pageParam = Number(searchParams.get("page") ?? "1");
-  const qParam = searchParams.get("q") ?? "";
+  // Fetch grants via hook with controls synced to URL query params
+  const {
+    data,
+    isLoading,
+    error,
+    errorType,
+    refetch,
+    status: statusParam,
+    setStatus,
+    sort: sortParam,
+    setSort,
+    token: tokenParam,
+    setToken,
+    page: pageParam,
+    setPage,
+    q: qParam,
+    setQ,
+    resetFilters,
+  } = useGrants({
+    syncWithUrl: true,
+    router,
+    searchParams,
+  });
 
   // Local debounce buffer for search input
   const [searchInput, setSearchInput] = useState(qParam);
@@ -73,54 +92,29 @@ export default function GrantsPage() {
   const [focusedGrantIndex, setFocusedGrantIndex] = useState(-1);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Commit a URL param update; resets page to 1 unless we're explicitly
-  // changing the page.
-  const setParam = useCallback(
-    (key: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value) {
-        params.set(key, value);
-      } else {
-        params.delete(key);
-      }
-      if (key !== "page") params.delete("page");
-      router.push(`/grants?${params.toString()}`);
-    },
-    [router, searchParams]
-  );
-
   // Debounce search → URL update
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setParam("q", searchInput);
+      setQ(searchInput);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [searchInput, setParam]);
+  }, [searchInput, setQ]);
 
   // Keep local input in sync if URL changes externally
   useEffect(() => {
     setSearchInput(qParam);
   }, [qParam]);
 
-  // Fetch grants via hook
-  const { data, isLoading, error, errorType, refetch } = useGrants({
-    status: statusParam as "open" | "active" | "completed" | "cancelled" | undefined,
-    token: tokenParam as "XLM" | "USDC" | "all",
-    sort: sortParam as "newest" | "funded" | "deadline",
-    page: pageParam,
-    q: qParam,
-  });
-
   const grants = data?.grants ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / GRANTS_PER_PAGE);
-  const hasFilters = !!(statusParam || (tokenParam && tokenParam !== "all") || qParam);
+  const hasFilters = !!(statusParam || (tokenParam && tokenParam !== "all") || qParam || sortParam !== "newest");
 
   const handlePageChange = (p: number) => {
-    setParam("page", String(p));
+    setPage(p);
     gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -215,7 +209,9 @@ export default function GrantsPage() {
                 <button
                   key={opt.label}
                   type="button"
-                  onClick={() => setParam("status", opt.value)}
+                  aria-pressed={isActive}
+                  aria-label={`Filter by ${opt.label} status`}
+                  onClick={() => setStatus(opt.value)}
                   className={[
                     "px-3 py-1 text-sm font-mono rounded-none transition-colors",
                     isActive
@@ -239,7 +235,9 @@ export default function GrantsPage() {
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setParam("token", opt.value)}
+                aria-pressed={isActive}
+                aria-label={`Filter by ${opt.label} token`}
+                onClick={() => setToken(opt.value)}
                 className={[
                   "px-3 py-1 text-sm font-mono rounded-none transition-colors",
                   isActive
@@ -255,7 +253,8 @@ export default function GrantsPage() {
           {/* Sort selector */}
           <select
             value={sortParam}
-            onChange={(e) => setParam("sort", e.target.value)}
+            aria-label="Sort grants by"
+            onChange={(e) => setSort(e.target.value as GrantSort)}
             className="ml-2 bg-surface border border-border-color text-text-primary rounded-none px-2 py-1 text-sm focus:outline-none focus:border-accent-secondary"
           >
             {SORT_OPTIONS.map((opt) => (
@@ -301,7 +300,7 @@ export default function GrantsPage() {
               <p className="text-text-muted mb-3">No grants match your filters.</p>
               <button
                 type="button"
-                onClick={() => router.push("/grants")}
+                onClick={() => resetFilters()}
                 className="text-accent-secondary underline text-sm"
               >
                 Clear filters

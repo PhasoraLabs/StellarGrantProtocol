@@ -141,7 +141,7 @@ describe("useRelativeTime", () => {
     expect(resultNull.current).toBe("");
 
     const { result: resultUndefined } = renderHook(() =>
-      useRelativeTime(undefined as any)
+      useRelativeTime(undefined as unknown as string)
     );
     expect(resultUndefined.current).toBe("");
   });
