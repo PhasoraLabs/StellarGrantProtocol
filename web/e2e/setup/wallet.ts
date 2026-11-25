@@ -1,22 +1,19 @@
 import { Page } from "@playwright/test";
 
-interface FreighterMock {
-  isConnected: () => Promise<boolean>;
-  getPublicKey: () => Promise<string>;
-  getNetwork: () => Promise<string>;
-  signTransaction: (xdr: string) => Promise<string>;
-}
-
 export async function mockWalletConnected(
   page: Page,
-  address = "GABC123456789012345678901234567890123456789012345678901234567890"
+  address = "GCK4LZF4RXGPTVCQFSAZ5RYS7CY26BSSML5TJLSBVWUNFJDTNGJ2LOWH"
 ) {
   await page.addInitScript((addr) => {
-    (window as unknown as { freighterApi: FreighterMock }).freighterApi = {
-      isConnected: () => Promise.resolve(true),
-      getPublicKey: () => Promise.resolve(addr),
-      getNetwork: () => Promise.resolve("testnet"),
-      signTransaction: (xdr: string) => Promise.resolve(xdr + "_signed"),
-    };
+    // Hydrate the app's persisted wallet store. The Freighter v6 API talks to
+    // the extension through postMessage, so assigning the old freighterApi
+    // global does not mock the adapter used by the app.
+    window.localStorage.setItem(
+      "stellar-grants-wallet",
+      JSON.stringify({
+        state: { address: addr, walletType: null, network: "testnet" },
+        version: 0,
+      }),
+    );
   }, address);
 }
