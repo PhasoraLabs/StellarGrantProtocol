@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Repository } from "typeorm";
+import { z } from "zod";
 import { MilestoneProof } from "../entities/MilestoneProof";
 import { SignatureService } from "../services/signature-service";
 import { NonceService, NonceReplayError } from "../services/nonce-service";
@@ -8,9 +9,7 @@ import { Grant } from "../entities/Grant";
 import { User } from "../entities/User";
 import { walletLimiters } from "../middlewares/rate-limiter";
 import { encodeCursor, decodeCursor, hasCursorPageConflict } from "../utils/pagination";
-import { addressParamSchema, milestoneProofSchema } from "../schemas";
-
-const MAX_CURSOR_LENGTH = 512;
+import { milestoneProofSchema } from "../schemas";
 
 export const buildMilestoneProofRouter = (
   proofRepo: Repository<MilestoneProof>,
@@ -36,12 +35,7 @@ export const buildMilestoneProofRouter = (
         return;
       }
 
-      let signatureIsValid = false;
-      try {
-        signatureIsValid = signatureService.verify(payload);
-      } catch {
-        signatureIsValid = false;
-      }
+      const signatureIsValid = signatureService.verify(payload);
       if (!signatureIsValid) {
         res.status(401).json({ error: "Invalid Stellar signature" });
         return;
@@ -56,7 +50,6 @@ export const buildMilestoneProofRouter = (
         grantId: payload.grantId,
         milestoneIdx: payload.milestoneIdx,
         proofCid: payload.proofCid,
-        ...(payload.description !== undefined ? { description: payload.description } : {}),
         submittedBy: payload.submittedBy,
         signature: payload.signature,
         nonce: payload.nonce,
@@ -98,23 +91,12 @@ export const buildMilestoneProofRouter = (
       }
 
       res.status(201).json({ data: proof });
-    } catch (error: unknown) {
+    } catch (error: any) {
       if (error instanceof NonceReplayError) {
         res.status(409).json({ error: "Signature nonce has already been used" });
         return;
       }
-      const dbError = error as {
-        code?: string;
-        message?: string;
-        driverError?: { code?: string; message?: string };
-      };
-      const errorCode = dbError?.code ?? dbError?.driverError?.code;
-      const errorMessage = dbError?.driverError?.message ?? dbError?.message ?? "";
-      if (
-        errorCode === "23505" ||
-        errorCode === "SQLITE_CONSTRAINT" ||
-        /UNIQUE constraint failed|unique constraint/i.test(errorMessage)
-      ) {
+      if (error?.code === "23505" || error?.code === "SQLITE_CONSTRAINT") {
         res.status(409).json({ error: "Proof already submitted for this milestone" });
         return;
       }
@@ -172,12 +154,7 @@ export const buildMilestoneProofRouter = (
    */
   router.get("/by-contributor/:address", async (req, res, next) => {
     try {
-      const parsedAddress = addressParamSchema.safeParse(req.params);
-      if (!parsedAddress.success) {
-        res.status(400).json({ error: "Invalid contributor address", details: parsedAddress.error.issues });
-        return;
-      }
-      const { address } = parsedAddress.data;
+      const { address } = req.params;
       const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
 
       const rawCursor = req.query.cursor ? String(req.query.cursor) : undefined;
@@ -185,11 +162,6 @@ export const buildMilestoneProofRouter = (
 
       if (hasCursorPageConflict(rawPage, rawCursor)) {
         res.status(400).json({ error: "Cannot combine ?page= and ?cursor= parameters" });
-        return;
-      }
-
-      if (rawCursor !== undefined && rawCursor.length > MAX_CURSOR_LENGTH) {
-        res.status(400).json({ error: "Invalid cursor" });
         return;
       }
 
