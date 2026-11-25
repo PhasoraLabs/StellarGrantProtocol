@@ -50,6 +50,26 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-orbitron);
 }
 
+/* ── Accessible :focus-visible styles (theme tokens) ───────────────────────── */
+
+:where(
+  a,
+  button,
+  input:not(.sr-only),
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="link"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="switch"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
