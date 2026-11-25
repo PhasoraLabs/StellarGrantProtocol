@@ -1,20 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { GrantFormData } from "@/lib/schemas/grant";
+import { toast, toastSuccess } from "@/lib/toast";
 
 const STORAGE_KEY = "sg-grant-draft";
 const MAX_DRAFT_AGE_MS = 72 * 60 * 60 * 1000;
 
+export type GrantDraftData = Partial<GrantFormData> & { currentStep?: number };
+
 interface SavedDraft {
-  data: Partial<GrantFormData> & { currentStep?: number };
+  data: GrantDraftData;
   savedAt: number;
 }
 
-interface UseGrantDraftResult {
-  draft: (Partial<GrantFormData> & { currentStep?: number }) | null;
-  saveDraft: (data: Partial<GrantFormData> & { currentStep?: number }) => void;
+export interface UseGrantDraftResult {
+  draft: GrantDraftData | null;
+  saveDraft: (data: GrantDraftData) => void;
   clearDraft: () => void;
+  requestDiscardDraft: () => void;
+  confirmDiscardDraft: () => void;
+  cancelDiscardDraft: () => void;
+  undoDiscardDraft: () => void;
+  isDiscardConfirmOpen: boolean;
+  canUndoDiscard: boolean;
   hasDraft: boolean;
   draftAge: string;
 }
@@ -32,8 +41,11 @@ function formatDraftAge(savedAt: number): string {
 }
 
 export function useGrantDraft(): UseGrantDraftResult {
-  const [draft, setDraft] = useState<(Partial<GrantFormData> & { currentStep?: number }) | null>(null);
+  const [draft, setDraft] = useState<GrantDraftData | null>(null);
   const [draftAge, setDraftAge] = useState("");
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+  const [canUndoDiscard, setCanUndoDiscard] = useState(false);
+  const lastDiscardedRef = useRef<SavedDraft | null>(null);
 
   const updateDraftAge = useCallback((savedAt: number) => {
     setDraftAge(formatDraftAge(savedAt));
@@ -64,7 +76,7 @@ export function useGrantDraft(): UseGrantDraftResult {
   }, [updateDraftAge]);
 
   const saveDraft = useCallback(
-    (data: Partial<GrantFormData> & { currentStep?: number }) => {
+    (data: GrantDraftData) => {
       const saved: SavedDraft = {
         data,
         savedAt: Date.now(),
@@ -88,12 +100,83 @@ export function useGrantDraft(): UseGrantDraftResult {
     }
     setDraft(null);
     setDraftAge("");
+    setIsDiscardConfirmOpen(false);
   }, []);
+
+  const undoDiscardDraft = useCallback(() => {
+    const discarded = lastDiscardedRef.current;
+    if (!discarded) return;
+
+    lastDiscardedRef.current = null;
+    setCanUndoDiscard(false);
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(discarded));
+    } catch {
+      // localStorage full or unavailable
+    }
+
+    setDraft(discarded.data);
+    updateDraftAge(discarded.savedAt);
+    toastSuccess("Draft restored", {
+      description: "Your discarded grant draft has been recovered.",
+    });
+  }, [updateDraftAge]);
+
+  const requestDiscardDraft = useCallback(() => {
+    setIsDiscardConfirmOpen(true);
+  }, []);
+
+  const cancelDiscardDraft = useCallback(() => {
+    setIsDiscardConfirmOpen(false);
+  }, []);
+
+  const confirmDiscardDraft = useCallback(() => {
+    let snapshot: SavedDraft | null = null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        snapshot = JSON.parse(raw) as SavedDraft;
+      }
+    } catch {
+      // ignore parse or storage errors
+    }
+
+    if (!snapshot && draft !== null) {
+      snapshot = { data: draft, savedAt: Date.now() };
+    }
+
+    if (snapshot) {
+      lastDiscardedRef.current = snapshot;
+      setCanUndoDiscard(true);
+    }
+
+    clearDraft();
+
+    if (snapshot) {
+      toast({
+        title: "Draft discarded",
+        description: "Your saved grant draft was removed.",
+        variant: "info",
+        duration: 8000,
+        action: {
+          label: "Undo",
+          onClick: undoDiscardDraft,
+        },
+      });
+    }
+  }, [clearDraft, draft, undoDiscardDraft]);
 
   return {
     draft,
     saveDraft,
     clearDraft,
+    requestDiscardDraft,
+    confirmDiscardDraft,
+    cancelDiscardDraft,
+    undoDiscardDraft,
+    isDiscardConfirmOpen,
+    canUndoDiscard,
     hasDraft: draft !== null,
     draftAge,
   };

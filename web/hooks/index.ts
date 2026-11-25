@@ -43,6 +43,7 @@ export { useGrant } from "./useGrant";
 export type { GrantDetailData } from "./useGrant";
 export { useGrantBalances } from "./useGrantBalances";
 export { useGrantDraft } from "./useGrantDraft";
+export type { UseGrantDraftResult, GrantDraftData } from "./useGrantDraft";
 export { useGrantHistory } from "./useGrantHistory";
 export { useGrants } from "./useGrants";
 export { useIPFS } from "./useIPFS";

@@ -10,6 +10,7 @@ import { Step3Reviewers } from "./Step3Reviewers";
 import { Step4ReviewSubmit } from "./Step4ReviewSubmit";
 import { fullGrantSchema, type GrantFormData } from "@/lib/schemas/grant";
 import { useGrantDraft } from "@/hooks/useGrantDraft";
+import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 
 const defaultValues: GrantFormData = {
   title: "",
@@ -33,11 +34,11 @@ function DraftRestoreBanner({
   onDiscard: () => void;
 }) {
   return (
-    <div className="border border-warning/40 bg-warning/10 p-4 flex items-center justify-between gap-4">
+    <div className="border border-warning/40 bg-warning/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
       <p className="font-mono text-sm text-text-primary">
         You have a saved draft from {draftAge}.
       </p>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         <button
           type="button"
           onClick={onRestore}
@@ -65,7 +66,16 @@ export function CreateGrantForm() {
     mode: "onChange",
   });
 
-  const { draft, saveDraft, clearDraft, hasDraft, draftAge } = useGrantDraft();
+  const {
+    draft,
+    saveDraft,
+    requestDiscardDraft,
+    confirmDiscardDraft,
+    cancelDiscardDraft,
+    isDiscardConfirmOpen = false,
+    hasDraft,
+    draftAge,
+  } = useGrantDraft();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -111,7 +121,7 @@ export function CreateGrantForm() {
   };
 
   const handleDiscard = () => {
-    clearDraft();
+    requestDiscardDraft();
   };
 
   const stepFields: Record<number, Array<keyof GrantFormData>> = {
@@ -183,6 +193,17 @@ export function CreateGrantForm() {
             onDiscard={handleDiscard}
           />
         )}
+
+        <ConfirmationDialog
+          isOpen={isDiscardConfirmOpen}
+          onConfirm={confirmDiscardDraft}
+          onCancel={cancelDiscardDraft}
+          title="Discard saved draft?"
+          description="This will remove your saved grant draft. You can undo this action from the notification toast."
+          confirmLabel="Discard Draft"
+          cancelLabel="Keep Draft"
+          variant="danger"
+        />
 
         <StepIndicator
           currentStep={currentStep}
