@@ -37,7 +37,13 @@ export const buildGrantReviewerRouter = (
         return res.status(400).json({ error: "Expired intent timestamp" });
       }
 
-      if (!signatureService.verifyAddReviewer(payload)) {
+      let isSignatureValid = false;
+      try {
+        isSignatureValid = signatureService.verifyAddReviewer(payload);
+      } catch {
+        isSignatureValid = false;
+      }
+      if (!isSignatureValid) {
         return res.status(401).json({ error: "Invalid Stellar signature" });
       }
 
@@ -59,11 +65,22 @@ export const buildGrantReviewerRouter = (
       });
       await reviewerRepo.save(reviewer);
       return res.status(201).json({ data: reviewer });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof NonceReplayError) {
         return res.status(409).json({ error: "Signature nonce has already been used" });
       }
-      if (error?.code === "23505" || error?.code === "SQLITE_CONSTRAINT") {
+      const dbError = error as {
+        code?: string;
+        message?: string;
+        driverError?: { code?: string; message?: string };
+      };
+      const errorCode = dbError?.code ?? dbError?.driverError?.code;
+      const errorMessage = dbError?.driverError?.message ?? dbError?.message ?? "";
+      if (
+        errorCode === "23505" ||
+        errorCode === "SQLITE_CONSTRAINT" ||
+        /UNIQUE constraint failed|unique constraint/i.test(errorMessage)
+      ) {
         return res.status(409).json({ error: "Reviewer already exists for this grant" });
       }
       next(error);
@@ -71,17 +88,31 @@ export const buildGrantReviewerRouter = (
   });
 
   // List reviewers for a grant
-  router.get("/grant/:grantId", async (req, res) => {
-    const { grantId } = req.params;
-    const reviewers = await reviewerRepo.find({ where: { grantId: Number(grantId) } });
-    res.json({ data: reviewers });
+  router.get("/grant/:grantId", async (req, res, next) => {
+    try {
+      const grantId = Number(req.params.grantId);
+      if (!Number.isInteger(grantId) || grantId <= 0) {
+        return res.status(400).json({ error: "Invalid grantId" });
+      }
+      const reviewers = await reviewerRepo.find({ where: { grantId } });
+      return res.json({ data: reviewers });
+    } catch (error) {
+      return next(error);
+    }
   });
 
   // Remove a reviewer from a grant
-  router.delete("/:id", async (req, res) => {
-    const { id } = req.params;
-    await reviewerRepo.delete(id);
-    res.json({ success: true });
+  router.delete("/:id", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid reviewer id" });
+      }
+      await reviewerRepo.delete(id);
+      return res.json({ success: true });
+    } catch (error) {
+      return next(error);
+    }
   });
 
   return router;
