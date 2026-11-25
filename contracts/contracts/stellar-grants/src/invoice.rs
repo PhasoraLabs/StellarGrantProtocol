@@ -1,3 +1,54 @@
+//! # Invoice-Style Milestone Billing
+//!
+//! Structured milestone invoicing (`submit_invoice`, `approve_invoice`,
+//! `reject_invoice`, `resubmit_invoice`, `get_invoice`, and `validate_line_items`).
+//!
+//! ## Lifecycle & State Machine
+//!
+//! ```text
+//!   [No Invoice] ──submit_invoice (contributor)──> Submitted
+//!                                                     │   ▲
+//!                       ┌─────────────────────────────┘   │
+//!                       │                                 │
+//!            approve_invoice (reviewer,           resubmit_invoice
+//!             quorum reached & approved)           (contributor)
+//!                       │                                 │
+//!                       ▼                                 │
+//!                    Approved                          Rejected
+//!                                                         ▲
+//!                                                         │
+//!                                            reject_invoice (reviewer)
+//! ```
+//!
+//! ## States (`InvoiceStatus`)
+//!
+//! * `Submitted` — Initial state on [`submit_invoice`] or after [`resubmit_invoice`].
+//!   Awaiting reviewer approval or rejection.
+//! * `Approved` — Terminal billing state set by [`approve_invoice`] once
+//!   `governance::cast_vote` reaches approval quorum. Milestone payout follows
+//!   through the grant milestone release flow.
+//! * `Rejected` — Set by [`reject_invoice`] with the rejection reason recorded in
+//!   `invoice.notes`. Can be corrected and returned to `Submitted` via
+//!   [`resubmit_invoice`].
+//! * `Draft` / `Paid` — Defined on [`InvoiceStatus`] in `types.rs` for schema
+//!   completeness; not transitioned directly by this module's functions.
+//!
+//! ## Authorization Model
+//!
+//! * [`submit_invoice`] and [`resubmit_invoice`] require authorization from the
+//!   grant owner (`grant.owner == contributor`).
+//! * [`approve_invoice`] and [`reject_invoice`] require authorization from a
+//!   registered grant reviewer (`grant.reviewers.contains(reviewer)`).
+//! * [`get_invoice`] and [`validate_line_items`] are read-only / pure helpers
+//!   and require no authorization.
+//!
+//! ## Validation & Invariants
+//!
+//! * Every [`LineItem`] must satisfy `item.total == item.quantity * item.unit_price`.
+//! * `tax_bps` is bounded to `0..=10_000` (0%–100%) via `crate::math::basis_points_of`.
+//! * Invoice `total` must match `milestone.amount` within a 1% tolerance
+//!   (`|total - milestone.amount| <= milestone.amount / 100`).
+
 use crate::errors::ContractError;
 use crate::events::Events;
 use crate::governance;
@@ -6,6 +57,44 @@ use crate::types::{Invoice, InvoiceStatus, LineItem};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Submit an invoice for a milestone. Contributor only.
+///
+/// Creates an [`Invoice`] in [`InvoiceStatus::Submitted`] for `(grant_id, milestone_idx)`
+/// after verifying line items, tax basis points, and the 1% milestone amount tolerance.
+///
+/// # Preconditions
+/// * Grant `grant_id` and milestone `milestone_idx` must exist.
+/// * No invoice may already exist for `(grant_id, milestone_idx)`.
+/// * `line_items` must be non-empty, each `total == quantity * unit_price`, and
+///   `tax_bps <= 10_000`.
+/// * Computed `total` must be within 1% (`milestone.amount / 100`) of `milestone.amount`.
+///
+/// # Auth
+/// * Requires `contributor.require_auth()` and `grant.owner == *contributor`.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `contributor` - Grant owner address submitting the invoice.
+/// * `grant_id` - Identifier of the target grant.
+/// * `milestone_idx` - Zero-based index of the milestone being invoiced.
+/// * `invoice_number` - Human-readable invoice reference string.
+/// * `line_items` - Non-empty itemized charges making up the invoice.
+/// * `tax_bps` - Tax rate in basis points (`0..=10_000`).
+/// * `notes` - Optional contributor notes attached to the invoice.
+///
+/// # Returns
+/// * `Ok(())` when the invoice is stored and `InvoiceSubmitted` is emitted.
+///
+/// # Errors
+/// * [`ContractError::GrantNotFound`] - If `grant_id` does not exist.
+/// * [`ContractError::Unauthorized`] - If `contributor` is not `grant.owner`.
+/// * [`ContractError::MilestoneNotFound`] - If `(grant_id, milestone_idx)` does not exist.
+/// * [`ContractError::InvoiceAlreadySubmitted`] - If an invoice already exists for this milestone.
+/// * [`ContractError::InvalidInput`] - If `line_items` is empty, any line item total mismatches
+///   `quantity * unit_price`, `tax_bps > 10_000`, or `total` deviates from `milestone.amount`
+///   by more than 1%.
+///
+/// # Events
+/// * Emits `InvoiceSubmitted` via `Events::invoice_submitted`.
 pub fn submit_invoice(
     env: &Env,
     contributor: &Address,
@@ -70,6 +159,40 @@ pub fn submit_invoice(
 }
 
 /// Approve an invoice. Reviewer only. Triggers milestone approval.
+///
+/// Casts an approval vote for `(grant_id, milestone_idx)` via `governance::cast_vote`.
+/// If the vote reaches quorum and approves the milestone, transitions the invoice from
+/// [`InvoiceStatus::Submitted`] to [`InvoiceStatus::Approved`], records `approved_at`,
+/// persists the updated invoice and milestone, and emits `InvoiceApproved`.
+/// If quorum is not yet reached, the vote is recorded while the invoice remains `Submitted`.
+///
+/// # Preconditions
+/// * Grant `grant_id`, milestone `milestone_idx`, and an invoice in
+///   [`InvoiceStatus::Submitted`] must exist.
+/// * Milestone must be in a votable state required by `governance::cast_vote`.
+///
+/// # Auth
+/// * Requires `reviewer.require_auth()` and `grant.reviewers.contains(reviewer)`.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `reviewer` - Address of the grant reviewer approving the invoice.
+/// * `grant_id` - Identifier of the target grant.
+/// * `milestone_idx` - Zero-based index of the invoiced milestone.
+///
+/// # Returns
+/// * `Ok(())` once the approval vote is recorded (and invoice finalized if quorum is met).
+///
+/// # Errors
+/// * [`ContractError::Unauthorized`] - If `reviewer` is not in `grant.reviewers`.
+/// * [`ContractError::InvoiceNotFound`] - If no invoice exists for `(grant_id, milestone_idx)`.
+/// * [`ContractError::InvalidState`] - If the invoice status is not [`InvoiceStatus::Submitted`].
+/// * Propagates voting errors from `governance::cast_vote` (e.g.
+///   [`ContractError::MilestoneNotSubmitted`], [`ContractError::AlreadyVoted`],
+///   [`ContractError::InvalidState`]).
+///
+/// # Events
+/// * Emits `InvoiceApproved` via `Events::invoice_approved` when quorum approves the milestone.
 pub fn approve_invoice(
     env: &Env,
     reviewer: &Address,
@@ -109,6 +232,35 @@ pub fn approve_invoice(
 }
 
 /// Reject an invoice with a reason. Reviewer only.
+///
+/// Transitions an invoice from [`InvoiceStatus::Submitted`] to [`InvoiceStatus::Rejected`]
+/// and overwrites `invoice.notes` with `reason` so the contributor can inspect why it was
+/// denied and submit corrections via [`resubmit_invoice`].
+///
+/// # Preconditions
+/// * Grant `grant_id` and an invoice for `(grant_id, milestone_idx)` must exist.
+/// * Invoice must currently be in [`InvoiceStatus::Submitted`].
+///
+/// # Auth
+/// * Requires `reviewer.require_auth()` and `grant.reviewers.contains(reviewer)`.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `reviewer` - Address of the grant reviewer rejecting the invoice.
+/// * `grant_id` - Identifier of the target grant.
+/// * `milestone_idx` - Zero-based index of the invoiced milestone.
+/// * `reason` - Explanation stored in `invoice.notes` and emitted in the rejection event.
+///
+/// # Returns
+/// * `Ok(())` when the invoice is marked [`InvoiceStatus::Rejected`].
+///
+/// # Errors
+/// * [`ContractError::Unauthorized`] - If `reviewer` is not in `grant.reviewers`.
+/// * [`ContractError::InvoiceNotFound`] - If no invoice exists for `(grant_id, milestone_idx)`.
+/// * [`ContractError::InvalidState`] - If the invoice status is not [`InvoiceStatus::Submitted`].
+///
+/// # Events
+/// * Emits `InvoiceRejected` via `Events::invoice_rejected`.
 pub fn reject_invoice(
     env: &Env,
     reviewer: &Address,
@@ -141,7 +293,43 @@ pub fn reject_invoice(
     Ok(())
 }
 
-/// Resubmit a rejected invoice with corrections.
+/// Resubmit a rejected invoice with corrections. Contributor only.
+///
+/// Replaces the invoice's line items, recalculates `subtotal` and `total` using the
+/// existing `invoice.tax_bps`, validates the 1% milestone tolerance, clears `notes`,
+/// updates `submitted_at`, and transitions status from [`InvoiceStatus::Rejected`] back
+/// to [`InvoiceStatus::Submitted`].
+///
+/// # Preconditions
+/// * Grant `grant_id`, milestone `milestone_idx`, and an existing invoice must exist.
+/// * Invoice must currently be in [`InvoiceStatus::Rejected`].
+/// * `updated_items` must be non-empty and satisfy [`validate_line_items`] and the
+///   1% `milestone.amount` tolerance.
+///
+/// # Auth
+/// * Requires `contributor.require_auth()` and `grant.owner == *contributor`.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `contributor` - Grant owner address resubmitting the invoice.
+/// * `grant_id` - Identifier of the target grant.
+/// * `milestone_idx` - Zero-based index of the invoiced milestone.
+/// * `updated_items` - Revised list of [`LineItem`] entries.
+///
+/// # Returns
+/// * `Ok(())` when the invoice returns to [`InvoiceStatus::Submitted`].
+///
+/// # Errors
+/// * [`ContractError::GrantNotFound`] - If `grant_id` does not exist.
+/// * [`ContractError::Unauthorized`] - If `contributor` is not `grant.owner`.
+/// * [`ContractError::MilestoneNotFound`] - If `(grant_id, milestone_idx)` does not exist.
+/// * [`ContractError::InvoiceNotFound`] - If no invoice exists for `(grant_id, milestone_idx)`.
+/// * [`ContractError::InvalidState`] - If the invoice status is not [`InvoiceStatus::Rejected`].
+/// * [`ContractError::InvalidInput`] - If `updated_items` is invalid or `total` deviates from
+///   `milestone.amount` by more than 1%.
+///
+/// # Events
+/// * Emits `InvoiceResubmitted` via `Events::invoice_resubmitted`.
 pub fn resubmit_invoice(
     env: &Env,
     contributor: &Address,
@@ -195,12 +383,41 @@ pub fn resubmit_invoice(
     Ok(())
 }
 
-/// Return the invoice for a milestone.
+/// Return the invoice for a milestone, if one has been submitted.
+///
+/// # Auth
+/// * Read-only helper; requires no authorization.
+///
+/// # Arguments
+/// * `env` - The Soroban environment.
+/// * `grant_id` - Identifier of the grant.
+/// * `milestone_idx` - Zero-based index of the milestone.
+///
+/// # Returns
+/// * `Some(Invoice)` if an invoice exists for `(grant_id, milestone_idx)`, otherwise `None`.
 pub fn get_invoice(env: &Env, grant_id: u64, milestone_idx: u32) -> Option<Invoice> {
     Storage::get_invoice(env, grant_id, milestone_idx)
 }
 
-/// Validate line items: each `total == quantity * unit_price`, grand total matches sum of line items + tax.
+/// Validate line items and compute `(subtotal, total)` including tax.
+///
+/// Ensures `items` is non-empty, verifies each line item satisfies
+/// `item.total == item.quantity * item.unit_price`, sums all line totals into `subtotal`,
+/// and computes tax using `crate::math::basis_points_of(subtotal, tax_bps)`.
+///
+/// # Auth
+/// * Pure validation helper; requires no authorization.
+///
+/// # Arguments
+/// * `items` - List of invoice [`LineItem`] entries.
+/// * `tax_bps` - Tax rate in basis points (`0..=10_000`).
+///
+/// # Returns
+/// * `Ok((subtotal, total))` where `total = subtotal + tax_amount`.
+///
+/// # Errors
+/// * [`ContractError::InvalidInput`] - If `items` is empty, any `item.total` does not equal
+///   `(item.quantity as i128) * item.unit_price`, or `tax_bps > 10_000` / overflows.
 pub fn validate_line_items(
     items: &Vec<LineItem>,
     tax_bps: u32,
