@@ -100,7 +100,7 @@ pub fn check_and_mark_breach(env: &Env, reviewer: &Address, milestone_id: SlaId)
         return record.breached;
     }
     let now = env.ledger().timestamp();
-    if now > record.deadline {
+    if now >= record.deadline {
         record.breached = true;
         env.storage().persistent().set(&key, &record);
         extend_ttl(env, &key);
@@ -324,6 +324,30 @@ mod tests {
             f.client.get_milestone(&f.grant_id, &0).state,
             crate::types::MilestoneState::Approved
         );
+    }
+
+    #[test]
+    fn test_sla_deadline_boundary_is_breached_at_deadline() {
+        let f = setup_assigned_reviewer();
+
+        advance(&f.env, DEFAULT_REVIEWER_SLA_SECONDS);
+        assert!(
+            check_sla(&f, &f.reviewer, 0),
+            "the SLA must be breached once the deadline ledger is reached"
+        );
+    }
+
+    #[test]
+    fn test_sla_deadline_minus_one_is_still_fulfillable() {
+        let f = setup_assigned_reviewer();
+
+        advance(&f.env, DEFAULT_REVIEWER_SLA_SECONDS - 1);
+        f.client
+            .milestone_vote(&f.grant_id, &0, &f.reviewer, &true, &None);
+
+        let sla = sla_of(&f, &f.reviewer, 0).unwrap();
+        assert!(sla.fulfilled);
+        assert!(!sla.breached);
     }
 
     #[test]

@@ -9,9 +9,20 @@ pub const SECONDS_PER_YEAR: u64 = 31_536_000;
 pub const DEFAULT_TIME_WEIGHTED_DURATION_SECONDS: u64 = SECONDS_PER_WEEK * 4; // 4 weeks
 
 // ── Financial ────────────────────────────────────────────────────────────────
+/// Denominator used to express percentage rates in basis points.
 pub const BASIS_POINTS_SCALE: u32 = 10_000;
-pub const DEFAULT_PROTOCOL_FEE_BPS: u32 = 100; // 1%
-pub const MAX_PROTOCOL_FEE_BPS: u32 = 1_000; // 10% ceiling
+/// Default protocol fee rate (1%).
+pub const DEFAULT_PROTOCOL_FEE_BPS: u32 = 100;
+/// Maximum protocol fee rate (10%).
+pub const MAX_PROTOCOL_FEE_BPS: u32 = 1_000;
+/// Default referral reward rate (10%).
+pub const DEFAULT_REFERRAL_FEE_BPS: u32 = 1_000;
+/// Default share of protocol fees directed to reviewer rewards (20%).
+pub const DEFAULT_REVIEWER_REWARD_POOL_BPS: u32 = 2_000;
+/// Default share of protocol fees directed to revenue share (0%).
+pub const DEFAULT_REVENUE_SHARE_POOL_BPS: u32 = 0;
+/// Default fast-review bonus rate (5%).
+pub const DEFAULT_FAST_BONUS_BPS: u32 = 500;
 pub const MIN_GRANT_AMOUNT: i128 = 1_000_000; // 1 XLM in stroops
 pub const MAX_GRANT_AMOUNT: i128 = 1_000_000_000_000; // 1M XLM ceiling
 
@@ -53,7 +64,7 @@ pub const MAX_REPUTATION_SCORE: u32 = 1_000;
 pub const REPUTATION_REJECTION_PENALTY: u32 = 200; // bps subtracted per rejection
 
 // ── Milestones ────────────────────────────────────────────────────────────────
-pub const MAX_MILESTONES_PER_GRANT: u32 = 20;
+pub const MAX_MILESTONES_PER_GRANT: u32 = 50;
 pub const MAX_BATCH_SIZE: u32 = 10;
 pub const MAX_BATCH_CANCEL_FUNDERS_PER_GRANT: u32 = 50;
 
