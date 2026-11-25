@@ -149,7 +149,7 @@ describe("signed-user-auth middleware - missing headers", () => {
   it("rejects a request with missing x-stellar-address header", () => {
     const app = build();
     const headers = signedUserHeaders(user, "GET", "/protected");
-    delete headers["x-stellar-address"];
+    delete (headers as Record<string, string>)["x-stellar-address"];
 
     return request(app).get("/protected").set(headers).expect(401);
   });
@@ -157,7 +157,7 @@ describe("signed-user-auth middleware - missing headers", () => {
   it("rejects a request with missing x-stellar-signature header", () => {
     const app = build();
     const headers = signedUserHeaders(user, "GET", "/protected");
-    delete headers["x-stellar-signature"];
+    delete (headers as Record<string, string>)["x-stellar-signature"];
 
     return request(app).get("/protected").set(headers).expect(401);
   });
@@ -165,7 +165,7 @@ describe("signed-user-auth middleware - missing headers", () => {
   it("rejects a request with missing x-stellar-nonce header", () => {
     const app = build();
     const headers = signedUserHeaders(user, "GET", "/protected");
-    delete headers["x-stellar-nonce"];
+    delete (headers as Record<string, string>)["x-stellar-nonce"];
 
     return request(app).get("/protected").set(headers).expect(401);
   });
@@ -173,7 +173,7 @@ describe("signed-user-auth middleware - missing headers", () => {
   it("rejects a request with missing x-stellar-timestamp header", () => {
     const app = build();
     const headers = signedUserHeaders(user, "GET", "/protected");
-    delete headers["x-stellar-timestamp"];
+    delete (headers as Record<string, string>)["x-stellar-timestamp"];
 
     return request(app).get("/protected").set(headers).expect(401);
   });

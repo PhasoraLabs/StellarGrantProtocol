@@ -20,6 +20,8 @@ const feedbackSchema = z.object({
   timestamp: z.number(),
 });
 import { encodeCursor, decodeCursor, hasCursorPageConflict } from "../utils/pagination";
+import { paginationSchema } from "../schemas";
+import { validateQuery } from "../middlewares/validation-middleware";
 
 const translations: Record<string, Record<number, { title: string; description: string }>> = {
   es: {
