@@ -2,6 +2,7 @@ use soroban_sdk::{contractevent, token, Address, Env, Vec};
 
 use crate::constants::EPOCH_DURATION_SECONDS;
 use crate::errors::ContractError;
+use crate::math::safe_add;
 use crate::storage::Storage;
 use crate::types::{RevenueEpoch, StakerEpochRecord};
 
@@ -30,8 +31,12 @@ pub struct StakeRegistered {
 }
 
 fn epoch_bounds(epoch_id: u32) -> (u64, u64) {
-    let start_at = (epoch_id as u64).saturating_mul(EPOCH_DURATION_SECONDS);
-    let end_at = start_at.saturating_add(EPOCH_DURATION_SECONDS);
+    let start_at = (epoch_id as u64)
+        .checked_mul(EPOCH_DURATION_SECONDS)
+        .unwrap_or(u64::MAX);
+    let end_at = start_at
+        .checked_add(EPOCH_DURATION_SECONDS)
+        .unwrap_or(u64::MAX);
     (start_at, end_at)
 }
 
@@ -115,13 +120,13 @@ pub fn deposit_revenue(env: &Env, token: &Address, amount: i128) {
         let next_epoch_id = epoch_id.saturating_add(1);
         let mut next_epoch = Storage::get_revenue_epoch(env, next_epoch_id)
             .unwrap_or_else(|| empty_epoch(next_epoch_id, token));
-        next_epoch.total_revenue = next_epoch.total_revenue.saturating_add(amount);
+        next_epoch.total_revenue = safe_add(next_epoch.total_revenue, amount).unwrap_or(i128::MAX);
         next_epoch.token = token.clone();
         Storage::set_revenue_epoch(env, &next_epoch);
         return;
     }
 
-    epoch.total_revenue = epoch.total_revenue.saturating_add(amount);
+    epoch.total_revenue = safe_add(epoch.total_revenue, amount).unwrap_or(i128::MAX);
     epoch.token = token.clone();
     Storage::set_revenue_epoch(env, &epoch);
 }
@@ -175,8 +180,8 @@ pub fn compute_claim(env: &Env, staker: &Address, epoch_id: u32) -> i128 {
 
     record
         .stake_weight
-        .saturating_mul(epoch.total_revenue)
-        .checked_div(epoch.total_stake_weight)
+        .checked_mul(epoch.total_revenue)
+        .and_then(|product| product.checked_div(epoch.total_stake_weight))
         .unwrap_or(0)
 }
 
@@ -206,7 +211,7 @@ pub fn claim(env: &Env, staker: &Address, epoch_id: u32) -> Result<i128, Contrac
     record.claimed_at = Some(env.ledger().timestamp());
     Storage::set_staker_epoch_record(env, &record);
 
-    epoch.claimed_count = epoch.claimed_count.saturating_add(1);
+    epoch.claimed_count = epoch.claimed_count.checked_add(1).unwrap_or(u32::MAX);
     Storage::set_revenue_epoch(env, &epoch);
 
     let token_client = token::Client::new(env, &epoch.token);
@@ -455,6 +460,170 @@ mod tests {
             let next_epoch_id = epoch_id + 1;
             let next = Storage::get_revenue_epoch(&env, next_epoch_id).unwrap();
             assert_eq!(next.total_revenue, 500);
+        });
+    }
+
+    // ── Overflow / checked-math tests ────────────────────────────────────────
+
+    /// epoch_bounds: when epoch_id is so large that start_at would overflow u64,
+    /// the helper clamps to u64::MAX rather than wrapping.
+    #[test]
+    fn test_epoch_bounds_overflow_clamps_to_max() {
+        // u32::MAX * EPOCH_DURATION_SECONDS overflows u64
+        let (start, end) = epoch_bounds(u32::MAX);
+        assert_eq!(start, u64::MAX);
+        assert_eq!(end, u64::MAX);
+    }
+
+    /// epoch_bounds: a normal epoch_id produces the expected timestamps.
+    #[test]
+    fn test_epoch_bounds_normal() {
+        let (start, end) = epoch_bounds(1);
+        assert_eq!(start, EPOCH_DURATION_SECONDS);
+        assert_eq!(end, EPOCH_DURATION_SECONDS * 2);
+    }
+
+    /// deposit_revenue: accumulating near i128::MAX must not silently wrap;
+    /// it saturates at i128::MAX via safe_add.
+    #[test]
+    fn test_deposit_revenue_overflow_saturates() {
+        let env = Env::default();
+        let token = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let epoch_id = epoch_id_for(&env);
+            let mut epoch = empty_epoch(epoch_id, &token);
+            epoch.total_revenue = i128::MAX;
+            Storage::set_revenue_epoch(&env, &epoch);
+
+            // Adding 1 to i128::MAX: safe_add returns Err, so we fall back to i128::MAX.
+            deposit_revenue(&env, &token, 1);
+
+            let stored = Storage::get_revenue_epoch(&env, epoch_id).unwrap();
+            assert_eq!(stored.total_revenue, i128::MAX);
+        });
+    }
+
+    /// deposit_revenue into next epoch when current is finalized must also
+    /// saturate rather than wrap.
+    #[test]
+    fn test_deposit_revenue_next_epoch_overflow_saturates() {
+        let env = Env::default();
+        let token = Address::generate(&env);
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let epoch_id = epoch_id_for(&env);
+            let next_epoch_id = epoch_id.saturating_add(1);
+
+            let mut curr = empty_epoch(epoch_id, &token);
+            curr.finalized = true;
+            Storage::set_revenue_epoch(&env, &curr);
+
+            let mut next = empty_epoch(next_epoch_id, &token);
+            next.total_revenue = i128::MAX;
+            Storage::set_revenue_epoch(&env, &next);
+
+            deposit_revenue(&env, &token, 1);
+
+            let stored = Storage::get_revenue_epoch(&env, next_epoch_id).unwrap();
+            assert_eq!(stored.total_revenue, i128::MAX);
+        });
+    }
+
+    /// compute_claim: when stake_weight * total_revenue would overflow i128,
+    /// checked_mul returns None and compute_claim returns 0 (safe fallback),
+    /// rather than producing a silently-wrong value from saturating_mul.
+    #[test]
+    fn test_compute_claim_overflow_returns_zero() {
+        let env = Env::default();
+        with_contract(&env, |_| {
+            let token = Address::generate(&env);
+            let staker = Address::generate(&env);
+
+            // stake_weight * total_revenue overflows i128
+            let mut epoch = empty_epoch(0, &token);
+            epoch.total_revenue = i128::MAX;
+            epoch.total_stake_weight = i128::MAX;
+            epoch.finalized = true;
+            Storage::set_revenue_epoch(&env, &epoch);
+            Storage::set_staker_epoch_record(
+                &env,
+                &StakerEpochRecord {
+                    staker: staker.clone(),
+                    epoch_id: 0,
+                    stake_weight: i128::MAX,
+                    claimable: 0,
+                    claimed: false,
+                    claimed_at: None,
+                },
+            );
+
+            // With saturating_mul this would return i128::MAX (wrong).
+            // With checked_mul this correctly returns 0 (overflow detected).
+            assert_eq!(compute_claim(&env, &staker, 0), 0);
+        });
+    }
+
+    /// compute_claim: large but non-overflowing values produce a correct result.
+    #[test]
+    fn test_compute_claim_large_values_correct() {
+        let env = Env::default();
+        with_contract(&env, |_| {
+            let token = Address::generate(&env);
+            let staker = Address::generate(&env);
+
+            // 1_000_000 weight out of 2_000_000 total, revenue = 1_000_000
+            // expected: 1_000_000 * 1_000_000 / 2_000_000 = 500_000
+            let mut epoch = empty_epoch(0, &token);
+            epoch.total_revenue = 1_000_000;
+            epoch.total_stake_weight = 2_000_000;
+            epoch.finalized = true;
+            Storage::set_revenue_epoch(&env, &epoch);
+            Storage::set_staker_epoch_record(
+                &env,
+                &StakerEpochRecord {
+                    staker: staker.clone(),
+                    epoch_id: 0,
+                    stake_weight: 1_000_000,
+                    claimable: 0,
+                    claimed: false,
+                    claimed_at: None,
+                },
+            );
+
+            assert_eq!(compute_claim(&env, &staker, 0), 500_000);
+        });
+    }
+
+    /// stake: accumulating weights that would overflow i128 is rejected with
+    /// InvalidInput, ensuring the per-staker record stays consistent.
+    #[test]
+    fn test_stake_weight_overflow_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+
+        env.as_contract(&contract_id, || {
+            let staker = Address::generate(&env);
+
+            // Pre-load a record whose stake_weight is already i128::MAX.
+            Storage::set_staker_epoch_record(
+                &env,
+                &StakerEpochRecord {
+                    staker: staker.clone(),
+                    epoch_id: 0,
+                    stake_weight: i128::MAX,
+                    claimable: 0,
+                    claimed: false,
+                    claimed_at: None,
+                },
+            );
+
+            // Adding any positive weight must overflow and return InvalidInput.
+            let err = stake(&env, &staker, 0, 1).unwrap_err();
+            assert_eq!(err, ContractError::InvalidInput);
         });
     }
 }
