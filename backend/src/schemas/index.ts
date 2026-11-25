@@ -168,17 +168,22 @@ export const profileUpdateSchema = signatureSchema.extend({
   linkedinUrl: linkedinUrlSchema.nullable().optional(),
 });
 
+export const MILESTONE_PROOF_CID_MAX_LENGTH = 255;
+export const MILESTONE_PROOF_DESCRIPTION_MAX_LENGTH = 2000;
+export const MILESTONE_PROOF_SIGNATURE_MAX_LENGTH = 255;
+export const MILESTONE_PROOF_NONCE_MAX_LENGTH = 80;
+
 /**
  * Milestone proof schema
  */
 export const milestoneProofSchema = z.object({
   grantId: z.number().int().positive(),
   milestoneIdx: z.number().int().nonnegative(),
-  proofCid: z.string().min(3).max(255),
-  description: z.string().optional(),
+  proofCid: z.string().min(3).max(MILESTONE_PROOF_CID_MAX_LENGTH),
+  description: z.string().max(MILESTONE_PROOF_DESCRIPTION_MAX_LENGTH).optional(),
   submittedBy: stellarAddressSchema,
-  signature: z.string().min(32),
-  nonce: z.string().min(8).max(80),
+  signature: z.string().min(32).max(MILESTONE_PROOF_SIGNATURE_MAX_LENGTH),
+  nonce: z.string().min(8).max(MILESTONE_PROOF_NONCE_MAX_LENGTH),
   timestamp: z.number().int().positive(),
 });
 
