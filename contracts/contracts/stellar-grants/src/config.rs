@@ -9,14 +9,14 @@ pub fn default_config() -> ProtocolConfig {
         quorum_threshold_bps: 5001,
         max_reviewers: 10,
         min_stake_amount: 1_000_000,
-        protocol_fee_bps: 100,
-        max_milestones_per_grant: 20,
+        protocol_fee_bps: constants::DEFAULT_PROTOCOL_FEE_BPS,
+        max_milestones_per_grant: crate::params::DEFAULT_MAX_MILESTONES,
         dispute_window_ledgers: 17280,
         max_grant_title_len: 128,
         max_grant_desc_len: 1024,
         multisig_threshold: 0,
         rate_limit_multiplier: 1,
-        referral_fee_bps: 1000,
+        referral_fee_bps: constants::DEFAULT_REFERRAL_FEE_BPS,
         decay_config: DecayConfig {
             enabled: false,
             decay_type: DecayType::None,
@@ -25,10 +25,10 @@ pub fn default_config() -> ProtocolConfig {
             decay_floor: 50,
             inactivity_threshold_ledgers: 0,
         },
-        reviewer_reward_pool_bps: 2000,
-        fast_bonus_bps: 500,
+        reviewer_reward_pool_bps: constants::DEFAULT_REVIEWER_REWARD_POOL_BPS,
+        fast_bonus_bps: constants::DEFAULT_FAST_BONUS_BPS,
         kyc_payout_threshold: i128::MAX,
-        revenue_share_pool_bps: 0,
+        revenue_share_pool_bps: constants::DEFAULT_REVENUE_SHARE_POOL_BPS,
         multisig_escrow_threshold: 2,
     }
 }
@@ -41,19 +41,21 @@ pub fn validate_config(config: &ProtocolConfig) -> Result<(), ContractError> {
     if config.quorum_threshold_bps < 5001 || config.quorum_threshold_bps > 10_000 {
         return Err(ContractError::InvalidInput);
     }
-    if config.protocol_fee_bps > 1000 {
+    if config.protocol_fee_bps > constants::MAX_PROTOCOL_FEE_BPS {
         return Err(ContractError::InvalidInput);
     }
-    if config.referral_fee_bps > 10_000 {
+    if config.referral_fee_bps > constants::BASIS_POINTS_SCALE {
         return Err(ContractError::InvalidInput);
     }
-    if config.reviewer_reward_pool_bps > 10_000 || config.revenue_share_pool_bps > 10_000 {
+    if config.reviewer_reward_pool_bps > constants::BASIS_POINTS_SCALE
+        || config.revenue_share_pool_bps > constants::BASIS_POINTS_SCALE
+    {
         return Err(ContractError::InvalidInput);
     }
     if config
         .reviewer_reward_pool_bps
         .saturating_add(config.revenue_share_pool_bps)
-        > 10_000
+        > constants::BASIS_POINTS_SCALE
     {
         return Err(ContractError::InvalidInput);
     }
@@ -99,8 +101,11 @@ mod tests {
     fn test_default_config_values() {
         let cfg = default_config();
         assert_eq!(cfg.quorum_threshold_bps, 5001);
-        assert_eq!(cfg.max_milestones_per_grant, 20);
-        assert_eq!(cfg.protocol_fee_bps, 100);
+        assert_eq!(
+            cfg.max_milestones_per_grant,
+            crate::params::DEFAULT_MAX_MILESTONES
+        );
+        assert_eq!(cfg.protocol_fee_bps, constants::DEFAULT_PROTOCOL_FEE_BPS);
     }
 
     #[test]
@@ -113,7 +118,7 @@ mod tests {
     #[test]
     fn test_invalid_fee_bps_rejected() {
         let mut cfg = default_config();
-        cfg.protocol_fee_bps = 1001;
+        cfg.protocol_fee_bps = constants::MAX_PROTOCOL_FEE_BPS + 1;
         assert_eq!(validate_config(&cfg), Err(ContractError::InvalidInput));
     }
 

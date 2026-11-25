@@ -258,6 +258,7 @@ pub fn list_backers(env: &Env, campaign_id: u64) -> Vec<Address> {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::token;
 
     fn make_campaign(env: &Env, owner: &Address, token: &Address) -> u64 {
         let id = Storage::next_crowdfund_id(env);
@@ -389,6 +390,53 @@ mod tests {
             let result = claim_refund(&env, id, &backer);
             assert_eq!(result, Err(ContractError::NoRefundableAmount));
         });
+    }
+
+    #[test]
+    fn test_underfunded_campaign_finalizes_failed_after_deadline_and_refunds_backers() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        let stellar_asset = token::StellarAssetClient::new(&env, &token_id);
+        let token_client = token::Client::new(&env, &token_id);
+        let owner = Address::generate(&env);
+        let backer_a = Address::generate(&env);
+        let backer_b = Address::generate(&env);
+
+        stellar_asset.mint(&backer_a, &400);
+        stellar_asset.mint(&backer_b, &300);
+
+        let campaign_id = env.as_contract(&contract_id, || {
+            let id = make_campaign(&env, &owner, &token_id);
+            let mut campaign = Storage::get_crowdfund_campaign(&env, id).unwrap();
+            campaign.target_amount = 1_000;
+            Storage::set_crowdfund_campaign(&env, &campaign);
+            pledge(&env, id, &backer_a, 400).unwrap();
+            pledge(&env, id, &backer_b, 300).unwrap();
+            id
+        });
+
+        env.ledger().with_mut(|l| l.timestamp += 2_000);
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                finalize(&env, campaign_id).unwrap(),
+                CrowdfundStatus::Failed
+            );
+
+            claim_refund(&env, campaign_id, &backer_a).unwrap();
+            claim_refund(&env, campaign_id, &backer_b).unwrap();
+
+            assert!(get_pledge(&env, campaign_id, &backer_a).unwrap().refunded);
+            assert!(get_pledge(&env, campaign_id, &backer_b).unwrap().refunded);
+        });
+
+        assert_eq!(token_client.balance(&backer_a), 400);
+        assert_eq!(token_client.balance(&backer_b), 300);
+        assert_eq!(token_client.balance(&contract_id), 0);
     }
 
     #[test]
