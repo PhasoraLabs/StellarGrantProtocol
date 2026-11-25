@@ -768,4 +768,336 @@ mod tests {
             ContractError::InvalidState
         );
     }
+
+    #[test]
+    fn test_uneven_three_cofunder_shares_and_escrow_totals() {
+        let f = setup();
+        form(&f);
+
+        // Uneven contributions summing to TARGET (1_000): 550 / 325 / 125
+        join(&f, &f.lead, 550);
+        join(&f, &f.member_a, 325);
+        join(&f, &f.member_b, 125);
+
+        f.env.as_contract(&f.contract_id, || {
+            let members = get_members(&f.env, GRANT_ID);
+            assert_eq!(members.len(), 3);
+
+            let lead = get_member(&f.env, GRANT_ID, &f.lead).unwrap();
+            let a = get_member(&f.env, GRANT_ID, &f.member_a).unwrap();
+            let b = get_member(&f.env, GRANT_ID, &f.member_b).unwrap();
+
+            assert!(lead.is_lead);
+            assert!(!a.is_lead);
+            assert!(!b.is_lead);
+
+            assert_eq!(lead.committed_amount, 550);
+            assert_eq!(lead.deposited_amount, 550);
+            assert_eq!(lead.share_bps, 5_500);
+
+            assert_eq!(a.committed_amount, 325);
+            assert_eq!(a.deposited_amount, 325);
+            assert_eq!(a.share_bps, 3_250);
+
+            assert_eq!(b.committed_amount, 125);
+            assert_eq!(b.deposited_amount, 125);
+            assert_eq!(b.share_bps, 1_250);
+
+            let mut total_shares_bps = 0u32;
+            let mut total_member_deposits = 0i128;
+            for m in members.iter() {
+                total_shares_bps += m.share_bps;
+                total_member_deposits += m.deposited_amount;
+                let ledger = escrow::get_funder_ledger(&f.env, GRANT_ID, &m.member).unwrap();
+                assert_eq!(ledger.contributed, m.deposited_amount);
+                assert_eq!(ledger.refunded, 0);
+            }
+
+            assert_eq!(total_shares_bps, 10_000);
+            assert_eq!(total_member_deposits, TARGET);
+            assert_eq!(total_deposited(&f.env, GRANT_ID), TARGET);
+
+            let escrow_account = escrow::get_account(&f.env, GRANT_ID).unwrap();
+            assert_eq!(escrow_account.balance, TARGET);
+            assert_eq!(escrow_account.total_deposited, TARGET);
+
+            let grant = Storage::get_grant(&f.env, GRANT_ID).unwrap();
+            assert_eq!(grant.escrow_balance, TARGET);
+        });
+
+        f.client.close_syndicate(&f.lead, &GRANT_ID);
+        let payout = 2_000i128;
+        f.client
+            .record_payout_allocation(&f.lead, &GRANT_ID, &0, &payout);
+
+        let allocations = read_payouts(&f, 0);
+        assert_eq!(allocations.len(), 3);
+        let mut allocated_sum = 0i128;
+        for (addr, amount) in allocations.iter() {
+            if addr == f.lead {
+                assert_eq!(amount, 1_100);
+            } else if addr == f.member_a {
+                assert_eq!(amount, 650);
+            } else if addr == f.member_b {
+                assert_eq!(amount, 250);
+            } else {
+                panic!("unexpected co-funder address in payout allocations");
+            }
+            allocated_sum += amount;
+        }
+        assert_eq!(allocated_sum, payout);
+    }
+
+    #[test]
+    fn test_uneven_multi_deposit_topups_recompute_shares_and_match_escrow() {
+        let f = setup();
+        let member_c = Address::generate(&f.env);
+        StellarAssetClient::new(&f.env, &f.token_id).mint(&member_c, &10_000);
+
+        form(&f);
+
+        // Initial uneven deposits: 150 + 350 + 100 = 600
+        join(&f, &f.member_a, 150);
+        join(&f, &f.member_b, 350);
+        join(&f, &member_c, 100);
+
+        f.env.as_contract(&f.contract_id, || {
+            let escrow_account = escrow::get_account(&f.env, GRANT_ID).unwrap();
+            assert_eq!(escrow_account.balance, 600);
+            assert_eq!(total_deposited(&f.env, GRANT_ID), 600);
+            assert_eq!(
+                get_member(&f.env, GRANT_ID, &f.member_a).unwrap().share_bps,
+                1_500
+            );
+            assert_eq!(
+                get_member(&f.env, GRANT_ID, &f.member_b).unwrap().share_bps,
+                3_500
+            );
+            assert_eq!(
+                get_member(&f.env, GRANT_ID, &member_c).unwrap().share_bps,
+                1_000
+            );
+        });
+
+        // Uneven top-up from member_a (+250 -> 400) and lead (+150) to reach 1_000
+        join(&f, &f.member_a, 250);
+        join(&f, &f.lead, 150);
+
+        f.env.as_contract(&f.contract_id, || {
+            let syn = get_syndicate(&f.env, GRANT_ID).unwrap();
+            assert_eq!(syn.member_count, 4);
+
+            let a = get_member(&f.env, GRANT_ID, &f.member_a).unwrap();
+            let b = get_member(&f.env, GRANT_ID, &f.member_b).unwrap();
+            let c = get_member(&f.env, GRANT_ID, &member_c).unwrap();
+            let lead = get_member(&f.env, GRANT_ID, &f.lead).unwrap();
+
+            assert_eq!(a.deposited_amount, 400);
+            assert_eq!(a.share_bps, 4_000);
+            assert_eq!(b.deposited_amount, 350);
+            assert_eq!(b.share_bps, 3_500);
+            assert_eq!(c.deposited_amount, 100);
+            assert_eq!(c.share_bps, 1_000);
+            assert_eq!(lead.deposited_amount, 150);
+            assert_eq!(lead.share_bps, 1_500);
+
+            let members = get_members(&f.env, GRANT_ID);
+            let mut sum_deposits = 0i128;
+            let mut sum_bps = 0u32;
+            for m in members.iter() {
+                sum_deposits += m.deposited_amount;
+                sum_bps += m.share_bps;
+                assert_eq!(
+                    escrow::get_funder_ledger(&f.env, GRANT_ID, &m.member)
+                        .unwrap()
+                        .contributed,
+                    m.deposited_amount
+                );
+            }
+            assert_eq!(sum_bps, 10_000);
+            assert_eq!(sum_deposits, TARGET);
+
+            let escrow_account = escrow::get_account(&f.env, GRANT_ID).unwrap();
+            assert_eq!(escrow_account.balance, TARGET);
+            assert_eq!(escrow_account.total_deposited, TARGET);
+            assert_eq!(
+                Storage::get_grant(&f.env, GRANT_ID).unwrap().escrow_balance,
+                TARGET
+            );
+        });
+    }
+
+    #[test]
+    fn test_uneven_shares_with_non_divisible_target_and_escrow_match() {
+        let f = setup();
+        let grant_id = GRANT_ID + 1;
+        let custom_target: i128 = 700;
+
+        f.env.as_contract(&f.contract_id, || {
+            let grant = Grant {
+                id: grant_id,
+                owner: f.lead.clone(),
+                title: String::from_str(&f.env, "Non-divisible Syndicate"),
+                description: String::from_str(&f.env, "Desc"),
+                token: f.token_id.clone(),
+                status: GrantStatus::Active,
+                total_amount: custom_target,
+                milestone_amount: custom_target,
+                reviewers: Vec::new(&f.env),
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: Vec::new(&f.env),
+                reason: None,
+                timestamp: f.env.ledger().timestamp(),
+                require_compliance: None,
+            };
+            Storage::set_grant(&f.env, grant_id, &grant);
+            escrow::open(&f.env, grant_id, &f.lead, &f.token_id).unwrap();
+        });
+
+        f.client.form_syndicate(
+            &f.lead,
+            &grant_id,
+            &custom_target,
+            &MIN_COMMIT,
+            &MAX_MEMBERS,
+            &DEADLINE_LEDGERS,
+        );
+
+        // Uneven contributions 400 / 200 / 100 against target 700
+        f.client.join_syndicate(&f.lead, &grant_id, &400);
+        f.client.join_syndicate(&f.member_a, &grant_id, &200);
+        f.client.join_syndicate(&f.member_b, &grant_id, &100);
+
+        f.env.as_contract(&f.contract_id, || {
+            let lead = get_member(&f.env, grant_id, &f.lead).unwrap();
+            let a = get_member(&f.env, grant_id, &f.member_a).unwrap();
+            let b = get_member(&f.env, grant_id, &f.member_b).unwrap();
+
+            // Integer bps rounding: 5714 + 2857 + 1428 = 9999 <= 10_000
+            assert_eq!(lead.share_bps, 5_714);
+            assert_eq!(a.share_bps, 2_857);
+            assert_eq!(b.share_bps, 1_428);
+            assert_eq!(lead.share_bps + a.share_bps + b.share_bps, 9_999);
+
+            let total_member_deposits =
+                lead.deposited_amount + a.deposited_amount + b.deposited_amount;
+            assert_eq!(total_member_deposits, custom_target);
+
+            let escrow_account = escrow::get_account(&f.env, grant_id).unwrap();
+            assert_eq!(escrow_account.balance, custom_target);
+            assert_eq!(escrow_account.total_deposited, custom_target);
+            assert_eq!(
+                Storage::get_grant(&f.env, grant_id).unwrap().escrow_balance,
+                custom_target
+            );
+        });
+
+        f.client.close_syndicate(&f.lead, &grant_id);
+        f.client
+            .record_payout_allocation(&f.lead, &grant_id, &0, &custom_target);
+
+        let allocations = f.client.syndicate_payout_allocation(&grant_id, &0);
+        assert_eq!(allocations.len(), 3);
+        let mut allocated_sum = 0i128;
+        for (addr, amount) in allocations.iter() {
+            if addr == f.lead {
+                assert_eq!(amount, 399);
+            } else if addr == f.member_a {
+                assert_eq!(amount, 199);
+            } else if addr == f.member_b {
+                assert_eq!(amount, 99);
+            }
+            allocated_sum += amount;
+        }
+        assert!(allocated_sum <= custom_target);
+    }
+
+    #[test]
+    fn test_uneven_cofunder_partial_withdrawal_updates_escrow_and_remaining_shares() {
+        let f = setup();
+        let member_c = Address::generate(&f.env);
+        StellarAssetClient::new(&f.env, &f.token_id).mint(&member_c, &10_000);
+
+        form(&f);
+        // Incomplete uneven raise: 500 + 200 + 100 = 800 < 1_000
+        join(&f, &f.member_a, 500);
+        join(&f, &f.member_b, 200);
+        join(&f, &member_c, 100);
+
+        f.env.as_contract(&f.contract_id, || {
+            assert_eq!(total_deposited(&f.env, GRANT_ID), 800);
+            assert_eq!(escrow::get_account(&f.env, GRANT_ID).unwrap().balance, 800);
+        });
+
+        let deadline = f.env.as_contract(&f.contract_id, || {
+            get_syndicate(&f.env, GRANT_ID).unwrap().formation_deadline
+        });
+        f.env
+            .ledger()
+            .with_mut(|li| li.sequence_number = deadline as u32 + 1);
+
+        let refunded = f.client.withdraw_syndicate(&f.member_a, &GRANT_ID);
+        assert_eq!(refunded, 500);
+
+        f.env.as_contract(&f.contract_id, || {
+            assert!(get_member(&f.env, GRANT_ID, &f.member_a).is_none());
+            assert_eq!(get_syndicate(&f.env, GRANT_ID).unwrap().member_count, 2);
+
+            let b = get_member(&f.env, GRANT_ID, &f.member_b).unwrap();
+            let c = get_member(&f.env, GRANT_ID, &member_c).unwrap();
+            assert_eq!(b.deposited_amount, 200);
+            assert_eq!(b.share_bps, 2_000);
+            assert_eq!(c.deposited_amount, 100);
+            assert_eq!(c.share_bps, 1_000);
+
+            assert_eq!(total_deposited(&f.env, GRANT_ID), 300);
+            assert_eq!(escrow::get_account(&f.env, GRANT_ID).unwrap().balance, 300);
+            assert_eq!(
+                Storage::get_grant(&f.env, GRANT_ID).unwrap().escrow_balance,
+                300
+            );
+        });
+    }
+
+    #[test]
+    fn test_join_rejects_oversized_contribution_and_preserves_escrow_accounting() {
+        let f = setup();
+        form(&f);
+        join(&f, &f.member_a, 700);
+
+        // 400 exceeds remaining 300 needed for TARGET (1_000)
+        assert_eq!(
+            f.client
+                .try_join_syndicate(&f.member_b, &GRANT_ID, &400)
+                .unwrap_err()
+                .unwrap(),
+            ContractError::InvalidInput
+        );
+
+        f.env.as_contract(&f.contract_id, || {
+            assert!(get_member(&f.env, GRANT_ID, &f.member_b).is_none());
+            assert_eq!(
+                get_member(&f.env, GRANT_ID, &f.member_a).unwrap().share_bps,
+                7_000
+            );
+            assert_eq!(total_deposited(&f.env, GRANT_ID), 700);
+            assert_eq!(escrow::get_account(&f.env, GRANT_ID).unwrap().balance, 700);
+        });
+
+        // Exact remaining contribution succeeds and reconciles with escrow
+        join(&f, &f.member_b, 300);
+        f.env.as_contract(&f.contract_id, || {
+            assert_eq!(
+                get_member(&f.env, GRANT_ID, &f.member_b).unwrap().share_bps,
+                3_000
+            );
+            assert_eq!(total_deposited(&f.env, GRANT_ID), TARGET);
+            assert_eq!(
+                escrow::get_account(&f.env, GRANT_ID).unwrap().balance,
+                TARGET
+            );
+        });
+    }
 }
