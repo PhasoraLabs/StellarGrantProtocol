@@ -1451,6 +1451,8 @@ impl Storage {
             keys.push_back(key.clone());
             env.storage().persistent().set(&DataKey::ParamKeys, &keys);
         }
+        // Refresh the index on every write, so updating existing params keeps it alive.
+        Self::bump(env, &DataKey::ParamKeys);
     }
 
     pub fn get_param_history(env: &Env, key: &Symbol) -> Vec<ParamRecord> {
@@ -2703,6 +2705,52 @@ mod tests {
         testutils::{storage::Persistent as _, Address as _, Ledger as _},
         Env,
     };
+
+    fn param_record(env: &Env, key: &Symbol, value: u32) -> crate::types::ParamRecord {
+        crate::types::ParamRecord {
+            key: key.clone(),
+            value: crate::types::ParamValue {
+                param_type: crate::types::ParamType::U32,
+                u32_val: Some(value),
+                i128_val: None,
+                bool_val: None,
+                address_val: None,
+                string_val: None,
+            },
+            set_by: Address::generate(env),
+            set_at: env.ledger().timestamp(),
+            description: String::from_str(env, "test"),
+            requires_dao_vote: false,
+        }
+    }
+
+    // Issue #1331: updating an existing param keeps the ParamKeys index alive.
+    #[test]
+    fn test_set_param_on_existing_key_refreshes_param_keys_ttl() {
+        let env = Env::default();
+        let contract = env.register(crate::StellarGrantsContract, ());
+        advance_ledger_sequence(&env, 0);
+        let key = Symbol::new(&env, "fee_bps");
+        env.as_contract(&contract, || {
+            Storage::set_param(&env, &key, &param_record(&env, &key, 1));
+        });
+
+        advance_ledger_sequence(
+            &env,
+            PERSISTENT_TTL_EXTEND_TO - PERSISTENT_TTL_THRESHOLD / 2,
+        );
+        env.as_contract(&contract, || {
+            assert!(
+                env.storage().persistent().get_ttl(&DataKey::ParamKeys) < PERSISTENT_TTL_THRESHOLD
+            );
+            Storage::set_param(&env, &key, &param_record(&env, &key, 2));
+            assert_eq!(
+                env.storage().persistent().get_ttl(&DataKey::ParamKeys),
+                PERSISTENT_TTL_EXTEND_TO
+            );
+            assert_eq!(Storage::list_param_keys(&env).len(), 1);
+        });
+    }
 
     #[test]
     fn test_global_admin_roundtrip() {
