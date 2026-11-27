@@ -202,8 +202,9 @@ pub fn accrue_reward(
     Ok(accrued)
 }
 
-/// Compute a reviewer's fair share of the pool based on their total participation.
-/// This aggregates votes across all grants and allocates proportionally from the pool.
+/// Compute a reviewer's fair share of the pool based on their participation.
+/// Only votes on grants funded in the pool's token count, matching `total_votes_recorded`,
+/// which `record_participation` increments per token pool.
 fn compute_reviewer_share(
     env: &Env,
     reviewer: &Address,
@@ -226,6 +227,11 @@ fn compute_reviewer_share(
         .unwrap_or_else(|| Vec::new(env));
 
     for grant_id in grant_ids.iter() {
+        let in_pool_token = crate::storage::Storage::get_grant(env, grant_id)
+            .is_some_and(|grant| grant.token == *token);
+        if !in_pool_token {
+            continue;
+        }
         if let Some(participation) = get_participation(env, reviewer, grant_id) {
             reviewer_votes = reviewer_votes.saturating_add(participation.votes_cast as i128);
         }
@@ -418,6 +424,64 @@ mod tests {
         assert_eq!(part2.fast_votes, 1);
         assert!(part2.last_vote_at >= part1.last_vote_at);
     });
+
+    fn grant_in_token(env: &Env, id: u64, token: &Address) -> crate::types::Grant {
+        crate::types::Grant {
+            id,
+            owner: Address::generate(env),
+            title: soroban_sdk::String::from_str(env, "Test"),
+            description: soroban_sdk::String::from_str(env, "Desc"),
+            token: token.clone(),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 1_000,
+            milestone_amount: 500,
+            reviewers: Vec::new(env),
+            total_milestones: 2,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
+
+    // Issue #1148: a pool's share counts only votes on grants funded in that pool's token.
+    reward_test!(
+        test_reviewer_share_counts_only_votes_in_the_pools_token,
+        |env| {
+            let token_a = Address::generate(&env);
+            let token_b = Address::generate(&env);
+            crate::storage::Storage::set_grant(&env, 1, &grant_in_token(&env, 1, &token_a));
+            crate::storage::Storage::set_grant(&env, 2, &grant_in_token(&env, 2, &token_b));
+
+            let cross_token = Address::generate(&env);
+            let single_token = Address::generate(&env);
+            record_participation(&env, &cross_token, 1, 0, false);
+            record_participation(&env, &cross_token, 2, 0, false);
+            record_participation(&env, &single_token, 1, 0, false);
+
+            fund_pool(&env, &token_a, 1_000);
+            let pool_a: ReviewerRewardPool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::ReviewerReward(ReviewerRewardKey::Pool(
+                    token_a.clone(),
+                )))
+                .unwrap();
+            assert_eq!(pool_a.total_votes_recorded, 2);
+
+            // One of pool A's two votes each: the token-B vote must not count toward pool A.
+            assert_eq!(
+                compute_reviewer_share(&env, &cross_token, &token_a, &pool_a),
+                Ok(500)
+            );
+            assert_eq!(
+                compute_reviewer_share(&env, &single_token, &token_a, &pool_a),
+                Ok(500)
+            );
+        }
+    );
 
     reward_test!(test_claim_rewards_partial, |env| {
         let reviewer = Address::generate(&env);
