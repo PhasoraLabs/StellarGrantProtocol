@@ -55,9 +55,11 @@ pub fn get_portfolio_stats(env: &Env, owner: &Address) -> PortfolioStats {
                     stats.active_grants = stats.active_grants.saturating_add(1);
                 }
 
-                // Track contributors
-                if !contributors.contains(grant.owner.clone()) {
-                    contributors.push_back(grant.owner.clone());
+                // Track contributors: the distinct funders across the owner's grants
+                for fund in grant.funders.iter() {
+                    if !contributors.contains(fund.funder.clone()) {
+                        contributors.push_back(fund.funder);
+                    }
                 }
 
                 // Track reviewers
@@ -384,6 +386,65 @@ mod tests {
             assert_eq!(stats.total_grants, 0);
             assert_eq!(stats.active_grants, 0);
             assert_eq!(stats.total_funded, 0);
+        });
+    }
+
+    fn grant_funded_by(
+        env: &Env,
+        id: u64,
+        owner: &Address,
+        funders: &[&Address],
+    ) -> crate::types::Grant {
+        let mut funds = Vec::new(env);
+        for funder in funders {
+            funds.push_back(crate::types::GrantFund {
+                funder: (*funder).clone(),
+                amount: 100,
+            });
+        }
+        crate::types::Grant {
+            id,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(env, "Test"),
+            description: soroban_sdk::String::from_str(env, "Desc"),
+            token: Address::generate(env),
+            status: GrantStatus::Active,
+            total_amount: 1_000,
+            milestone_amount: 500,
+            reviewers: Vec::new(env),
+            total_milestones: 2,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: funds,
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
+
+    // Issue #1332: unique_contributors counts distinct funders across the owner's grants.
+    #[test]
+    fn test_portfolio_stats_counts_distinct_funders() {
+        let env = soroban_sdk::Env::default();
+        crate::test_utils::register_contract(&env);
+        crate::test_utils::in_contract(&env, || {
+            let owner = Address::generate(&env);
+            let alice = Address::generate(&env);
+            let bob = Address::generate(&env);
+            let carol = Address::generate(&env);
+            Storage::set_grant(&env, 1, &grant_funded_by(&env, 1, &owner, &[&alice, &bob]));
+            Storage::set_grant(&env, 2, &grant_funded_by(&env, 2, &owner, &[&bob, &carol]));
+            Storage::set_grant(&env, 3, &grant_funded_by(&env, 3, &owner, &[]));
+            for id in 1..=3 {
+                Storage::push_owner_grant_id(&env, &owner, id);
+            }
+
+            let stats = get_portfolio_stats(&env, &owner);
+            assert_eq!(stats.total_grants, 3);
+            assert_eq!(
+                stats.unique_contributors, 3,
+                "alice, bob and carol; bob counted once"
+            );
         });
     }
 
